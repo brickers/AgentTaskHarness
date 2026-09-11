@@ -14,7 +14,7 @@
 }
 else
 {
-    <p><a href="/boards">All boards</a> · <a href="@($"/boards/{BoardId}/columns")">Configure columns</a></p>
+    <p><a href="/boards">All boards</a> · <a href="@($"/boards/{BoardId}/columns")">Configure columns</a> · <a href="@($"/boards/{BoardId}/agents")">Configure agents</a></p>
     <h1>@board.Name</h1>
 
     @if (!string.IsNullOrWhiteSpace(message))

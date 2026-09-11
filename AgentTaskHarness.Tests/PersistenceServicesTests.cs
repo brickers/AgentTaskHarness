@@ -4,6 +4,7 @@ using AgentTaskHarness.Application.Columns;
 using AgentTaskHarness.Application.Tasks;
 using AgentTaskHarness.Domain.Enums;
 using AgentTaskHarness.Infrastructure.Persistence;
+using AgentTaskHarness.Infrastructure.Agents;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -30,7 +31,7 @@ public class PersistenceServicesTests : IAsyncLifetime
 		columns = new ColumnService(dbContext);
 		tasks = new TaskService(dbContext);
 		dependencies = new TaskDependencyService(dbContext);
-		agentDefinitions = new AgentDefinitionService(dbContext);
+		agentDefinitions = new AgentDefinitionService(dbContext, new AgentDefinitionFolderWriter());
 	}
 
 	public async Task DisposeAsync()

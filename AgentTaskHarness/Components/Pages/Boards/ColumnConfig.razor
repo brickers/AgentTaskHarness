@@ -1,6 +1,7 @@
 @page "/boards/{BoardId:guid}/columns"
 @inject BoardService BoardService
 @inject ColumnService ColumnService
+@inject AgentDefinitionService AgentDefinitionService
 @inject NavigationManager Navigation
 
 <PageTitle>Column configuration</PageTitle>
@@ -27,6 +28,18 @@
         <label>Order <input type="number" min="0" @bind="column.Order" /></label>
         <label><input type="checkbox" @bind="column.IsBacklog" disabled /> Backlog</label>
         <label><input type="checkbox" @bind="column.IsTerminal" disabled /> Terminal</label>
+        @if (!column.IsBacklog && !column.IsTerminal)
+        {
+            <label>Agent definition
+                <select @bind="column.AgentDefinitionId">
+                    <option value="">No agent</option>
+                    @foreach (var definition in agentDefinitions)
+                    {
+                        <option value="@definition.Id">@definition.Name</option>
+                    }
+                </select>
+            </label>
+        }
         <div>
             <button @onclick="() => SaveAsync(column)">Save</button>
             <button @onclick="() => MoveAsync(column.Id, -1)" disabled="@(column.Order == 0)">Earlier</button>
@@ -49,6 +62,7 @@
     [Parameter] public Guid BoardId { get; set; }
 
     private List<Column> columns = [];
+    private List<AgentDefinition> agentDefinitions = [];
     private readonly HashSet<(Guid From, Guid To)> allowedTransitions = [];
     private string newColumnName = string.Empty;
     private string? message;
@@ -63,6 +77,7 @@
             return;
         }
         columns = await ColumnService.GetForBoardAsync(BoardId);
+        agentDefinitions = await AgentDefinitionService.GetForBoardAsync(BoardId);
         allowedTransitions.Clear();
         foreach (var column in columns)
         {

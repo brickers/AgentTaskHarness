@@ -1,0 +1,221 @@
+@page "/boards/{BoardId:guid}/agents"
+@inject BoardService BoardService
+@inject AgentDefinitionService AgentDefinitionService
+@inject NavigationManager Navigation
+
+<PageTitle>Agent definitions</PageTitle>
+
+<p><a href="@($"/boards/{BoardId}")">Back to board</a></p>
+<h1>Agent definitions</h1>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <p class="message" role="alert">@message</p>
+}
+
+<section class="form-panel">
+    <h2>Reusable components</h2>
+    <label>Name <input @bind="newComponentName" /></label>
+    <label>Configuration <textarea @bind="newComponentConfig"></textarea></label>
+    <button @onclick="CreateComponentAsync">Create component</button>
+    @if (availableComponents.Count > 0)
+    {
+        <ul>
+            @foreach (var component in availableComponents)
+            {
+                <li><strong>@component.Name</strong>: @component.ConfigContent</li>
+            }
+        </ul>
+    }
+</section>
+
+<section class="form-panel">
+    <h2>New definition</h2>
+    <label>Name <input @bind="newDefinitionName" /></label>
+    <label>Definition folder <input @bind="newDefinitionFolderPath" /></label>
+    <button @onclick="CreateDefinitionAsync">Create definition</button>
+</section>
+
+@if (definitions.Count == 0)
+{
+    <p>Create an agent definition to compose its components.</p>
+}
+else
+{
+    <section>
+        <h2>Definitions</h2>
+        @foreach (var definition in definitions)
+        {
+            <button @onclick="() => SelectDefinitionAsync(definition.Id)">@definition.Name</button>
+        }
+    </section>
+}
+
+@if (selectedDefinition is not null)
+{
+    <section class="form-panel">
+        <h2>Edit @selectedDefinition.Name</h2>
+        <label>Name <input @bind="definitionName" /></label>
+        <label>Definition folder <input @bind="definitionFolderPath" /></label>
+        <label>Component
+            <select @bind="componentToAdd">
+                <option value="">Select a component…</option>
+                @foreach (var component in availableComponents.Where(component => selectedComponents.All(selected => selected.Id != component.Id)))
+                {
+                    <option value="@component.Id">@component.Name</option>
+                }
+            </select>
+        </label>
+        <button @onclick="AddComponent">Add component</button>
+
+        <h3>Composition order</h3>
+        @if (selectedComponents.Count == 0)
+        {
+            <p>No components selected.</p>
+        }
+        else
+        {
+            <ol>
+                @for (var index = 0; index < selectedComponents.Count; index++)
+                {
+                    var component = selectedComponents[index];
+                    <li>
+                        <strong>@component.Name</strong>
+                        <button @onclick="() => MoveComponent(index, -1)" disabled="@(index == 0)">Earlier</button>
+                        <button @onclick="() => MoveComponent(index, 1)" disabled="@(index == selectedComponents.Count - 1)">Later</button>
+                        <button @onclick="() => RemoveComponent(component.Id)">Remove</button>
+                    </li>
+                }
+            </ol>
+        }
+        <button @onclick="SaveAsync">Save definition</button>
+        <button @onclick="DeleteDefinitionAsync">Delete definition</button>
+    </section>
+}
+
+@code {
+    [Parameter] public Guid BoardId { get; set; }
+
+    private List<AgentDefinition> definitions = [];
+    private List<AgentComponent> availableComponents = [];
+    private AgentDefinition? selectedDefinition;
+    private List<AgentComponent> selectedComponents = [];
+    private string newComponentName = string.Empty;
+    private string newComponentConfig = string.Empty;
+    private string newDefinitionName = string.Empty;
+    private string newDefinitionFolderPath = string.Empty;
+    private string definitionName = string.Empty;
+    private string definitionFolderPath = string.Empty;
+    private Guid? componentToAdd;
+    private string? message;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (await BoardService.GetByIdAsync(BoardId) is null)
+        {
+            Navigation.NavigateTo("/boards");
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        definitions = await AgentDefinitionService.GetForBoardAsync(BoardId);
+        availableComponents = await AgentDefinitionService.GetComponentsAsync();
+        if (selectedDefinition is not null)
+        {
+            await SelectDefinitionAsync(selectedDefinition.Id);
+        }
+    }
+
+    private async Task CreateComponentAsync()
+    {
+        try
+        {
+            await AgentDefinitionService.CreateComponentAsync(newComponentName, newComponentConfig);
+            newComponentName = string.Empty;
+            newComponentConfig = string.Empty;
+            availableComponents = await AgentDefinitionService.GetComponentsAsync();
+        }
+        catch (Exception exception) { message = exception.Message; }
+    }
+
+    private async Task CreateDefinitionAsync()
+    {
+        try
+        {
+            var definition = await AgentDefinitionService.CreateAsync(BoardId, newDefinitionName, newDefinitionFolderPath);
+            newDefinitionName = string.Empty;
+            newDefinitionFolderPath = string.Empty;
+            await LoadAsync();
+            await SelectDefinitionAsync(definition.Id);
+        }
+        catch (Exception exception) { message = exception.Message; }
+    }
+
+    private async Task SelectDefinitionAsync(Guid definitionId)
+    {
+        selectedDefinition = await AgentDefinitionService.GetByIdAsync(definitionId);
+        if (selectedDefinition is null)
+        {
+            return;
+        }
+        definitionName = selectedDefinition.Name;
+        definitionFolderPath = selectedDefinition.FolderPath;
+        selectedComponents = selectedDefinition.Components.OrderBy(component => component.Order).Select(component => component.Component).ToList();
+        componentToAdd = null;
+    }
+
+    private void AddComponent()
+    {
+        if (componentToAdd is not Guid componentId)
+        {
+            return;
+        }
+        var component = availableComponents.Single(component => component.Id == componentId);
+        selectedComponents.Add(component);
+        componentToAdd = null;
+    }
+
+    private void MoveComponent(int index, int direction)
+    {
+        if (index + direction < 0 || index + direction >= selectedComponents.Count)
+        {
+            return;
+        }
+        (selectedComponents[index], selectedComponents[index + direction]) = (selectedComponents[index + direction], selectedComponents[index]);
+    }
+
+    private void RemoveComponent(Guid componentId) => selectedComponents.RemoveAll(component => component.Id == componentId);
+
+    private async Task SaveAsync()
+    {
+        if (selectedDefinition is null)
+        {
+            return;
+        }
+        try
+        {
+            await AgentDefinitionService.SaveAsync(selectedDefinition.Id, definitionName, definitionFolderPath, selectedComponents.Select(component => component.Id).ToList());
+            await LoadAsync();
+        }
+        catch (Exception exception) { message = exception.Message; }
+    }
+
+    private async Task DeleteDefinitionAsync()
+    {
+        if (selectedDefinition is null)
+        {
+            return;
+        }
+        try
+        {
+            await AgentDefinitionService.DeleteAsync(selectedDefinition.Id);
+            selectedDefinition = null;
+            selectedComponents = [];
+            await LoadAsync();
+        }
+        catch (Exception exception) { message = exception.Message; }
+    }
+}

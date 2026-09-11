@@ -22,6 +22,7 @@ builder.Services.AddScoped<ColumnService>();
 builder.Services.AddScoped<TaskService>();
 builder.Services.AddScoped<TaskDependencyService>();
 builder.Services.AddScoped<TaskTransitionOrchestrator>();
+builder.Services.AddScoped<IAgentDefinitionFolderWriter, AgentDefinitionFolderWriter>();
 builder.Services.AddScoped<AgentDefinitionService>();
 builder.Services.AddScoped<IGitWorktreeService, LibGit2WorktreeService>();
 builder.Services.AddSingleton<IAgentScheduler, NoOpAgentScheduler>();
