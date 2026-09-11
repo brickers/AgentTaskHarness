@@ -5,59 +5,63 @@
 
 <PageTitle>Agent definitions</PageTitle>
 
-<p><a href="@($"/boards/{BoardId}")">Back to board</a></p>
-<h1>Agent definitions</h1>
+<section class="page-intro compact-intro">
+    <div><p class="breadcrumb"><a href="@($"/boards/{BoardId}")">Board</a> <span>/</span> Settings</p><h1>Agent definitions</h1><p>Compose reusable instructions and assign them to the workflow.</p></div>
+    <div class="header-actions"><button class="button-quiet" @onclick="OpenComponentCreator">New component</button><button class="button-primary" @onclick="OpenDefinitionCreator">New definition</button></div>
+</section>
 
 @if (!string.IsNullOrWhiteSpace(message))
 {
-    <p class="message" role="alert">@message</p>
+    <div class="toast" role="alert" @key="messageVersion"><span>@message</span><button class="icon-button" type="button" aria-label="Dismiss notification" @onclick="DismissMessage">×</button></div>
 }
 
-<section class="form-panel">
-    <h2>Reusable components</h2>
-    <label>Name <input @bind="newComponentName" /></label>
-    <label>Configuration <textarea @bind="newComponentConfig"></textarea></label>
-    <button @onclick="CreateComponentAsync">Create component</button>
+<section class="definition-panel">
+    <div class="section-heading"><div><p class="eyebrow">Building blocks</p><h2>Reusable components</h2></div><span class="tag">@availableComponents.Count total</span></div>
     @if (availableComponents.Count > 0)
     {
-        <ul>
+        <ul class="component-list">
             @foreach (var component in availableComponents)
             {
-                <li><strong>@component.Name</strong>: @component.ConfigContent</li>
+                <li><strong>@component.Name</strong><span>@component.ConfigContent</span></li>
             }
         </ul>
     }
-</section>
-
-<section class="form-panel">
-    <h2>New definition</h2>
-    <label>Name <input @bind="newDefinitionName" /></label>
-    <label>Definition folder <input @bind="newDefinitionFolderPath" /></label>
-    <button @onclick="CreateDefinitionAsync">Create definition</button>
+    else
+    {
+        <p class="muted-copy">Create components for instructions, guardrails, or tool configuration.</p>
+    }
 </section>
 
 @if (definitions.Count == 0)
 {
-    <p>Create an agent definition to compose its components.</p>
+    <section class="empty-state"><p class="eyebrow">No definitions yet</p><h2>Build an agent</h2><p>Combine reusable components into a definition that can be assigned to a column.</p><button class="button-primary" @onclick="OpenDefinitionCreator">Create definition</button></section>
 }
 else
 {
-    <section>
-        <h2>Definitions</h2>
-        @foreach (var definition in definitions)
-        {
-            <button @onclick="() => SelectDefinitionAsync(definition.Id)">@definition.Name</button>
-        }
+    <section class="definition-panel definition-list-panel">
+        <div class="section-heading"><div><p class="eyebrow">Compositions</p><h2>Definitions</h2></div></div>
+        <div class="definition-list">
+            @foreach (var definition in definitions)
+            {
+                <article><div><h3>@definition.Name</h3><p>@definition.FolderPath</p></div><button class="button-quiet" @onclick="() => SelectDefinitionAsync(definition.Id)">Edit</button></article>
+            }
+        </div>
     </section>
 }
 
-@if (selectedDefinition is not null)
+@if (isCreatingComponent)
 {
-    <section class="form-panel">
-        <h2>Edit @selectedDefinition.Name</h2>
-        <label>Name <input @bind="definitionName" /></label>
-        <label>Definition folder <input @bind="definitionFolderPath" /></label>
-        <label>Component
+    <div class="modal-backdrop" role="presentation"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-component-title"><div class="modal-heading"><div><p class="eyebrow">Building block</p><h2 id="new-component-title">New component</h2></div><button class="icon-button" type="button" aria-label="Close" @onclick="CloseComponentCreator">×</button></div><form class="form-panel" @onsubmit="CreateComponentAsync" @onsubmit:preventDefault><label>Name <input @bind="newComponentName" placeholder="Repository conventions" /></label><label>Configuration <textarea @bind="newComponentConfig" placeholder="Add the component content."></textarea></label><div class="modal-actions"><button class="button-quiet" type="button" @onclick="CloseComponentCreator">Cancel</button><button class="button-primary" type="submit">Create component</button></div></form></section></div>
+}
+
+@if (isCreatingDefinition)
+{
+    <div class="modal-backdrop" role="presentation"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-definition-title"><div class="modal-heading"><div><p class="eyebrow">Agent composition</p><h2 id="new-definition-title">New definition</h2></div><button class="icon-button" type="button" aria-label="Close" @onclick="CloseDefinitionCreator">×</button></div><form class="form-panel" @onsubmit="CreateDefinitionAsync" @onsubmit:preventDefault><label>Name <input @bind="newDefinitionName" placeholder="Implementation agent" /></label><div class="field-group"><label for="new-definition-folder">Definition folder</label><div class="path-input"><input id="new-definition-folder" @bind="newDefinitionFolderPath" placeholder="/path/to/definition" /><FolderPicker OnFolderSelected="path => newDefinitionFolderPath = path" /></div><small>Choose a folder to fill this field. Browsers hide its full local path, so replace the name with the server-visible path when needed.</small></div><div class="modal-actions"><button class="button-quiet" type="button" @onclick="CloseDefinitionCreator">Cancel</button><button class="button-primary" type="submit">Create definition</button></div></form></section></div>
+}
+
+@if (selectedDefinition is not null && isEditingDefinition)
+{
+    <div class="modal-backdrop" role="presentation"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-definition-title"><div class="modal-heading"><div><p class="eyebrow">Agent composition</p><h2 id="edit-definition-title">Edit @selectedDefinition.Name</h2></div><button class="icon-button" type="button" aria-label="Close" @onclick="CloseDefinitionEditor">×</button></div><form @onsubmit="SaveAsync" @onsubmit:preventDefault><div class="form-panel"><label>Name <input @bind="definitionName" /></label><div class="field-group"><label for="definition-folder">Definition folder</label><div class="path-input"><input id="definition-folder" @bind="definitionFolderPath" placeholder="/path/to/definition" /><FolderPicker OnFolderSelected="path => definitionFolderPath = path" /></div><small>Choose a folder to fill this field. Browsers hide its full local path, so replace the name with the server-visible path when needed.</small></div><label>Component
             <select @bind="componentToAdd">
                 <option value="">Select a component…</option>
                 @foreach (var component in availableComponents.Where(component => selectedComponents.All(selected => selected.Id != component.Id)))
@@ -66,31 +70,29 @@ else
                 }
             </select>
         </label>
-        <button @onclick="AddComponent">Add component</button>
+        <button class="button-quiet" type="button" @onclick="AddComponent">Add component</button></div>
 
-        <h3>Composition order</h3>
+        <section class="composition-editor"><h3>Composition order</h3>
         @if (selectedComponents.Count == 0)
         {
-            <p>No components selected.</p>
+            <p class="muted-copy">No components selected.</p>
         }
         else
         {
-            <ol>
+            <ol class="composition-list">
                 @for (var index = 0; index < selectedComponents.Count; index++)
                 {
                     var component = selectedComponents[index];
                     <li>
                         <strong>@component.Name</strong>
-                        <button @onclick="() => MoveComponent(index, -1)" disabled="@(index == 0)">Earlier</button>
-                        <button @onclick="() => MoveComponent(index, 1)" disabled="@(index == selectedComponents.Count - 1)">Later</button>
-                        <button @onclick="() => RemoveComponent(component.Id)">Remove</button>
+                        <button class="button-quiet" type="button" @onclick="() => MoveComponent(index, -1)" disabled="@(index == 0)">Earlier</button>
+                        <button class="button-quiet" type="button" @onclick="() => MoveComponent(index, 1)" disabled="@(index == selectedComponents.Count - 1)">Later</button>
+                        <button class="button-danger" type="button" @onclick="() => RemoveComponent(component.Id)">Remove</button>
                     </li>
                 }
             </ol>
         }
-        <button @onclick="SaveAsync">Save definition</button>
-        <button @onclick="DeleteDefinitionAsync">Delete definition</button>
-    </section>
+        </section><div class="modal-actions"><button class="button-danger" type="button" @onclick="DeleteDefinitionAsync">Delete definition</button><span class="modal-action-spacer"></span><button class="button-quiet" type="button" @onclick="CloseDefinitionEditor">Cancel</button><button class="button-primary" type="submit">Save definition</button></div></form></section></div>
 }
 
 @code {
@@ -108,6 +110,10 @@ else
     private string definitionFolderPath = string.Empty;
     private Guid? componentToAdd;
     private string? message;
+    private int messageVersion;
+    private bool isCreatingComponent;
+    private bool isCreatingDefinition;
+    private bool isEditingDefinition;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -136,22 +142,23 @@ else
             await AgentDefinitionService.CreateComponentAsync(newComponentName, newComponentConfig);
             newComponentName = string.Empty;
             newComponentConfig = string.Empty;
+            CloseComponentCreator();
             availableComponents = await AgentDefinitionService.GetComponentsAsync();
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
     private async Task CreateDefinitionAsync()
     {
         try
         {
-            var definition = await AgentDefinitionService.CreateAsync(BoardId, newDefinitionName, newDefinitionFolderPath);
+            await AgentDefinitionService.CreateAsync(BoardId, newDefinitionName, newDefinitionFolderPath);
             newDefinitionName = string.Empty;
             newDefinitionFolderPath = string.Empty;
+            CloseDefinitionCreator();
             await LoadAsync();
-            await SelectDefinitionAsync(definition.Id);
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
     private async Task SelectDefinitionAsync(Guid definitionId)
@@ -165,6 +172,7 @@ else
         definitionFolderPath = selectedDefinition.FolderPath;
         selectedComponents = selectedDefinition.Components.OrderBy(component => component.Order).Select(component => component.Component).ToList();
         componentToAdd = null;
+        isEditingDefinition = true;
     }
 
     private void AddComponent()
@@ -199,8 +207,9 @@ else
         {
             await AgentDefinitionService.SaveAsync(selectedDefinition.Id, definitionName, definitionFolderPath, selectedComponents.Select(component => component.Id).ToList());
             await LoadAsync();
+            CloseDefinitionEditor();
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
     private async Task DeleteDefinitionAsync()
@@ -214,8 +223,27 @@ else
             await AgentDefinitionService.DeleteAsync(selectedDefinition.Id);
             selectedDefinition = null;
             selectedComponents = [];
+            CloseDefinitionEditor();
             await LoadAsync();
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
+
+    private void OpenComponentCreator() => isCreatingComponent = true;
+
+    private void CloseComponentCreator() => isCreatingComponent = false;
+
+    private void OpenDefinitionCreator() => isCreatingDefinition = true;
+
+    private void CloseDefinitionCreator() => isCreatingDefinition = false;
+
+    private void CloseDefinitionEditor() => isEditingDefinition = false;
+
+    private void ShowMessage(string text)
+    {
+        message = text;
+        messageVersion++;
+    }
+
+    private void DismissMessage() => message = null;
 }

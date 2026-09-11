@@ -1,16 +1,29 @@
 .board-grid {
     display: grid;
-    gap: 1rem;
-    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-    margin-top: 1.5rem;
+    gap: .9rem;
+    grid-auto-columns: minmax(17rem, 1fr);
+    grid-auto-flow: column;
+    grid-template-rows: minmax(25rem, auto);
+    margin-top: 1.75rem;
+    overflow-x: auto;
+    padding-bottom: .5rem;
 }
 
 .column {
-    background: #f3f4f6;
-    border-radius: .5rem;
-    padding: .75rem;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: .8rem;
+    padding: .9rem;
 }
 
-.task-editor {
-    margin-top: 1.5rem;
+.column h2 {
+    font-size: .88rem;
+    letter-spacing: .04em;
+    margin: 0 0 .75rem;
+    text-transform: uppercase;
 }
+
+.column-heading { align-items: center; display: flex; gap: .5rem; justify-content: space-between; }
+.column-heading h2 { flex: 1; }
+.column-edit-button { background: transparent; border: 0; color: var(--muted); font-size: .76rem; font-weight: 600; padding: .15rem; text-transform: uppercase; }
+.column-edit-button:hover { color: var(--ink); text-decoration: underline; }

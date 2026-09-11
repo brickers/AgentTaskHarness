@@ -5,24 +5,59 @@
 
 <PageTitle>Boards</PageTitle>
 
-<h1>Boards</h1>
+<section class="page-intro">
+    <div>
+        <p class="eyebrow">Workspace</p>
+        <h1>Boards</h1>
+        <p>Set up a repository workspace, then shape the flow of work around it.</p>
+    </div>
+    <button class="button-primary" @onclick="OpenCreateDialog">New board</button>
+</section>
 
 @if (!string.IsNullOrWhiteSpace(message))
 {
-    <p class="message" role="alert">@message</p>
+    <div class="toast" role="alert" @key="messageVersion"><span>@message</span><button class="icon-button" type="button" aria-label="Dismiss notification" @onclick="DismissMessage">×</button></div>
 }
 
-<section class="form-panel">
-    <h2>New board</h2>
-    <label>Name <input @bind="newName" /></label>
-    <label>Repository path <input @bind="newRepoPath" /></label>
-    <label>Agent concurrency <input type="number" min="1" @bind="newConcurrencyLimit" /></label>
-    <button @onclick="CreateAsync">Create board</button>
-</section>
+@if (isCreating)
+{
+    <div class="modal-backdrop" role="presentation">
+        <section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-board-title">
+            <div class="modal-heading">
+                <div>
+                    <p class="eyebrow">New workspace</p>
+                    <h2 id="new-board-title">Create board</h2>
+                </div>
+                <button class="icon-button" type="button" aria-label="Close" @onclick="CloseCreateDialog">×</button>
+            </div>
+            <form class="form-panel" @onsubmit="CreateAsync" @onsubmit:preventDefault>
+                <label>Name <input @bind="newName" placeholder="Product workspace" /></label>
+                <div class="field-group">
+                    <label for="new-repository-path">Repository path</label>
+                    <div class="path-input">
+                        <input id="new-repository-path" @bind="newRepoPath" placeholder="/path/to/repository" />
+                        <FolderPicker OnFolderSelected="path => newRepoPath = path" />
+                    </div>
+                    <small>Choose a folder to fill this field. Browsers hide its full local path, so replace the name with the server-visible path when needed.</small>
+                </div>
+                <label>Agent concurrency <input type="number" min="1" @bind="newConcurrencyLimit" /></label>
+                <div class="modal-actions">
+                    <button class="button-quiet" type="button" @onclick="CloseCreateDialog">Cancel</button>
+                    <button class="button-primary" type="submit">Create board</button>
+                </div>
+            </form>
+        </section>
+    </div>
+}
 
 @if (boards.Count == 0)
 {
-    <p>Create a board to begin managing work.</p>
+    <section class="empty-state">
+        <p class="eyebrow">No boards yet</p>
+        <h2>Start with a repository</h2>
+        <p>Create a board to begin managing work.</p>
+        <button class="button-primary" @onclick="OpenCreateDialog">Create your first board</button>
+    </section>
 }
 else
 {
@@ -30,9 +65,14 @@ else
         @foreach (var board in boards)
         {
             <li>
-                <a href="@($"/boards/{board.Id}")">@board.Name</a>
-                <span>@board.RepoPath</span>
-                <button @onclick="() => DeleteAsync(board.Id)">Delete</button>
+                <div>
+                    <a href="@($"/boards/{board.Id}")">@board.Name</a>
+                    <span>@board.RepoPath</span>
+                </div>
+                <div class="board-list-actions">
+                    <a class="button-quiet" href="@($"/boards/{board.Id}")">Open</a>
+                    <button class="button-danger" @onclick="() => DeleteAsync(board.Id)">Delete</button>
+                </div>
             </li>
         }
     </ul>
@@ -43,20 +83,27 @@ else
     private string newName = string.Empty;
     private string newRepoPath = string.Empty;
     private int newConcurrencyLimit = 1;
+    private bool isCreating;
     private string? message;
+    private int messageVersion;
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private void OpenCreateDialog() => isCreating = true;
+
+    private void CloseCreateDialog() => isCreating = false;
 
     private async Task CreateAsync()
     {
         try
         {
             var board = await BoardService.CreateAsync(newName, newRepoPath, newConcurrencyLimit);
+            CloseCreateDialog();
             Navigation.NavigateTo($"/boards/{board.Id}");
         }
         catch (Exception exception)
         {
-            message = exception.Message;
+            ShowMessage(exception.Message);
         }
     }
 
@@ -69,9 +116,17 @@ else
         }
         catch (Exception exception)
         {
-            message = exception.Message;
+            ShowMessage(exception.Message);
         }
     }
 
     private async Task LoadAsync() => boards = await BoardService.GetAllAsync();
+
+    private void ShowMessage(string text)
+    {
+        message = text;
+        messageVersion++;
+    }
+
+    private void DismissMessage() => message = null;
 }

@@ -6,56 +6,50 @@
 
 <PageTitle>Column configuration</PageTitle>
 
-<p><a href="@($"/boards/{BoardId}")">Back to board</a></p>
-<h1>Column configuration</h1>
+<section class="page-intro compact-intro">
+    <div><p class="breadcrumb"><a href="@($"/boards/{BoardId}")">Board</a> <span>/</span> Settings</p><h1>Columns</h1><p>Shape the workflow and define where tasks can go next.</p></div>
+    <button class="button-primary" @onclick="OpenCreateDialog">New column</button>
+</section>
 
 @if (!string.IsNullOrWhiteSpace(message))
 {
-    <p class="message" role="alert">@message</p>
+    <div class="toast" role="alert" @key="messageVersion"><span>@message</span><button class="icon-button" type="button" aria-label="Dismiss notification" @onclick="DismissMessage">×</button></div>
 }
 
-<section class="form-panel">
-    <h2>New column</h2>
-    <label>Name <input @bind="newColumnName" /></label>
-    <button @onclick="CreateAsync">Add column</button>
-</section>
+<div class="column-config-grid">
+    @foreach (var column in columns)
+    {
+        <section class="column-config">
+            <div><p class="eyebrow">Position @(column.Order + 1)</p><h2>@column.Name</h2></div>
+            <div class="column-tags">
+                @if (column.IsBacklog) { <span class="tag">Backlog</span> }
+                @if (column.IsTerminal) { <span class="tag">Terminal</span> }
+                @if (column.AgentDefinition is not null) { <span class="tag">Agent assigned</span> }
+            </div>
+            <div class="column-config-actions">
+                @if (column.IsBacklog || column.IsTerminal)
+                {
+                    <span class="fixed-position">@(column.IsBacklog ? "Always first" : "Always last")</span>
+                }
+                else
+                {
+                    <button class="button-quiet" type="button" @onclick="() => MoveAsync(column.Id, -1)" disabled="@(column.Order <= 1)">Earlier</button>
+                    <button class="button-quiet" type="button" @onclick="() => MoveAsync(column.Id, 1)" disabled="@(column.Order >= columns.Count - 2)">Later</button>
+                }
+                <button class="button-primary" type="button" @onclick="() => StartEditing(column)">Edit</button>
+            </div>
+        </section>
+    }
+</div>
 
-@foreach (var column in columns)
+@if (isCreating)
 {
-    <section class="column-config">
-        <h2>@column.Name</h2>
-        <label>Name <input @bind="column.Name" /></label>
-        <label>Order <input type="number" min="0" @bind="column.Order" /></label>
-        <label><input type="checkbox" @bind="column.IsBacklog" disabled /> Backlog</label>
-        <label><input type="checkbox" @bind="column.IsTerminal" disabled /> Terminal</label>
-        @if (!column.IsBacklog && !column.IsTerminal)
-        {
-            <label>Agent definition
-                <select @bind="column.AgentDefinitionId">
-                    <option value="">No agent</option>
-                    @foreach (var definition in agentDefinitions)
-                    {
-                        <option value="@definition.Id">@definition.Name</option>
-                    }
-                </select>
-            </label>
-        }
-        <div>
-            <button @onclick="() => SaveAsync(column)">Save</button>
-            <button @onclick="() => MoveAsync(column.Id, -1)" disabled="@(column.Order == 0)">Earlier</button>
-            <button @onclick="() => MoveAsync(column.Id, 1)" disabled="@(column.Order == columns.Count - 1)">Later</button>
-            @if (!column.IsBacklog && !column.IsTerminal)
-            {
-                <button @onclick="() => DeleteAsync(column.Id)">Delete</button>
-            }
-        </div>
-        <h3>Allowed destinations</h3>
-        @foreach (var target in columns.Where(target => target.Id != column.Id))
-        {
-            var targetId = target.Id;
-            <label><input type="checkbox" checked="@IsAllowed(column.Id, targetId)" @onchange="args => SetAllowedAsync(column.Id, targetId, (bool)args.Value!)" /> @target.Name</label>
-        }
-    </section>
+    <div class="modal-backdrop" role="presentation"><section class="modal small-modal" role="dialog" aria-modal="true" aria-labelledby="new-column-title"><div class="modal-heading"><div><p class="eyebrow">Workflow</p><h2 id="new-column-title">New column</h2></div><button class="icon-button" type="button" aria-label="Close" @onclick="CloseCreateDialog">×</button></div><form class="form-panel" @onsubmit="CreateAsync" @onsubmit:preventDefault><label>Name <input @bind="newColumnName" placeholder="In review" /></label><div class="modal-actions"><button class="button-quiet" type="button" @onclick="CloseCreateDialog">Cancel</button><button class="button-primary" type="submit">Add column</button></div></form></section></div>
+}
+
+@if (editingColumn is not null)
+{
+    <div class="modal-backdrop" role="presentation"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-column-title"><div class="modal-heading"><div><p class="eyebrow">Workflow column</p><h2 id="edit-column-title">Edit @editingColumn.Name</h2></div><button class="icon-button" type="button" aria-label="Close" @onclick="CloseEditor">×</button></div><form @onsubmit="() => SaveAsync(editingColumn)" @onsubmit:preventDefault><div class="form-panel"><label>Name <input @bind="editingColumn.Name" /></label>@if (!editingColumn.IsBacklog && !editingColumn.IsTerminal) { <label>Agent definition <select @bind="editingColumn.AgentDefinitionId"><option value="">No agent</option>@foreach (var definition in agentDefinitions) { <option value="@definition.Id">@definition.Name</option> }</select></label> }</div><section class="transition-editor"><h3>Allowed destinations</h3><p>Tasks in this column can move to the selected destinations.</p>@foreach (var target in columns.Where(target => target.Id != editingColumn.Id)) { var targetId = target.Id; <label><input type="checkbox" checked="@IsAllowed(editingColumn.Id, targetId)" @onchange="args => SetAllowedAsync(editingColumn.Id, targetId, (bool)args.Value!)" /> @target.Name</label> }</section><div class="modal-actions">@if (!editingColumn.IsBacklog && !editingColumn.IsTerminal) { <button class="button-danger" type="button" @onclick="() => DeleteAsync(editingColumn.Id)">Delete column</button> }<span class="modal-action-spacer"></span><button class="button-quiet" type="button" @onclick="CloseEditor">Cancel</button><button class="button-primary" type="submit">Save changes</button></div></form></section></div>
 }
 
 @code {
@@ -66,6 +60,9 @@
     private readonly HashSet<(Guid From, Guid To)> allowedTransitions = [];
     private string newColumnName = string.Empty;
     private string? message;
+    private int messageVersion;
+    private Column? editingColumn;
+    private bool isCreating;
 
     protected override async Task OnParametersSetAsync() => await LoadAsync();
 
@@ -94,9 +91,10 @@
         {
             await ColumnService.CreateAsync(BoardId, newColumnName, columns.Count);
             newColumnName = string.Empty;
+            CloseCreateDialog();
             await LoadAsync();
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
     private async Task SaveAsync(Column column)
@@ -104,22 +102,23 @@
         try
         {
             await ColumnService.UpdateAsync(column.Id, column.Name, column.Order, column.IsBacklog, column.IsTerminal, column.AgentDefinitionId);
+            CloseEditor();
             await LoadAsync();
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
     private async Task MoveAsync(Guid columnId, int direction)
     {
         var index = columns.FindIndex(column => column.Id == columnId);
-        if (index < 0 || index + direction < 0 || index + direction >= columns.Count) return;
+        if (index < 0 || index + direction < 1 || index + direction >= columns.Count - 1 || columns[index].IsBacklog || columns[index].IsTerminal) return;
         (columns[index], columns[index + direction]) = (columns[index + direction], columns[index]);
         try
         {
             await ColumnService.ReorderAsync(BoardId, columns.Select(column => column.Id).ToList());
             await LoadAsync();
         }
-        catch (Exception exception) { message = exception.Message; await LoadAsync(); }
+        catch (Exception exception) { ShowMessage(exception.Message); await LoadAsync(); }
     }
 
     private async Task DeleteAsync(Guid columnId)
@@ -127,9 +126,10 @@
         try
         {
             await ColumnService.DeleteAsync(columnId);
+            CloseEditor();
             await LoadAsync();
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
     private bool IsAllowed(Guid fromColumnId, Guid toColumnId) => allowedTransitions.Contains((fromColumnId, toColumnId));
@@ -142,6 +142,22 @@
             else await ColumnService.RemoveAllowedTransitionAsync(fromColumnId, toColumnId);
             await LoadAsync();
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
+
+    private void StartEditing(Column column) => editingColumn = column;
+
+    private void CloseEditor() => editingColumn = null;
+
+    private void OpenCreateDialog() => isCreating = true;
+
+    private void CloseCreateDialog() => isCreating = false;
+
+    private void ShowMessage(string text)
+    {
+        message = text;
+        messageVersion++;
+    }
+
+    private void DismissMessage() => message = null;
 }

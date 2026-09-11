@@ -8,10 +8,35 @@ public class ColumnService(AppDbContext dbContext)
 {
 	public async Task<Column> CreateAsync(Guid boardId, string name, int order, bool isBacklog = false, bool isTerminal = false, Guid? agentDefinitionId = null, CancellationToken cancellationToken = default)
 	{
-		await ValidateAsync(boardId, name, order, isBacklog, isTerminal, agentDefinitionId, null, cancellationToken);
-		var column = new Column { BoardId = boardId, Name = name.Trim(), Order = order, IsBacklog = isBacklog, IsTerminal = isTerminal, AgentDefinitionId = agentDefinitionId };
+		await ValidateAsync(boardId, name, order, isBacklog, isTerminal, agentDefinitionId, null, cancellationToken, allowOrderCollision: !isBacklog && !isTerminal);
+		var boardColumns = await dbContext.Columns.Where(column => column.BoardId == boardId).OrderBy(column => column.Order).ToListAsync(cancellationToken);
+		if (isBacklog || isTerminal)
+		{
+			throw new InvalidOperationException("Only the board setup can create backlog and terminal columns.");
+		}
+
+		var terminal = boardColumns.SingleOrDefault(column => column.IsTerminal)
+			?? throw new InvalidOperationException("The board must have a terminal column.");
+		var insertionOrder = Math.Clamp(order, 1, terminal.Order);
+		var column = new Column { BoardId = boardId, Name = name.Trim(), Order = insertionOrder, IsBacklog = false, IsTerminal = false, AgentDefinitionId = agentDefinitionId };
+
+		await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+		foreach (var boardColumn in boardColumns)
+		{
+			boardColumn.Order = -boardColumn.Order - 1;
+		}
+		await dbContext.SaveChangesAsync(cancellationToken);
+
 		dbContext.Columns.Add(column);
 		await dbContext.SaveChangesAsync(cancellationToken);
+
+		foreach (var boardColumn in boardColumns)
+		{
+			var originalOrder = -boardColumn.Order - 1;
+			boardColumn.Order = originalOrder >= insertionOrder ? originalOrder + 1 : originalOrder;
+		}
+		await dbContext.SaveChangesAsync(cancellationToken);
+		await transaction.CommitAsync(cancellationToken);
 		return column;
 	}
 
@@ -21,6 +46,7 @@ public class ColumnService(AppDbContext dbContext)
 	public async Task<Column> UpdateAsync(Guid columnId, string name, int order, bool isBacklog, bool isTerminal, Guid? agentDefinitionId, CancellationToken cancellationToken = default)
 	{
 		var column = await FindColumnAsync(columnId, cancellationToken);
+		var boardColumns = await dbContext.Columns.Where(candidate => candidate.BoardId == column.BoardId).ToListAsync(cancellationToken);
 		if (column.IsBacklog && !isBacklog)
 		{
 			throw new InvalidOperationException("Every board must retain a backlog column.");
@@ -28,6 +54,14 @@ public class ColumnService(AppDbContext dbContext)
 		if (column.IsTerminal && !isTerminal)
 		{
 			throw new InvalidOperationException("Every board must retain a terminal column.");
+		}
+		if (column.IsBacklog && order != 0 || column.IsTerminal && order != boardColumns.Count - 1)
+		{
+			throw new InvalidOperationException("Backlog must remain first and Done must remain last.");
+		}
+		if (!column.IsBacklog && !column.IsTerminal && (order <= 0 || order >= boardColumns.Count - 1))
+		{
+			throw new InvalidOperationException("Workflow columns must remain between Backlog and Done.");
 		}
 		await ValidateAsync(column.BoardId, name, order, isBacklog, isTerminal, agentDefinitionId, columnId, cancellationToken);
 		column.Name = name.Trim();
@@ -45,6 +79,12 @@ public class ColumnService(AppDbContext dbContext)
 		if (boardColumns.Count != columnIds.Count || boardColumns.Select(column => column.Id).Except(columnIds).Any() || columnIds.Distinct().Count() != columnIds.Count)
 		{
 			throw new InvalidOperationException("The reordered columns must exactly match the board's columns.");
+		}
+		var backlog = boardColumns.Single(column => column.IsBacklog);
+		var terminal = boardColumns.Single(column => column.IsTerminal);
+		if (columnIds[0] != backlog.Id || columnIds[^1] != terminal.Id)
+		{
+			throw new InvalidOperationException("Backlog must remain first and Done must remain last.");
 		}
 
 		var positions = columnIds.Select((columnId, index) => new { columnId, index }).ToDictionary(item => item.columnId, item => item.index);
@@ -121,7 +161,7 @@ public class ColumnService(AppDbContext dbContext)
 		await dbContext.Columns.SingleOrDefaultAsync(column => column.Id == columnId, cancellationToken)
 		?? throw new KeyNotFoundException($"Column '{columnId}' was not found.");
 
-	private async Task ValidateAsync(Guid boardId, string name, int order, bool isBacklog, bool isTerminal, Guid? agentDefinitionId, Guid? currentColumnId, CancellationToken cancellationToken)
+	private async Task ValidateAsync(Guid boardId, string name, int order, bool isBacklog, bool isTerminal, Guid? agentDefinitionId, Guid? currentColumnId, CancellationToken cancellationToken, bool allowOrderCollision = false)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(name);
 		if (order < 0)
@@ -140,7 +180,7 @@ public class ColumnService(AppDbContext dbContext)
 		{
 			throw new KeyNotFoundException($"Board '{boardId}' was not found.");
 		}
-		if (await dbContext.Columns.AnyAsync(column => column.BoardId == boardId && column.Order == order && column.Id != currentColumnId, cancellationToken))
+		if (!allowOrderCollision && await dbContext.Columns.AnyAsync(column => column.BoardId == boardId && column.Order == order && column.Id != currentColumnId, cancellationToken))
 		{
 			throw new InvalidOperationException("Column order must be unique within a board.");
 		}

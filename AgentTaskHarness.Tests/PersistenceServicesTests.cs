@@ -113,16 +113,28 @@ public class PersistenceServicesTests : IAsyncLifetime
 	}
 
 	[Fact]
-	public async Task ReorderAsync_PersistsTheRequestedColumnOrder()
+	public async Task ReorderAsync_KeepsBacklogFirstAndDoneLast()
 	{
 		var board = await boards.CreateAsync("Harness", "/repos/harness", 1);
 		var boardColumns = await columns.GetForBoardAsync(board.Id);
 
-		await columns.ReorderAsync(board.Id, [boardColumns[1].Id, boardColumns[0].Id]);
+		await Assert.ThrowsAsync<InvalidOperationException>(() => columns.ReorderAsync(board.Id, [boardColumns[1].Id, boardColumns[0].Id]));
+	}
 
-		var reorderedColumns = await columns.GetForBoardAsync(board.Id);
-		Assert.True(reorderedColumns[0].IsTerminal);
-		Assert.True(reorderedColumns[1].IsBacklog);
+	[Fact]
+	public async Task ColumnOrderingAsync_ProtectsBacklogAndDonePositions()
+	{
+		var board = await boards.CreateAsync("Harness", "/repos/harness", 1);
+		var initialColumns = await columns.GetForBoardAsync(board.Id);
+		var working = await columns.CreateAsync(board.Id, "Working", initialColumns.Count);
+		var boardColumns = await columns.GetForBoardAsync(board.Id);
+
+		Assert.Collection(boardColumns,
+			column => Assert.True(column.IsBacklog),
+			column => Assert.Equal(working.Id, column.Id),
+			column => Assert.True(column.IsTerminal));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => columns.ReorderAsync(board.Id, [working.Id, boardColumns[0].Id, boardColumns[2].Id]));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => columns.UpdateAsync(boardColumns[0].Id, "Backlog", 1, true, false, null));
 	}
 
 	[Fact]

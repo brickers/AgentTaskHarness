@@ -4,6 +4,7 @@
 @inject TaskService TaskService
 @inject TaskDependencyService DependencyService
 @inject TaskTransitionOrchestrator TransitionOrchestrator
+@inject AgentDefinitionService AgentDefinitionService
 @inject NavigationManager Navigation
 
 <PageTitle>@(board?.Name ?? "Board")</PageTitle>
@@ -14,34 +15,29 @@
 }
 else
 {
-    <p><a href="/boards">All boards</a> · <a href="@($"/boards/{BoardId}/columns")">Configure columns</a> · <a href="@($"/boards/{BoardId}/agents")">Configure agents</a></p>
-    <h1>@board.Name</h1>
+    <section class="board-header">
+        <div>
+            <p class="breadcrumb"><a href="/boards">Boards</a> <span>/</span> @board.Name</p>
+            <h1>@board.Name</h1>
+        </div>
+        <div class="header-actions">
+            <a class="button-quiet" href="@($"/boards/{BoardId}/columns")">Columns</a>
+            <a class="button-quiet" href="@($"/boards/{BoardId}/agents")">Agents</a>
+            <button class="button-quiet" @onclick="OpenBoardEditor">Board settings</button>
+            <button class="button-primary" @onclick="OpenTaskCreator">New task</button>
+        </div>
+    </section>
 
     @if (!string.IsNullOrWhiteSpace(message))
     {
-        <p class="message" role="alert">@message</p>
+        <div class="toast" role="alert" @key="messageVersion"><span>@message</span><button class="icon-button" type="button" aria-label="Dismiss notification" @onclick="DismissMessage">×</button></div>
     }
-
-    <details class="form-panel">
-        <summary>Edit board</summary>
-        <label>Name <input @bind="boardName" /></label>
-        <label>Repository path <input @bind="repoPath" /></label>
-        <label>Agent concurrency <input type="number" min="1" @bind="concurrencyLimit" /></label>
-        <button @onclick="SaveBoardAsync">Save board</button>
-    </details>
-
-    <section class="form-panel">
-        <h2>New task</h2>
-        <label>Title <input @bind="newTaskTitle" /></label>
-        <label>Description <textarea @bind="newTaskDescription"></textarea></label>
-        <button @onclick="CreateTaskAsync">Create in backlog</button>
-    </section>
 
     <div class="board-grid">
         @foreach (var column in columns)
         {
             <section class="column">
-                <h2>@column.Name</h2>
+                <div class="column-heading"><h2>@column.Name</h2><button class="column-edit-button" type="button" @onclick="() => StartEditingColumnAsync(column)">Edit</button></div>
                 @foreach (var task in tasks.Where(task => task.ColumnId == column.Id))
                 {
                     <TaskCard TaskItem="task" TargetColumns="GetTargets(task.ColumnId)"
@@ -57,41 +53,111 @@ else
 
     @if (editingTask is not null)
     {
-        <section class="form-panel task-editor">
-            <h2>Edit @editingTask.Title</h2>
-            <label>Title <input @bind="editTaskTitle" /></label>
-            <label>Description <textarea @bind="editTaskDescription"></textarea></label>
-            <div><button @onclick="SaveTaskAsync">Save task</button> <button @onclick="CloseEditor">Close</button></div>
+        <div class="modal-backdrop" role="presentation">
+        <section class="modal task-editor" role="dialog" aria-modal="true" aria-labelledby="edit-task-title">
+            <div class="modal-heading">
+                <div>
+                    <p class="eyebrow">Task details</p>
+                    <h2 id="edit-task-title">Edit task</h2>
+                </div>
+                <button class="icon-button" type="button" aria-label="Close" @onclick="CloseEditor">×</button>
+            </div>
+            <form @onsubmit="SaveTaskAsync" @onsubmit:preventDefault>
+                <div class="form-panel">
+                    <label>Title <input @bind="editTaskTitle" /></label>
+                    <label>Description <textarea @bind="editTaskDescription"></textarea></label>
+                </div>
 
-            <h3>Dependencies</h3>
-            @if (editingTask.Status != AgentTaskHarness.Domain.Enums.TaskStatus.Backlog)
-            {
-                <p>Dependencies are locked until this task returns to the backlog.</p>
-            }
-            else
-            {
-                <select @bind="dependencyToAdd">
-                    <option value="">Add dependency…</option>
-                    @foreach (var candidate in tasks.Where(task => task.Id != editingTask.Id && !editingDependencies.Any(dependency => dependency.DependsOnTaskId == task.Id)))
-                    {
-                        <option value="@candidate.Id">@candidate.Title</option>
-                    }
-                </select>
-                <button @onclick="AddDependencyAsync" disabled="@(dependencyToAdd is null)">Add</button>
-            }
-            <ul>
-                @foreach (var dependency in editingDependencies)
+                <h3>Dependencies</h3>
+                @if (editingTask.Status != AgentTaskHarness.Domain.Enums.TaskStatus.Backlog)
                 {
-                    <li>
-                        @(tasks.SingleOrDefault(task => task.Id == dependency.DependsOnTaskId)?.Title ?? "Deleted task")
-                        @if (editingTask.Status == AgentTaskHarness.Domain.Enums.TaskStatus.Backlog)
-                        {
-                            <button @onclick="() => RemoveDependencyAsync(dependency.DependsOnTaskId)">Remove</button>
-                        }
-                    </li>
+                    <p>Dependencies are locked until this task returns to the backlog.</p>
                 }
-            </ul>
+                else
+                {
+                    <select @bind="dependencyToAdd">
+                        <option value="">Add dependency…</option>
+                        @foreach (var candidate in tasks.Where(task => task.Id != editingTask.Id && !editingDependencies.Any(dependency => dependency.DependsOnTaskId == task.Id)))
+                        {
+                            <option value="@candidate.Id">@candidate.Title</option>
+                        }
+                    </select>
+                    <button class="button-quiet" type="button" @onclick="AddDependencyAsync" disabled="@(dependencyToAdd is null)">Add</button>
+                }
+                <ul>
+                    @foreach (var dependency in editingDependencies)
+                    {
+                        <li>
+                            @(tasks.SingleOrDefault(task => task.Id == dependency.DependsOnTaskId)?.Title ?? "Deleted task")
+                            @if (editingTask.Status == AgentTaskHarness.Domain.Enums.TaskStatus.Backlog)
+                            {
+                                <button class="button-quiet" type="button" @onclick="() => RemoveDependencyAsync(dependency.DependsOnTaskId)">Remove</button>
+                            }
+                        </li>
+                    }
+                </ul>
+                <div class="modal-actions"><button class="button-quiet" type="button" @onclick="CloseEditor">Cancel</button><button class="button-primary" type="submit">Save task</button></div>
+            </form>
         </section>
+        </div>
+    }
+
+    @if (isEditingBoard)
+    {
+        <div class="modal-backdrop" role="presentation">
+            <section class="modal" role="dialog" aria-modal="true" aria-labelledby="board-settings-title">
+                <div class="modal-heading">
+                    <div><p class="eyebrow">Workspace settings</p><h2 id="board-settings-title">Edit board</h2></div>
+                    <button class="icon-button" type="button" aria-label="Close" @onclick="CloseBoardEditor">×</button>
+                </div>
+                <form class="form-panel" @onsubmit="SaveBoardAsync" @onsubmit:preventDefault>
+                    <label>Name <input @bind="boardName" /></label>
+                    <div class="field-group">
+                        <label for="repository-path">Repository path</label>
+                        <div class="path-input">
+                            <input id="repository-path" @bind="repoPath" placeholder="/path/to/repository" />
+                            <FolderPicker OnFolderSelected="path => repoPath = path" />
+                        </div>
+                        <small>Choose a folder to fill this field. Browsers hide its full local path, so replace the name with the server-visible path when needed.</small>
+                    </div>
+                    <label>Agent concurrency <input type="number" min="1" @bind="concurrencyLimit" /></label>
+                    <div class="modal-actions"><button class="button-quiet" type="button" @onclick="CloseBoardEditor">Cancel</button><button class="button-primary" type="submit">Save changes</button></div>
+                </form>
+            </section>
+        </div>
+    }
+
+    @if (isCreatingTask)
+    {
+        <div class="modal-backdrop" role="presentation">
+            <section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-task-title">
+                <div class="modal-heading">
+                    <div><p class="eyebrow">Backlog</p><h2 id="new-task-title">Create task</h2></div>
+                    <button class="icon-button" type="button" aria-label="Close" @onclick="CloseTaskCreator">×</button>
+                </div>
+                <form class="form-panel" @onsubmit="CreateTaskAsync" @onsubmit:preventDefault><label>Title <input @bind="newTaskTitle" placeholder="What needs to be done?" /></label><label>Description <textarea @bind="newTaskDescription" placeholder="Add useful context for the agent."></textarea></label><div class="modal-actions"><button class="button-quiet" type="button" @onclick="CloseTaskCreator">Cancel</button><button class="button-primary" type="submit">Create task</button></div></form>
+            </section>
+        </div>
+    }
+
+    @if (editingColumn is not null)
+    {
+        <div class="modal-backdrop" role="presentation">
+            <section class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-board-column-title">
+                <div class="modal-heading"><div><p class="eyebrow">Workflow column</p><h2 id="edit-board-column-title">Edit @editingColumn.Name</h2></div><button class="icon-button" type="button" aria-label="Close" @onclick="CloseColumnEditor">×</button></div>
+                <form @onsubmit="SaveColumnAsync" @onsubmit:preventDefault>
+                    <div class="form-panel">
+                        <label>Name <input @bind="editingColumn.Name" /></label>
+                        @if (!editingColumn.IsBacklog && !editingColumn.IsTerminal)
+                        {
+                            <label>Agent definition <select @bind="editingColumn.AgentDefinitionId"><option value="">No agent</option>@foreach (var definition in agentDefinitions) { <option value="@definition.Id">@definition.Name</option> }</select></label>
+                        }
+                    </div>
+                    <section class="transition-editor"><h3>Allowed destinations</h3><p>Tasks in this column can move to the selected destinations.</p>@foreach (var target in columns.Where(target => target.Id != editingColumn.Id)) { var targetId = target.Id; <label><input type="checkbox" checked="@GetTargets(editingColumn.Id).Any(allowed => allowed.Id == targetId)" @onchange="args => SetColumnTransitionAsync(editingColumn.Id, targetId, (bool)args.Value!)" /> @target.Name</label> }</section>
+                    <div class="modal-actions"><button class="button-quiet" type="button" @onclick="CloseColumnEditor">Cancel</button><button class="button-primary" type="submit">Save changes</button></div>
+                </form>
+            </section>
+        </div>
     }
 }
 
@@ -113,6 +179,11 @@ else
     private string editTaskDescription = string.Empty;
     private Guid? dependencyToAdd;
     private string? message;
+    private int messageVersion;
+    private bool isEditingBoard;
+    private bool isCreatingTask;
+    private Column? editingColumn;
+    private List<AgentDefinition> agentDefinitions = [];
 
     protected override async Task OnParametersSetAsync() => await LoadAsync();
 
@@ -144,9 +215,10 @@ else
         try
         {
             await BoardService.UpdateAsync(BoardId, boardName, repoPath, concurrencyLimit);
+            CloseBoardEditor();
             await LoadAsync();
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
     private async Task CreateTaskAsync()
@@ -156,9 +228,10 @@ else
             var backlog = columns.Single(column => column.IsBacklog);
             await TaskService.CreateAsync(BoardId, backlog.Id, newTaskTitle, newTaskDescription);
             newTaskTitle = newTaskDescription = string.Empty;
+            CloseTaskCreator();
             await LoadAsync();
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
     private async Task MoveTaskAsync(Guid taskId, Guid targetColumnId)
@@ -166,10 +239,10 @@ else
         try
         {
             await TransitionOrchestrator.MoveTaskAsync(taskId, targetColumnId);
-            message = null;
+            DismissMessage();
             await LoadAsync();
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
     private async Task MoveTaskAndDiscardWorktreeAsync(Guid taskId, Guid targetColumnId)
@@ -177,10 +250,10 @@ else
         try
         {
             await TransitionOrchestrator.MoveTaskAndDiscardWorktreeAsync(taskId, targetColumnId);
-            message = null;
+            DismissMessage();
             await LoadAsync();
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
     private async Task ResumeMergeAsync(Guid taskId)
@@ -188,10 +261,10 @@ else
         try
         {
             await TransitionOrchestrator.ResumeMergeAsync(taskId);
-            message = null;
+            DismissMessage();
             await LoadAsync();
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
     private async Task DiscardUncommittedChangesAsync(Guid taskId)
@@ -199,10 +272,10 @@ else
         try
         {
             await TransitionOrchestrator.DiscardUncommittedChangesAsync(taskId);
-            message = "Uncommitted changes were discarded.";
+            ShowMessage("Uncommitted changes were discarded.");
             await LoadAsync();
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
     private async Task DeleteTaskAsync(Guid taskId)
@@ -213,7 +286,7 @@ else
             if (editingTask?.Id == taskId) CloseEditor();
             await LoadAsync();
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
     private async Task StartEditingAsync(Guid taskId)
@@ -232,10 +305,10 @@ else
         try
         {
             await TaskService.UpdateAsync(editingTask.Id, editTaskTitle, editTaskDescription);
-            await StartEditingAsync(editingTask.Id);
+            CloseEditor();
             await LoadAsync();
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
     private async Task AddDependencyAsync()
@@ -246,7 +319,7 @@ else
             await DependencyService.AddAsync(editingTask.Id, dependencyId);
             await StartEditingAsync(editingTask.Id);
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
     private async Task RemoveDependencyAsync(Guid dependencyId)
@@ -257,7 +330,7 @@ else
             await DependencyService.RemoveAsync(editingTask.Id, dependencyId);
             await StartEditingAsync(editingTask.Id);
         }
-        catch (Exception exception) { message = exception.Message; }
+        catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
     private void CloseEditor()
@@ -265,4 +338,51 @@ else
         editingTask = null;
         editingDependencies = [];
     }
+
+    private void OpenBoardEditor() => isEditingBoard = true;
+
+    private void CloseBoardEditor() => isEditingBoard = false;
+
+    private void OpenTaskCreator() => isCreatingTask = true;
+
+    private void CloseTaskCreator() => isCreatingTask = false;
+
+    private async Task StartEditingColumnAsync(Column column)
+    {
+        editingColumn = column;
+        agentDefinitions = await AgentDefinitionService.GetForBoardAsync(BoardId);
+    }
+
+    private async Task SaveColumnAsync()
+    {
+        if (editingColumn is null) return;
+        try
+        {
+            await ColumnService.UpdateAsync(editingColumn.Id, editingColumn.Name, editingColumn.Order, editingColumn.IsBacklog, editingColumn.IsTerminal, editingColumn.AgentDefinitionId);
+            CloseColumnEditor();
+            await LoadAsync();
+        }
+        catch (Exception exception) { ShowMessage(exception.Message); }
+    }
+
+    private async Task SetColumnTransitionAsync(Guid fromColumnId, Guid toColumnId, bool allowed)
+    {
+        try
+        {
+            if (allowed) await ColumnService.AddAllowedTransitionAsync(fromColumnId, toColumnId);
+            else await ColumnService.RemoveAllowedTransitionAsync(fromColumnId, toColumnId);
+            await LoadAsync();
+        }
+        catch (Exception exception) { ShowMessage(exception.Message); }
+    }
+
+    private void CloseColumnEditor() => editingColumn = null;
+
+    private void ShowMessage(string text)
+    {
+        message = text;
+        messageVersion++;
+    }
+
+    private void DismissMessage() => message = null;
 }

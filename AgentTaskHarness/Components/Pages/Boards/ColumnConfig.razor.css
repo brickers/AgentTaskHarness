@@ -1,13 +1,27 @@
-.column-config {
-    border: 1px solid #d1d5db;
-    border-radius: .5rem;
+.column-config-grid {
     display: grid;
-    gap: .6rem;
-    margin: 1rem 0;
-    max-width: 38rem;
+    gap: .85rem;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+
+.column-config {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: .8rem;
+    display: grid;
+    gap: .85rem;
     padding: 1rem;
 }
 
 .column-config h2, .column-config h3 {
     margin: 0;
 }
+
+.column-config h2 { font-size: 1.1rem; }
+
+.column-config-actions, .column-tags { display: flex; flex-wrap: wrap; gap: .5rem; }
+.fixed-position { align-self: center; color: var(--muted); font-size: .82rem; font-weight: 600; }
+
+.transition-editor { display: grid; gap: .55rem; margin-top: 1.25rem; }
+.transition-editor h3, .transition-editor p { margin: 0; }
+.transition-editor p { color: var(--muted); font-size: .9rem; }

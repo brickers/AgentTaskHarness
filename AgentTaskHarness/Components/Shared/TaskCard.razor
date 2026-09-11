@@ -4,7 +4,6 @@
     {
         <p>@TaskItem.Description</p>
     }
-    <small>@TaskItem.Status</small>
     @if (TaskItem.MergeConflictPending)
     {
         <p class="message">Merge conflict needs resolution.</p>
@@ -21,17 +20,17 @@
         {
             <label><input type="checkbox" @bind="discardWorktree" /> Discard worktree instead of pausing it</label>
         }
-        <button @onclick="MoveAsync" disabled="@(targetColumnId is null)">Move</button>
+        <button class="button-primary" @onclick="MoveAsync" disabled="@(targetColumnId is null)">Move</button>
         @if (TaskItem.MergeConflictPending)
         {
-            <button @onclick="() => OnResumeMerge.InvokeAsync()">Resume merge</button>
+            <button class="button-quiet" @onclick="() => OnResumeMerge.InvokeAsync()">Resume merge</button>
         }
         @if (!string.IsNullOrWhiteSpace(TaskItem.WorktreePath))
         {
-            <button @onclick="() => OnDiscardUncommittedChanges.InvokeAsync()">Discard uncommitted changes</button>
+            <button class="button-quiet" @onclick="() => OnDiscardUncommittedChanges.InvokeAsync()">Discard changes</button>
         }
-        <button @onclick="() => OnEdit.InvokeAsync(TaskItem.Id)">Edit</button>
-        <button @onclick="() => OnDelete.InvokeAsync(TaskItem.Id)">Delete</button>
+        <button class="button-quiet" @onclick="() => OnEdit.InvokeAsync(TaskItem.Id)">Edit</button>
+        <button class="button-danger" @onclick="() => OnDelete.InvokeAsync(TaskItem.Id)">Delete</button>
     </div>
 </article>
 

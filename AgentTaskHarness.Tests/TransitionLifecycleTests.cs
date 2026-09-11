@@ -107,7 +107,6 @@ public class TransitionLifecycleTests : IAsyncLifetime
 		var boardColumns = await columns.GetForBoardAsync(board.Id);
 		var backlog = boardColumns.Single(column => column.IsBacklog);
 		var done = boardColumns.Single(column => column.IsTerminal);
-		await columns.UpdateAsync(done.Id, "Done", 2, false, true, null);
 		var working = await columns.CreateAsync(board.Id, "Working", 1);
 		await columns.AddAllowedTransitionAsync(backlog.Id, working.Id);
 		await columns.AddAllowedTransitionAsync(working.Id, done.Id);
