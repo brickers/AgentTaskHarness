@@ -1,0 +1,30 @@
+.form-panel {
+    display: grid;
+    gap: .75rem;
+    max-width: 34rem;
+}
+
+.form-panel label {
+    display: grid;
+    gap: .25rem;
+}
+
+.board-list {
+    list-style: none;
+    max-width: 48rem;
+    padding: 0;
+}
+
+.board-list li {
+    align-items: center;
+    border-bottom: 1px solid #d1d5db;
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    padding: .75rem 0;
+}
+
+.board-list span {
+    color: #4b5563;
+    flex: 1;
+}

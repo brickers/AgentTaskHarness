@@ -1,0 +1,232 @@
+@page "/boards/{BoardId:guid}"
+@inject BoardService BoardService
+@inject ColumnService ColumnService
+@inject TaskService TaskService
+@inject TaskDependencyService DependencyService
+@inject TaskTransitionOrchestrator TransitionOrchestrator
+@inject NavigationManager Navigation
+
+<PageTitle>@(board?.Name ?? "Board")</PageTitle>
+
+@if (board is null)
+{
+    <p>Loading board…</p>
+}
+else
+{
+    <p><a href="/boards">All boards</a> · <a href="@($"/boards/{BoardId}/columns")">Configure columns</a></p>
+    <h1>@board.Name</h1>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <p class="message" role="alert">@message</p>
+    }
+
+    <details class="form-panel">
+        <summary>Edit board</summary>
+        <label>Name <input @bind="boardName" /></label>
+        <label>Repository path <input @bind="repoPath" /></label>
+        <label>Agent concurrency <input type="number" min="1" @bind="concurrencyLimit" /></label>
+        <button @onclick="SaveBoardAsync">Save board</button>
+    </details>
+
+    <section class="form-panel">
+        <h2>New task</h2>
+        <label>Title <input @bind="newTaskTitle" /></label>
+        <label>Description <textarea @bind="newTaskDescription"></textarea></label>
+        <button @onclick="CreateTaskAsync">Create in backlog</button>
+    </section>
+
+    <div class="board-grid">
+        @foreach (var column in columns)
+        {
+            <section class="column">
+                <h2>@column.Name</h2>
+                @foreach (var task in tasks.Where(task => task.ColumnId == column.Id))
+                {
+                    <TaskCard TaskItem="task" TargetColumns="GetTargets(task.ColumnId)"
+                              OnMove="targetColumnId => MoveTaskAsync(task.Id, targetColumnId)"
+                              OnEdit="StartEditingAsync" OnDelete="DeleteTaskAsync" />
+                }
+            </section>
+        }
+    </div>
+
+    @if (editingTask is not null)
+    {
+        <section class="form-panel task-editor">
+            <h2>Edit @editingTask.Title</h2>
+            <label>Title <input @bind="editTaskTitle" /></label>
+            <label>Description <textarea @bind="editTaskDescription"></textarea></label>
+            <div><button @onclick="SaveTaskAsync">Save task</button> <button @onclick="CloseEditor">Close</button></div>
+
+            <h3>Dependencies</h3>
+            @if (editingTask.Status != AgentTaskHarness.Domain.Enums.TaskStatus.Backlog)
+            {
+                <p>Dependencies are locked until this task returns to the backlog.</p>
+            }
+            else
+            {
+                <select @bind="dependencyToAdd">
+                    <option value="">Add dependency…</option>
+                    @foreach (var candidate in tasks.Where(task => task.Id != editingTask.Id && !editingDependencies.Any(dependency => dependency.DependsOnTaskId == task.Id)))
+                    {
+                        <option value="@candidate.Id">@candidate.Title</option>
+                    }
+                </select>
+                <button @onclick="AddDependencyAsync" disabled="@(dependencyToAdd is null)">Add</button>
+            }
+            <ul>
+                @foreach (var dependency in editingDependencies)
+                {
+                    <li>
+                        @(tasks.SingleOrDefault(task => task.Id == dependency.DependsOnTaskId)?.Title ?? "Deleted task")
+                        @if (editingTask.Status == AgentTaskHarness.Domain.Enums.TaskStatus.Backlog)
+                        {
+                            <button @onclick="() => RemoveDependencyAsync(dependency.DependsOnTaskId)">Remove</button>
+                        }
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+}
+
+@code {
+    [Parameter] public Guid BoardId { get; set; }
+
+    private Board? board;
+    private List<Column> columns = [];
+    private List<TaskItem> tasks = [];
+    private readonly Dictionary<Guid, List<Column>> allowedTargets = [];
+    private string boardName = string.Empty;
+    private string repoPath = string.Empty;
+    private int concurrencyLimit;
+    private string newTaskTitle = string.Empty;
+    private string newTaskDescription = string.Empty;
+    private TaskItem? editingTask;
+    private List<TaskDependency> editingDependencies = [];
+    private string editTaskTitle = string.Empty;
+    private string editTaskDescription = string.Empty;
+    private Guid? dependencyToAdd;
+    private string? message;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        board = await BoardService.GetByIdAsync(BoardId);
+        if (board is null)
+        {
+            Navigation.NavigateTo("/boards");
+            return;
+        }
+
+        boardName = board.Name;
+        repoPath = board.RepoPath;
+        concurrencyLimit = board.ConcurrencyLimit;
+        columns = await ColumnService.GetForBoardAsync(BoardId);
+        tasks = await TaskService.GetForBoardAsync(BoardId);
+        allowedTargets.Clear();
+        foreach (var column in columns)
+        {
+            allowedTargets[column.Id] = await ColumnService.GetAllowedTargetsAsync(column.Id);
+        }
+    }
+
+    private IReadOnlyList<Column> GetTargets(Guid columnId) => allowedTargets.GetValueOrDefault(columnId, []);
+
+    private async Task SaveBoardAsync()
+    {
+        try
+        {
+            await BoardService.UpdateAsync(BoardId, boardName, repoPath, concurrencyLimit);
+            await LoadAsync();
+        }
+        catch (Exception exception) { message = exception.Message; }
+    }
+
+    private async Task CreateTaskAsync()
+    {
+        try
+        {
+            var backlog = columns.Single(column => column.IsBacklog);
+            await TaskService.CreateAsync(BoardId, backlog.Id, newTaskTitle, newTaskDescription);
+            newTaskTitle = newTaskDescription = string.Empty;
+            await LoadAsync();
+        }
+        catch (Exception exception) { message = exception.Message; }
+    }
+
+    private async Task MoveTaskAsync(Guid taskId, Guid targetColumnId)
+    {
+        try
+        {
+            await TransitionOrchestrator.MoveTaskAsync(taskId, targetColumnId);
+            message = null;
+            await LoadAsync();
+        }
+        catch (Exception exception) { message = exception.Message; }
+    }
+
+    private async Task DeleteTaskAsync(Guid taskId)
+    {
+        try
+        {
+            await TaskService.DeleteAsync(taskId);
+            if (editingTask?.Id == taskId) CloseEditor();
+            await LoadAsync();
+        }
+        catch (Exception exception) { message = exception.Message; }
+    }
+
+    private async Task StartEditingAsync(Guid taskId)
+    {
+        editingTask = await TaskService.GetByIdAsync(taskId);
+        if (editingTask is null) return;
+        editTaskTitle = editingTask.Title;
+        editTaskDescription = editingTask.Description;
+        editingDependencies = await DependencyService.GetForTaskAsync(taskId);
+        dependencyToAdd = null;
+    }
+
+    private async Task SaveTaskAsync()
+    {
+        if (editingTask is null) return;
+        try
+        {
+            await TaskService.UpdateAsync(editingTask.Id, editTaskTitle, editTaskDescription);
+            await StartEditingAsync(editingTask.Id);
+            await LoadAsync();
+        }
+        catch (Exception exception) { message = exception.Message; }
+    }
+
+    private async Task AddDependencyAsync()
+    {
+        if (editingTask is null || dependencyToAdd is not Guid dependencyId) return;
+        try
+        {
+            await DependencyService.AddAsync(editingTask.Id, dependencyId);
+            await StartEditingAsync(editingTask.Id);
+        }
+        catch (Exception exception) { message = exception.Message; }
+    }
+
+    private async Task RemoveDependencyAsync(Guid dependencyId)
+    {
+        if (editingTask is null) return;
+        try
+        {
+            await DependencyService.RemoveAsync(editingTask.Id, dependencyId);
+            await StartEditingAsync(editingTask.Id);
+        }
+        catch (Exception exception) { message = exception.Message; }
+    }
+
+    private void CloseEditor()
+    {
+        editingTask = null;
+        editingDependencies = [];
+    }
+}

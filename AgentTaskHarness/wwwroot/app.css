@@ -36,3 +36,29 @@ h1:focus {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
 }
+body {
+    color: #1f2937;
+    font-family: system-ui, sans-serif;
+    margin: 0 auto;
+    max-width: 1200px;
+    padding: 1.5rem;
+}
+
+header {
+    margin-bottom: 1.5rem;
+}
+
+button, input, select, textarea {
+    font: inherit;
+}
+
+button {
+    cursor: pointer;
+}
+
+.message {
+    background: #fef3c7;
+    border: 1px solid #f59e0b;
+    border-radius: .35rem;
+    padding: .75rem;
+}

@@ -1,0 +1,16 @@
+.board-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    margin-top: 1.5rem;
+}
+
+.column {
+    background: #f3f4f6;
+    border-radius: .5rem;
+    padding: .75rem;
+}
+
+.task-editor {
+    margin-top: 1.5rem;
+}

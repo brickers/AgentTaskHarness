@@ -1,0 +1,77 @@
+@page "/"
+@page "/boards"
+@inject BoardService BoardService
+@inject NavigationManager Navigation
+
+<PageTitle>Boards</PageTitle>
+
+<h1>Boards</h1>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <p class="message" role="alert">@message</p>
+}
+
+<section class="form-panel">
+    <h2>New board</h2>
+    <label>Name <input @bind="newName" /></label>
+    <label>Repository path <input @bind="newRepoPath" /></label>
+    <label>Agent concurrency <input type="number" min="1" @bind="newConcurrencyLimit" /></label>
+    <button @onclick="CreateAsync">Create board</button>
+</section>
+
+@if (boards.Count == 0)
+{
+    <p>Create a board to begin managing work.</p>
+}
+else
+{
+    <ul class="board-list">
+        @foreach (var board in boards)
+        {
+            <li>
+                <a href="@($"/boards/{board.Id}")">@board.Name</a>
+                <span>@board.RepoPath</span>
+                <button @onclick="() => DeleteAsync(board.Id)">Delete</button>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    private List<Board> boards = [];
+    private string newName = string.Empty;
+    private string newRepoPath = string.Empty;
+    private int newConcurrencyLimit = 1;
+    private string? message;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task CreateAsync()
+    {
+        try
+        {
+            var board = await BoardService.CreateAsync(newName, newRepoPath, newConcurrencyLimit);
+            Navigation.NavigateTo($"/boards/{board.Id}");
+        }
+        catch (Exception exception)
+        {
+            message = exception.Message;
+        }
+    }
+
+    private async Task DeleteAsync(Guid boardId)
+    {
+        try
+        {
+            await BoardService.DeleteAsync(boardId);
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            message = exception.Message;
+        }
+    }
+
+    private async Task LoadAsync() => boards = await BoardService.GetAllAsync();
+}

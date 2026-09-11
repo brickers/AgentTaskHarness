@@ -1,8 +1,11 @@
 using AgentTaskHarness.Components;
 using AgentTaskHarness.Application.Agents;
+using AgentTaskHarness.Application.Abstractions;
 using AgentTaskHarness.Application.Boards;
 using AgentTaskHarness.Application.Columns;
 using AgentTaskHarness.Application.Tasks;
+using AgentTaskHarness.Infrastructure.Agents;
+using AgentTaskHarness.Infrastructure.Git;
 using AgentTaskHarness.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,7 +21,10 @@ builder.Services.AddScoped<BoardService>();
 builder.Services.AddScoped<ColumnService>();
 builder.Services.AddScoped<TaskService>();
 builder.Services.AddScoped<TaskDependencyService>();
+builder.Services.AddScoped<TaskTransitionOrchestrator>();
 builder.Services.AddScoped<AgentDefinitionService>();
+builder.Services.AddSingleton<IGitWorktreeService, NoOpGitWorktreeService>();
+builder.Services.AddSingleton<IAgentScheduler, NoOpAgentScheduler>();
 
 var app = builder.Build();
 

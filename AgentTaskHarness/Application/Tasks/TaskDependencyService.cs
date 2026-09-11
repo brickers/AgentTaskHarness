@@ -13,6 +13,7 @@ public class TaskDependencyService(AppDbContext dbContext)
 			throw new InvalidOperationException("A task cannot depend on itself.");
 		}
 		var task = await FindTaskAsync(taskId, cancellationToken);
+		EnsureDependenciesAreEditable(task);
 		var dependency = await FindTaskAsync(dependsOnTaskId, cancellationToken);
 		if (task.BoardId != dependency.BoardId)
 		{
@@ -29,6 +30,8 @@ public class TaskDependencyService(AppDbContext dbContext)
 
 	public async Task RemoveAsync(Guid taskId, Guid dependsOnTaskId, CancellationToken cancellationToken = default)
 	{
+		var task = await FindTaskAsync(taskId, cancellationToken);
+		EnsureDependenciesAreEditable(task);
 		var dependency = await dbContext.TaskDependencies.SingleOrDefaultAsync(item => item.TaskId == taskId && item.DependsOnTaskId == dependsOnTaskId, cancellationToken);
 		if (dependency is null)
 		{
@@ -44,4 +47,12 @@ public class TaskDependencyService(AppDbContext dbContext)
 	private async Task<TaskItem> FindTaskAsync(Guid taskId, CancellationToken cancellationToken) =>
 		await dbContext.Tasks.SingleOrDefaultAsync(task => task.Id == taskId, cancellationToken)
 		?? throw new KeyNotFoundException($"Task '{taskId}' was not found.");
+
+	private static void EnsureDependenciesAreEditable(TaskItem task)
+	{
+		if (task.Status != Domain.Enums.TaskStatus.Backlog)
+		{
+			throw new InvalidOperationException("Task dependencies can only be changed while the task is in the backlog.");
+		}
+	}
 }

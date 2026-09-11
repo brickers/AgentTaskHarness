@@ -1,0 +1,13 @@
+.column-config {
+    border: 1px solid #d1d5db;
+    border-radius: .5rem;
+    display: grid;
+    gap: .6rem;
+    margin: 1rem 0;
+    max-width: 38rem;
+    padding: 1rem;
+}
+
+.column-config h2, .column-config h3 {
+    margin: 0;
+}

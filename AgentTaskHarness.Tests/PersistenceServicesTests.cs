@@ -68,6 +68,25 @@ public class PersistenceServicesTests : IAsyncLifetime
 	}
 
 	[Fact]
+	public async Task GetForBoardAsync_OrdersTasksByCreationTimeWithSqlite()
+	{
+		var board = await boards.CreateAsync("Harness", "/repos/harness", 1);
+		var backlog = (await columns.GetForBoardAsync(board.Id)).Single(column => column.IsBacklog);
+		var later = await tasks.CreateAsync(board.Id, backlog.Id, "Later", "");
+		var earlier = await tasks.CreateAsync(board.Id, backlog.Id, "Earlier", "");
+		later.CreatedAt = new DateTimeOffset(2026, 9, 11, 10, 0, 0, TimeSpan.Zero);
+		earlier.CreatedAt = new DateTimeOffset(2026, 9, 11, 9, 0, 0, TimeSpan.Zero);
+		await dbContext.SaveChangesAsync();
+		dbContext.ChangeTracker.Clear();
+
+		var boardTasks = await tasks.GetForBoardAsync(board.Id);
+
+		Assert.Collection(boardTasks,
+			task => Assert.Equal("Earlier", task.Title),
+			task => Assert.Equal("Later", task.Title));
+	}
+
+	[Fact]
 	public async Task AddDependencyAsync_RejectsCrossBoardDependency()
 	{
 		var board = await boards.CreateAsync("Harness", "/repos/harness", 1);

@@ -24,8 +24,11 @@ public class TaskService(AppDbContext dbContext)
 		return task;
 	}
 
-	public Task<List<TaskItem>> GetForBoardAsync(Guid boardId, CancellationToken cancellationToken = default) =>
-		dbContext.Tasks.AsNoTracking().Where(task => task.BoardId == boardId).OrderBy(task => task.CreatedAt).ToListAsync(cancellationToken);
+	public async Task<List<TaskItem>> GetForBoardAsync(Guid boardId, CancellationToken cancellationToken = default)
+	{
+		var boardTasks = await dbContext.Tasks.AsNoTracking().Where(task => task.BoardId == boardId).ToListAsync(cancellationToken);
+		return boardTasks.OrderBy(task => task.CreatedAt).ToList();
+	}
 
 	public Task<TaskItem?> GetByIdAsync(Guid taskId, CancellationToken cancellationToken = default) =>
 		dbContext.Tasks.Include(task => task.Dependencies).SingleOrDefaultAsync(task => task.Id == taskId, cancellationToken);
@@ -43,6 +46,10 @@ public class TaskService(AppDbContext dbContext)
 	public async Task DeleteAsync(Guid taskId, CancellationToken cancellationToken = default)
 	{
 		var task = await FindTaskAsync(taskId, cancellationToken);
+		if (await dbContext.AgentRuns.AnyAsync(run => run.TaskId == taskId && (run.Status == AgentRunStatus.Working || run.Status == AgentRunStatus.WaitingForInput), cancellationToken))
+		{
+			throw new InvalidOperationException("A task with a running agent cannot be deleted.");
+		}
 		dbContext.TaskDependencies.RemoveRange(dbContext.TaskDependencies.Where(dependency => dependency.TaskId == taskId || dependency.DependsOnTaskId == taskId));
 		dbContext.Tasks.Remove(task);
 		await dbContext.SaveChangesAsync(cancellationToken);

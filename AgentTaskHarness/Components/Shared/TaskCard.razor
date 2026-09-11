@@ -1,0 +1,39 @@
+<article class="task-card">
+    <h3>@TaskItem.Title</h3>
+    @if (!string.IsNullOrWhiteSpace(TaskItem.Description))
+    {
+        <p>@TaskItem.Description</p>
+    }
+    <small>@TaskItem.Status</small>
+    <div class="task-actions">
+        <select @bind="targetColumnId" aria-label="Move @TaskItem.Title to column">
+            <option value="">Move to…</option>
+            @foreach (var target in TargetColumns)
+            {
+                <option value="@target.Id">@target.Name</option>
+            }
+        </select>
+        <button @onclick="MoveAsync" disabled="@(targetColumnId is null)">Move</button>
+        <button @onclick="() => OnEdit.InvokeAsync(TaskItem.Id)">Edit</button>
+        <button @onclick="() => OnDelete.InvokeAsync(TaskItem.Id)">Delete</button>
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public TaskItem TaskItem { get; set; } = null!;
+    [Parameter] public IReadOnlyList<Column> TargetColumns { get; set; } = [];
+    [Parameter] public EventCallback<Guid> OnMove { get; set; }
+    [Parameter] public EventCallback<Guid> OnEdit { get; set; }
+    [Parameter] public EventCallback<Guid> OnDelete { get; set; }
+
+    private Guid? targetColumnId;
+
+    private async Task MoveAsync()
+    {
+        if (targetColumnId is Guid targetColumn)
+        {
+            await OnMove.InvokeAsync(targetColumn);
+            targetColumnId = null;
+        }
+    }
+}
