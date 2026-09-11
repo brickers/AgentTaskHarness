@@ -1,4 +1,10 @@
 using AgentTaskHarness.Components;
+using AgentTaskHarness.Application.Agents;
+using AgentTaskHarness.Application.Boards;
+using AgentTaskHarness.Application.Columns;
+using AgentTaskHarness.Application.Tasks;
+using AgentTaskHarness.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -6,7 +12,21 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
 	.AddInteractiveServerComponents();
 
+builder.Services.AddDbContext<AppDbContext>(options =>
+	options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+builder.Services.AddScoped<BoardService>();
+builder.Services.AddScoped<ColumnService>();
+builder.Services.AddScoped<TaskService>();
+builder.Services.AddScoped<TaskDependencyService>();
+builder.Services.AddScoped<AgentDefinitionService>();
+
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+	var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+	dbContext.Database.Migrate();
+}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

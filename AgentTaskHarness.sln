@@ -2,6 +2,8 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentTaskHarness", "AgentTaskHarness\AgentTaskHarness.csproj", "{1726A712-3DEA-49C6-ABE7-346D12FE32E8}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentTaskHarness.Tests", "AgentTaskHarness.Tests\AgentTaskHarness.Tests.csproj", "{5D721439-0F52-46E4-B069-8A0322D452F3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -12,5 +14,9 @@ Global
 		{1726A712-3DEA-49C6-ABE7-346D12FE32E8}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1726A712-3DEA-49C6-ABE7-346D12FE32E8}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1726A712-3DEA-49C6-ABE7-346D12FE32E8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5D721439-0F52-46E4-B069-8A0322D452F3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5D721439-0F52-46E4-B069-8A0322D452F3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5D721439-0F52-46E4-B069-8A0322D452F3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5D721439-0F52-46E4-B069-8A0322D452F3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
