@@ -13,6 +13,7 @@ public class TaskItem
 	public DomainTaskStatus Status { get; set; } = DomainTaskStatus.Backlog;
 	public string? BranchName { get; set; }
 	public string? WorktreePath { get; set; }
+	public bool MergeConflictPending { get; set; }
 	public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 	public Board Board { get; set; } = null!;
 	public Column Column { get; set; } = null!;

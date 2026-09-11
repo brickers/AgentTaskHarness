@@ -46,6 +46,9 @@ else
                 {
                     <TaskCard TaskItem="task" TargetColumns="GetTargets(task.ColumnId)"
                               OnMove="targetColumnId => MoveTaskAsync(task.Id, targetColumnId)"
+                              OnMoveAndDiscardWorktree="targetColumnId => MoveTaskAndDiscardWorktreeAsync(task.Id, targetColumnId)"
+                              OnResumeMerge="() => ResumeMergeAsync(task.Id)"
+                              OnDiscardUncommittedChanges="() => DiscardUncommittedChangesAsync(task.Id)"
                               OnEdit="StartEditingAsync" OnDelete="DeleteTaskAsync" />
                 }
             </section>
@@ -164,6 +167,39 @@ else
         {
             await TransitionOrchestrator.MoveTaskAsync(taskId, targetColumnId);
             message = null;
+            await LoadAsync();
+        }
+        catch (Exception exception) { message = exception.Message; }
+    }
+
+    private async Task MoveTaskAndDiscardWorktreeAsync(Guid taskId, Guid targetColumnId)
+    {
+        try
+        {
+            await TransitionOrchestrator.MoveTaskAndDiscardWorktreeAsync(taskId, targetColumnId);
+            message = null;
+            await LoadAsync();
+        }
+        catch (Exception exception) { message = exception.Message; }
+    }
+
+    private async Task ResumeMergeAsync(Guid taskId)
+    {
+        try
+        {
+            await TransitionOrchestrator.ResumeMergeAsync(taskId);
+            message = null;
+            await LoadAsync();
+        }
+        catch (Exception exception) { message = exception.Message; }
+    }
+
+    private async Task DiscardUncommittedChangesAsync(Guid taskId)
+    {
+        try
+        {
+            await TransitionOrchestrator.DiscardUncommittedChangesAsync(taskId);
+            message = "Uncommitted changes were discarded.";
             await LoadAsync();
         }
         catch (Exception exception) { message = exception.Message; }

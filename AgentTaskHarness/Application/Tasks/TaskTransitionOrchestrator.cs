@@ -12,6 +12,42 @@ public class TaskTransitionOrchestrator(AppDbContext dbContext, IGitWorktreeServ
 {
 	public async Task<TaskItem> MoveTaskAsync(Guid taskId, Guid targetColumnId, CancellationToken cancellationToken = default)
 	{
+		return await MoveTaskAsync(taskId, targetColumnId, false, cancellationToken);
+	}
+
+	public async Task<TaskItem> MoveTaskAndDiscardWorktreeAsync(Guid taskId, Guid targetColumnId, CancellationToken cancellationToken = default)
+	{
+		return await MoveTaskAsync(taskId, targetColumnId, true, cancellationToken);
+	}
+
+	public async Task<TaskItem> ResumeMergeAsync(Guid taskId, CancellationToken cancellationToken = default)
+	{
+		var task = await dbContext.Tasks.SingleOrDefaultAsync(item => item.Id == taskId, cancellationToken)
+			?? throw new KeyNotFoundException($"Task '{taskId}' was not found.");
+		if (!task.MergeConflictPending)
+		{
+			throw new InvalidOperationException("This task does not have a merge conflict pending.");
+		}
+
+		var doneColumn = await dbContext.Columns.SingleOrDefaultAsync(column => column.BoardId == task.BoardId && column.IsTerminal, cancellationToken)
+			?? throw new InvalidOperationException("The task board does not have a terminal column.");
+		await gitWorktrees.ResumeMergeAsync(task, cancellationToken);
+		task.ColumnId = doneColumn.Id;
+		task.Status = DomainTaskStatus.Completed;
+		task.MergeConflictPending = false;
+		await dbContext.SaveChangesAsync(cancellationToken);
+		return task;
+	}
+
+	public async Task DiscardUncommittedChangesAsync(Guid taskId, CancellationToken cancellationToken = default)
+	{
+		var task = await dbContext.Tasks.SingleOrDefaultAsync(item => item.Id == taskId, cancellationToken)
+			?? throw new KeyNotFoundException($"Task '{taskId}' was not found.");
+		await gitWorktrees.DiscardUncommittedChangesAsync(task, cancellationToken);
+	}
+
+	private async Task<TaskItem> MoveTaskAsync(Guid taskId, Guid targetColumnId, bool discardWorktreeOnBacklogReturn, CancellationToken cancellationToken)
+	{
 		var task = await dbContext.Tasks.Include(item => item.Dependencies).SingleOrDefaultAsync(item => item.Id == taskId, cancellationToken)
 			?? throw new KeyNotFoundException($"Task '{taskId}' was not found.");
 		var sourceColumn = await FindColumnAsync(task.ColumnId, cancellationToken);
@@ -20,6 +56,10 @@ public class TaskTransitionOrchestrator(AppDbContext dbContext, IGitWorktreeServ
 		if (task.Status == DomainTaskStatus.Completed)
 		{
 			throw new InvalidOperationException("Completed tasks are terminal and cannot be moved.");
+		}
+		if (task.MergeConflictPending)
+		{
+			throw new InvalidOperationException("Resolve the pending merge conflict before moving this task.");
 		}
 		if (targetColumn.BoardId != task.BoardId)
 		{
@@ -40,7 +80,23 @@ public class TaskTransitionOrchestrator(AppDbContext dbContext, IGitWorktreeServ
 			}
 		}
 
-		await gitWorktrees.HandleTransitionAsync(task, sourceColumn, targetColumn, cancellationToken);
+		try
+		{
+			if (targetColumn.IsBacklog && discardWorktreeOnBacklogReturn)
+			{
+				await gitWorktrees.DiscardWorktreeAsync(task, cancellationToken);
+			}
+			else
+			{
+				await gitWorktrees.HandleTransitionAsync(task, sourceColumn, targetColumn, cancellationToken);
+			}
+		}
+		catch (GitMergeConflictException)
+		{
+			task.MergeConflictPending = true;
+			await dbContext.SaveChangesAsync(cancellationToken);
+			throw;
+		}
 		task.ColumnId = targetColumn.Id;
 		task.Status = targetColumn.IsBacklog ? DomainTaskStatus.Backlog : targetColumn.IsTerminal ? DomainTaskStatus.Completed : DomainTaskStatus.InProgress;
 		await dbContext.SaveChangesAsync(cancellationToken);

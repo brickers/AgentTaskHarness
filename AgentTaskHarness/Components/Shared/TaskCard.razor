@@ -5,6 +5,10 @@
         <p>@TaskItem.Description</p>
     }
     <small>@TaskItem.Status</small>
+    @if (TaskItem.MergeConflictPending)
+    {
+        <p class="message">Merge conflict needs resolution.</p>
+    }
     <div class="task-actions">
         <select @bind="targetColumnId" aria-label="Move @TaskItem.Title to column">
             <option value="">Move to…</option>
@@ -13,7 +17,19 @@
                 <option value="@target.Id">@target.Name</option>
             }
         </select>
+        @if (IsMovingToBacklog)
+        {
+            <label><input type="checkbox" @bind="discardWorktree" /> Discard worktree instead of pausing it</label>
+        }
         <button @onclick="MoveAsync" disabled="@(targetColumnId is null)">Move</button>
+        @if (TaskItem.MergeConflictPending)
+        {
+            <button @onclick="() => OnResumeMerge.InvokeAsync()">Resume merge</button>
+        }
+        @if (!string.IsNullOrWhiteSpace(TaskItem.WorktreePath))
+        {
+            <button @onclick="() => OnDiscardUncommittedChanges.InvokeAsync()">Discard uncommitted changes</button>
+        }
         <button @onclick="() => OnEdit.InvokeAsync(TaskItem.Id)">Edit</button>
         <button @onclick="() => OnDelete.InvokeAsync(TaskItem.Id)">Delete</button>
     </div>
@@ -23,17 +39,30 @@
     [Parameter, EditorRequired] public TaskItem TaskItem { get; set; } = null!;
     [Parameter] public IReadOnlyList<Column> TargetColumns { get; set; } = [];
     [Parameter] public EventCallback<Guid> OnMove { get; set; }
+    [Parameter] public EventCallback<Guid> OnMoveAndDiscardWorktree { get; set; }
+    [Parameter] public EventCallback OnResumeMerge { get; set; }
+    [Parameter] public EventCallback OnDiscardUncommittedChanges { get; set; }
     [Parameter] public EventCallback<Guid> OnEdit { get; set; }
     [Parameter] public EventCallback<Guid> OnDelete { get; set; }
 
     private Guid? targetColumnId;
+    private bool discardWorktree;
+    private bool IsMovingToBacklog => targetColumnId is Guid selectedColumnId && TargetColumns.Any(column => column.Id == selectedColumnId && column.IsBacklog);
 
     private async Task MoveAsync()
     {
         if (targetColumnId is Guid targetColumn)
         {
-            await OnMove.InvokeAsync(targetColumn);
+            if (discardWorktree && IsMovingToBacklog)
+            {
+                await OnMoveAndDiscardWorktree.InvokeAsync(targetColumn);
+            }
+            else
+            {
+                await OnMove.InvokeAsync(targetColumn);
+            }
             targetColumnId = null;
+            discardWorktree = false;
         }
     }
 }

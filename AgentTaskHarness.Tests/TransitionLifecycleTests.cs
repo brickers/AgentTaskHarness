@@ -125,6 +125,10 @@ public class TransitionLifecycleTests : IAsyncLifetime
 			Transitions.Add(task.Id);
 			return Task.CompletedTask;
 		}
+
+		public Task DiscardWorktreeAsync(TaskItem task, CancellationToken cancellationToken = default) => Task.CompletedTask;
+		public Task DiscardUncommittedChangesAsync(TaskItem task, CancellationToken cancellationToken = default) => Task.CompletedTask;
+		public Task ResumeMergeAsync(TaskItem task, CancellationToken cancellationToken = default) => Task.CompletedTask;
 	}
 
 	private sealed class TrackingAgentScheduler : IAgentScheduler

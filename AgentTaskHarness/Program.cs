@@ -23,7 +23,7 @@ builder.Services.AddScoped<TaskService>();
 builder.Services.AddScoped<TaskDependencyService>();
 builder.Services.AddScoped<TaskTransitionOrchestrator>();
 builder.Services.AddScoped<AgentDefinitionService>();
-builder.Services.AddSingleton<IGitWorktreeService, NoOpGitWorktreeService>();
+builder.Services.AddScoped<IGitWorktreeService, LibGit2WorktreeService>();
 builder.Services.AddSingleton<IAgentScheduler, NoOpAgentScheduler>();
 
 var app = builder.Build();

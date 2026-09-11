@@ -61,6 +61,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 			entity.Property(task => task.Description).IsRequired();
 			entity.Property(task => task.BranchName).HasMaxLength(200);
 			entity.Property(task => task.WorktreePath).HasMaxLength(1_024);
+			entity.Property(task => task.MergeConflictPending).HasDefaultValue(false);
 			entity.HasIndex(task => new { task.BoardId, task.ColumnId });
 			entity.HasOne(task => task.Board)
 				.WithMany(board => board.Tasks)
