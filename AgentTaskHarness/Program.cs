@@ -46,6 +46,7 @@ builder.Services.AddScoped<UsageTrackingService>();
 
 builder.Services.AddScoped<BoardMcpTools>();
 builder.Services.AddMcpServer()
+	.WithHttpTransport()
 	.WithToolsFromAssembly();
 
 var app = builder.Build();

@@ -154,6 +154,29 @@ public class PersistenceServicesTests : IAsyncLifetime
 	}
 
 	[Fact]
+	public async Task RoadmapQuery_LoadsFeaturesWithStepsOrderedByCreatedAt_WithoutSqliteDateTimeOffsetError()
+	{
+		var board = await boards.CreateAsync("Harness", "/repos/harness", 1);
+		var feat1 = await features.CreateAsync(board.Id, "Feature 1");
+		var feat2 = await features.CreateAsync(board.Id, "Feature 2");
+		feat1.CreatedAt = new DateTimeOffset(2026, 9, 12, 11, 0, 0, TimeSpan.Zero);
+		feat2.CreatedAt = new DateTimeOffset(2026, 9, 12, 10, 0, 0, TimeSpan.Zero);
+		await dbContext.SaveChangesAsync();
+
+		var roadmapFeatures = (await dbContext.Features
+			.AsNoTracking()
+			.Include(f => f.Steps)
+			.Where(f => f.BoardId == board.Id)
+			.ToListAsync())
+			.OrderBy(f => f.CreatedAt)
+			.ToList();
+
+		Assert.Equal(2, roadmapFeatures.Count);
+		Assert.Equal("Feature 2", roadmapFeatures[0].Title);
+		Assert.Equal("Feature 1", roadmapFeatures[1].Title);
+	}
+
+	[Fact]
 	public async Task DeleteFeatureAsync_CascadesToStepsAndRejectsIfAgentRunning()
 	{
 		var board = await boards.CreateAsync("Harness", "/repos/harness", 1);

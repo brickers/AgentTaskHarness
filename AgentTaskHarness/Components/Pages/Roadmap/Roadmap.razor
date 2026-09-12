@@ -460,11 +460,13 @@
 
 			if (board == null) return;
 
-			features = await DbContext.Features
+			features = (await DbContext.Features
+				.AsNoTracking()
 				.Include(f => f.Steps)
 				.Where(f => f.BoardId == BoardId)
+				.ToListAsync())
 				.OrderBy(f => f.CreatedAt)
-				.ToListAsync();
+				.ToList();
 
 			var featureIds = features.Select(f => f.Id).ToList();
 
