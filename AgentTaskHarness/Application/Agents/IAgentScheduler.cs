@@ -14,14 +14,32 @@ public interface IAgentScheduler
 	Task RequestStartAsync(Guid stepId, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Notifies the scheduler that an agent on a step has completed, freeing up a concurrency slot and re-evaluating the queue.
+	/// Notifies the scheduler that an agent on a step has completed, recording token and time usage,
+	/// freeing up a concurrency slot and re-evaluating the queue.
 	/// </summary>
-	Task OnAgentFinishedAsync(Guid stepId, CancellationToken cancellationToken = default);
+	Task OnAgentFinishedAsync(
+		Guid stepId,
+		long tokensUsed = 0,
+		TimeSpan? timeSpent = null,
+		CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Manually stops any active running agent for the specified step and re-checks the queue.
+	/// Manually stops any active running agent for the specified step, recording usage and re-checking the queue.
 	/// </summary>
-	Task StopAgentAsync(Guid stepId, CancellationToken cancellationToken = default);
+	Task StopAgentAsync(
+		Guid stepId,
+		long tokensUsed = 0,
+		TimeSpan? timeSpent = null,
+		CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Directly updates the token and time usage on the latest or active agent run for a step, and updates the step totals.
+	/// </summary>
+	Task RecordRunUsageAsync(
+		Guid stepId,
+		long tokensUsed,
+		TimeSpan? timeSpent = null,
+		CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Processes the prioritized queue for a board, starting eligible queued steps up to the concurrency limit.

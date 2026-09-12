@@ -4,6 +4,7 @@
 @using AgentTaskHarness.Application.Features
 @using AgentTaskHarness.Application.Reviews
 @using AgentTaskHarness.Application.Steps
+@using AgentTaskHarness.Application.Usage
 @using AgentTaskHarness.Domain.Entities
 @using AgentTaskHarness.Domain.Enums
 @inject BoardService BoardService
@@ -13,6 +14,7 @@
 @inject StepTransitionOrchestrator StepOrchestrator
 @inject CommentService CommentService
 @inject ReviewOutcomeService ReviewOutcomeService
+@inject UsageTrackingService UsageService
 @inject NavigationManager Navigation
 
 <PageTitle>@(board?.Name ?? "Board")</PageTitle>
@@ -78,6 +80,10 @@ else
                                 @if (feature.AgentReviewFailCount > 0 || feature.HumanReviewFailCount > 0)
                                 {
                                     <small class="muted-copy">Fails: Agent @feature.AgentReviewFailCount | Human @feature.HumanReviewFailCount</small>
+                                }
+                                @if (featureSummaries.TryGetValue(feature.Id, out var fUsage))
+                                {
+                                    <span class="tag tag-usage" title="Total tokens and time across all steps">Tokens: @fUsage.TotalTokensUsed.ToString("N0") | @FormatDuration(fUsage.TotalTimeSpent)</span>
                                 }
                             </div>
                         </div>
@@ -190,6 +196,7 @@ else
                                             {
                                                 <small class="muted-copy">Fails: Agent @step.AgentReviewFailCount | Human @step.HumanReviewFailCount</small>
                                             }
+                                            <span class="tag tag-usage" title="Step tokens and time">Tokens: @step.TokensUsed.ToString("N0") | @FormatDuration(step.TimeSpent)</span>
                                         </div>
 
                                         @if (step.MergeConflictPending)
@@ -399,6 +406,7 @@ else
 
     private Board? board;
     private List<Feature> features = [];
+    private Dictionary<Guid, FeatureUsageSummary> featureSummaries = new();
     private Dictionary<Guid, IReadOnlyList<WorkflowColumn>> featureAllowedMoves = new();
     private Dictionary<Guid, IReadOnlyList<WorkflowColumn>> stepAllowedMoves = new();
 
@@ -500,6 +508,7 @@ else
             }
         }
 
+        featureSummaries = await UsageService.GetFeatureSummariesForBoardAsync(BoardId);
         commentCounts = await CommentService.GetCommentCountsForBoardAsync(BoardId);
 
         if (activeCommentsCard is not null)
@@ -507,6 +516,15 @@ else
             var comments = await CommentService.GetCommentsAsync(activeCommentsCard.Value.CardType, activeCommentsCard.Value.CardId);
             loadedComments[activeCommentsCard.Value] = comments.ToList();
         }
+    }
+
+    private static string FormatDuration(TimeSpan duration)
+    {
+        if (duration.TotalHours >= 1)
+            return $"{duration.TotalHours:0.0}h";
+        if (duration.TotalMinutes >= 1)
+            return $"{duration.TotalMinutes:0.0}m";
+        return $"{duration.TotalSeconds:0.#}s";
     }
 
     private int GetCommentCount(CardType cardType, Guid cardId) =>

@@ -7,7 +7,7 @@ Requirements are available in the [Solution Design](Solution%20Design.md) docume
 # Technical Design
 
 ### Current State
-Delivery Steps 1–10 below are ✅ **Completed** — they shipped EF Core+SQLite persistence for the original generic `Board`/`Column`/`TaskItem` model (+ CRUD services), the Kanban UI with a generic column-transition orchestrator, a single-level LibGit2Sharp worktree/merge lifecycle, and agent-definition composition with an on-save folder writer. `Solution Design.md` has since been substantially expanded (Roadmap → Board → Feature → Step hierarchy, a fixed non-configurable six-column workflow, Feature/Step dependency scoping, review-outcome counters/thresholds, comments, agent matching criteria, a Step-only scheduler with prioritization, curated MCP named actions, cost/quality tracking, and a combined drag-and-drop UI). The original Steps 5–6 (generic agent scheduler + generic MCP move/get-allowed-moves) were never implemented; Delivery Steps 5–14 below replace them wholesale and carry the system the rest of the way to the current Solution Design. The configurable `Column` entity and flat `TaskItem`/`TaskDependency` built in Steps 1–2 are retired as part of Step 5 (see the superseded-by notes on those steps).
+Delivery Steps 1–13 below are ✅ **Completed** — they shipped EF Core+SQLite persistence for the original generic `Board`/`Column`/`TaskItem` model (+ CRUD services), the Kanban UI with a generic column-transition orchestrator, a single-level LibGit2Sharp worktree/merge lifecycle, and agent-definition composition with an on-save folder writer. `Solution Design.md` has since been substantially expanded (Roadmap → Board → Feature → Step hierarchy, a fixed non-configurable six-column workflow, Feature/Step dependency scoping, review-outcome counters/thresholds, comments, agent matching criteria, a Step-only scheduler with prioritization, curated MCP named actions, cost/quality tracking, and a combined drag-and-drop UI). The original Steps 5–6 (generic agent scheduler + generic MCP move/get-allowed-moves) were never implemented; Delivery Steps 5–14 below replace them wholesale and carry the system the rest of the way to the current Solution Design. The configurable `Column` entity and flat `TaskItem`/`TaskDependency` built in Steps 1–2 are retired as part of Step 5 (see the superseded-by notes on those steps).
 
 ### Key Decisions (confirmed with stakeholder)
 1. **Persistence: EF Core + SQLite** (code-first models + migrations) — chosen over Dapper/raw ADO.NET for easiest schema evolution and clean DI integration; unchanged by the hierarchy redesign.
@@ -202,21 +202,21 @@ Boards assign agent definitions to eligible column-scopes with matching criteria
 - Implement `AgentMatchingService`: given a card and its column-scope, evaluates `MatchCriteria` across the board's `AgentColumnAssignment`s and resolves the concrete `AgentDefinition` to run.
 - Update `AgentDefinitionEditor.razor`'s column-configuration UI to assign definitions + criteria per column-scope, restricted to the three eligible scopes (Feature Build is never assignable).
 
-### Step 11: Step-only agent scheduler rework
+### ✅ Step 11: Step-only agent scheduler rework — Completed
 The scheduler starts only Steps, using a tunable prioritization score, and distinguishes the soft blocked-flag from the UI's hard block.
 - Rework `AgentSchedulerService` (`IAgentScheduler`) to accept only Step start requests; a Feature never triggers `RequestStart` directly (that stays a side effect of its Steps per Step 7).
 - Implement a prioritization score (progress, remaining work, age) used to order the per-board queue when the `Board.ConcurrencyLimit` is reached; document the weighting as a tunable constant, explicitly left open per the Solution Design.
 - Implement the failure-threshold skip: a Step whose counters have crossed the board's fail threshold is left queued/flagged rather than auto-started.
 - Wire `StepTransitionOrchestrator` to call `AgentScheduler.RequestStart` after a successful Build/AgentReview column entry, setting the soft "blocked: previous agent still active" status for MCP-driven moves while the UI keeps hard-blocking such moves (asymmetry from Key Decision 9).
 
-### Step 12: MCP curated named actions
+### ✅ Step 12: MCP curated named actions — Completed
 Agents interact with boards over MCP using curated named actions instead of raw column moves, running in-process with the Blazor app.
 - Add the official ModelContextProtocol C# SDK and map its endpoint in `Program.cs` alongside `MapRazorComponents` (superseding the plan for a generic `TaskMcpTools`).
 - Implement `Infrastructure/Mcp/BoardMcpTools` exposing named actions `start_build`, `submit_for_review`, `approve_review`, `fail_review`, `send_to_backlog`, each delegating to one `FeatureTransitionOrchestrator`/`StepTransitionOrchestrator` call; `fail_review` also calls `ReviewOutcomeService` to increment the relevant counter.
 - Add `get_card_details`, `get_available_actions`, and comment read/write (`CommentService`) tools.
 - Ensure MCP-driven actions apply the soft "blocked: previous agent still active" flag rather than the UI's hard block, per the documented asymmetry (Step 11).
 
-### Step 13: Cost and usage tracking
+### ✅ Step 13: Cost and usage tracking — Completed
 Token/time usage is captured per agent run and rolled up to the Feature level for display.
 - Add `TokensUsed`/`TimeSpent` capture to `AgentRun` at process completion (`CopilotCliProcessRunner`/`AgentSchedulerService`) and to `Step.TokensUsed`/`Step.TimeSpent`.
 - Implement `UsageTrackingService.GetFeatureSummary(featureId)` aggregating token/time totals across a Feature's Steps.

@@ -6,6 +6,7 @@ using AgentTaskHarness.Application.Comments;
 using AgentTaskHarness.Application.Features;
 using AgentTaskHarness.Application.Reviews;
 using AgentTaskHarness.Application.Steps;
+using AgentTaskHarness.Application.Usage;
 using AgentTaskHarness.Application.Workflow;
 using AgentTaskHarness.Infrastructure.Agents;
 using AgentTaskHarness.Infrastructure.Git;
@@ -37,8 +38,11 @@ builder.Services.AddScoped<IAgentDefinitionFolderWriter, AgentDefinitionFolderWr
 builder.Services.AddScoped<AgentDefinitionService>();
 builder.Services.AddScoped<AgentMatchingService>();
 builder.Services.AddScoped<IGitWorktreeService, LibGit2WorktreeService>();
+builder.Services.AddSingleton<GitGuardShimWriter>();
+builder.Services.AddScoped<CopilotCliProcessRunner>();
 builder.Services.AddScoped<IAgentProcessRunner, NoOpAgentProcessRunner>();
 builder.Services.AddScoped<IAgentScheduler, AgentSchedulerService>();
+builder.Services.AddScoped<UsageTrackingService>();
 
 builder.Services.AddScoped<BoardMcpTools>();
 builder.Services.AddMcpServer()

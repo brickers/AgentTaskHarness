@@ -8,9 +8,23 @@ public class NoOpAgentScheduler : IAgentScheduler
 {
 	public Task RequestStartAsync(Guid stepId, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-	public Task OnAgentFinishedAsync(Guid stepId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+	public Task OnAgentFinishedAsync(
+		Guid stepId,
+		long tokensUsed = 0,
+		TimeSpan? timeSpent = null,
+		CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-	public Task StopAgentAsync(Guid stepId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+	public Task StopAgentAsync(
+		Guid stepId,
+		long tokensUsed = 0,
+		TimeSpan? timeSpent = null,
+		CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+	public Task RecordRunUsageAsync(
+		Guid stepId,
+		long tokensUsed,
+		TimeSpan? timeSpent = null,
+		CancellationToken cancellationToken = default) => Task.CompletedTask;
 
 	public Task ProcessQueueAsync(Guid boardId, CancellationToken cancellationToken = default) => Task.CompletedTask;
 

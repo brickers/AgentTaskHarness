@@ -249,7 +249,11 @@ public class AgentSchedulerService(
 		await dbContext.SaveChangesAsync(cancellationToken);
 	}
 
-	public async Task OnAgentFinishedAsync(Guid stepId, CancellationToken cancellationToken = default)
+	public async Task OnAgentFinishedAsync(
+		Guid stepId,
+		long tokensUsed = 0,
+		TimeSpan? timeSpent = null,
+		CancellationToken cancellationToken = default)
 	{
 		var activeRuns = await dbContext.AgentRuns
 			.Where(r => r.CardType == CardType.Step && r.CardId == stepId &&
@@ -258,10 +262,25 @@ public class AgentSchedulerService(
 
 		var activeRun = activeRuns.OrderByDescending(r => r.StartedAt).FirstOrDefault();
 
+		var step = await dbContext.Steps
+			.Include(s => s.Feature)
+			.SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken);
+
 		if (activeRun != null)
 		{
 			activeRun.Status = AgentRunStatus.Completed;
 			activeRun.EndedAt = DateTimeOffset.UtcNow;
+			activeRun.TokensUsed = tokensUsed;
+			var duration = timeSpent ?? (activeRun.EndedAt.Value >= activeRun.StartedAt
+				? activeRun.EndedAt.Value - activeRun.StartedAt
+				: TimeSpan.Zero);
+			activeRun.TimeSpent = duration;
+
+			if (step != null)
+			{
+				step.TokensUsed += activeRun.TokensUsed;
+				step.TimeSpent += activeRun.TimeSpent;
+			}
 		}
 
 		// If this step had a blocked run (due to soft MCP transition while previous agent was running),
@@ -277,17 +296,17 @@ public class AgentSchedulerService(
 
 		await dbContext.SaveChangesAsync(cancellationToken);
 
-		var step = await dbContext.Steps
-			.Include(s => s.Feature)
-			.SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken);
-
 		if (step?.Feature != null)
 		{
 			await ProcessQueueAsync(step.Feature.BoardId, cancellationToken);
 		}
 	}
 
-	public async Task StopAgentAsync(Guid stepId, CancellationToken cancellationToken = default)
+	public async Task StopAgentAsync(
+		Guid stepId,
+		long tokensUsed = 0,
+		TimeSpan? timeSpent = null,
+		CancellationToken cancellationToken = default)
 	{
 		var activeRuns = await dbContext.AgentRuns
 			.Where(r => r.CardType == CardType.Step && r.CardId == stepId &&
@@ -295,6 +314,10 @@ public class AgentSchedulerService(
 			.ToListAsync(cancellationToken);
 
 		var activeRun = activeRuns.OrderByDescending(r => r.StartedAt).FirstOrDefault();
+
+		var step = await dbContext.Steps
+			.Include(s => s.Feature)
+			.SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken);
 
 		if (activeRun != null)
 		{
@@ -304,6 +327,17 @@ public class AgentSchedulerService(
 			}
 			activeRun.Status = AgentRunStatus.Stopped;
 			activeRun.EndedAt = DateTimeOffset.UtcNow;
+			activeRun.TokensUsed = tokensUsed;
+			var duration = timeSpent ?? (activeRun.EndedAt.Value >= activeRun.StartedAt
+				? activeRun.EndedAt.Value - activeRun.StartedAt
+				: TimeSpan.Zero);
+			activeRun.TimeSpent = duration;
+
+			if (step != null)
+			{
+				step.TokensUsed += activeRun.TokensUsed;
+				step.TimeSpent += activeRun.TimeSpent;
+			}
 		}
 
 		// Also unblock any blocked run
@@ -318,14 +352,52 @@ public class AgentSchedulerService(
 
 		await dbContext.SaveChangesAsync(cancellationToken);
 
-		var step = await dbContext.Steps
-			.Include(s => s.Feature)
-			.SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken);
-
 		if (step?.Feature != null)
 		{
 			await ProcessQueueAsync(step.Feature.BoardId, cancellationToken);
 		}
+	}
+
+	public async Task RecordRunUsageAsync(
+		Guid stepId,
+		long tokensUsed,
+		TimeSpan? timeSpent = null,
+		CancellationToken cancellationToken = default)
+	{
+		var runs = await dbContext.AgentRuns
+			.Where(r => r.CardType == CardType.Step && r.CardId == stepId)
+			.ToListAsync(cancellationToken);
+
+		var latestRun = runs.OrderByDescending(r => r.StartedAt).FirstOrDefault();
+
+		var step = await dbContext.Steps
+			.SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken)
+			?? throw new KeyNotFoundException($"Step '{stepId}' was not found.");
+
+		if (latestRun != null)
+		{
+			var tokenDelta = tokensUsed - latestRun.TokensUsed;
+			latestRun.TokensUsed = tokensUsed;
+
+			var duration = timeSpent ?? (latestRun.EndedAt.HasValue && latestRun.EndedAt.Value >= latestRun.StartedAt
+				? latestRun.EndedAt.Value - latestRun.StartedAt
+				: TimeSpan.Zero);
+			var timeDelta = duration - latestRun.TimeSpent;
+			latestRun.TimeSpent = duration;
+
+			step.TokensUsed += Math.Max(0, tokenDelta);
+			step.TimeSpent += (timeDelta > TimeSpan.Zero ? timeDelta : TimeSpan.Zero);
+		}
+		else
+		{
+			step.TokensUsed += tokensUsed;
+			if (timeSpent.HasValue)
+			{
+				step.TimeSpent += timeSpent.Value;
+			}
+		}
+
+		await dbContext.SaveChangesAsync(cancellationToken);
 	}
 
 	public Task<bool> IsAgentRunningAsync(Guid stepId, CancellationToken cancellationToken = default)

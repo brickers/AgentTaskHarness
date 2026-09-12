@@ -143,4 +143,8 @@
 ## Cost & Quality Tracking
 
 - Token/API usage and time spent are recorded per Step and aggregated per Feature.
-- Additional signals to help judge whether a Feature/Step was well-formed (e.g. whether its original content was sufficient to reach the finished result without much back-and-forth) are wanted; the concrete metrics (e.g. rework/return-to-backlog counts, agent-reported missing-information events) are not yet decided — open question for a future iteration.
+- `UsageTrackingService` captures token and duration metrics across `AgentRun` entities, rolls them up to `Step.TokensUsed` and `Step.TimeSpent`, and computes board/feature aggregate summaries via `GetFeatureSummary(featureId)`.
+- **Quality-Signal Metrics Extension Point**:
+  - Additional signals to judge whether a Feature/Step was well-formed (e.g. whether its original specification was sufficient to reach the finished result without excessive back-and-forth or rework) are exposed via the `QualitySignals` model on `UsageTrackingService`.
+  - Implemented signals include total review failure counts (`AgentReviewFailCount` + `HumanReviewFailCount`), active rework indicators, and Step-to-review churn ratios (`TotalReviewFailures / StepCount`).
+  - Advanced quality metrics — such as return-to-backlog frequencies, agent-reported missing-information comment events, prompt-to-commit velocity, and automated feedback loop classification — are explicitly deferred as an open extension point for a future iteration, ensuring the core usage tracking is lightweight and non-intrusive.

@@ -60,6 +60,14 @@
     font-weight: 700;
 }
 
+.tag-usage {
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    color: #3730a3;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+}
+
 .card-actions {
     display: flex;
     flex-wrap: wrap;

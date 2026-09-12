@@ -389,4 +389,106 @@ public class AgentSchedulerServiceTests : IAsyncLifetime
 		var run2 = await scheduler.GetCurrentRunAsync(step2.Id);
 		Assert.Equal(AgentRunStatus.Working, run2!.Status);
 	}
+
+	[Fact]
+	public async Task OnAgentFinishedAsync_RecordsUsageOnAgentRun_AndUpdatesStepEntity()
+	{
+		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
+		await CreateAndAssignAgentAsync(board.Id, ColumnScope.StepBuild);
+
+		var feat = await features.CreateAsync(board.Id, "Feat 1");
+		var step = await steps.CreateAsync(feat.Id, "Step 1");
+
+		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+
+		var run = await scheduler.GetCurrentRunAsync(step.Id);
+		Assert.NotNull(run);
+
+		// Finish agent with specific token and time usage
+		await scheduler.OnAgentFinishedAsync(step.Id, tokensUsed: 1500, timeSpent: TimeSpan.FromMinutes(3));
+
+		var refreshedRun = await dbContext.AgentRuns.FindAsync(run.Id);
+		Assert.Equal(AgentRunStatus.Completed, refreshedRun!.Status);
+		Assert.Equal(1500, refreshedRun.TokensUsed);
+		Assert.Equal(TimeSpan.FromMinutes(3), refreshedRun.TimeSpent);
+
+		var refreshedStep = await dbContext.Steps.FindAsync(step.Id);
+		Assert.Equal(1500, refreshedStep!.TokensUsed);
+		Assert.Equal(TimeSpan.FromMinutes(3), refreshedStep.TimeSpent);
+	}
+
+	[Fact]
+	public async Task OnAgentFinishedAsync_AccumulatesTokensAndTimeAcrossMultipleRuns()
+	{
+		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
+		await CreateAndAssignAgentAsync(board.Id, ColumnScope.StepBuild);
+		await CreateAndAssignAgentAsync(board.Id, ColumnScope.StepAgentReview);
+
+		var feat = await features.CreateAsync(board.Id, "Feat 1");
+		var step = await steps.CreateAsync(feat.Id, "Step 1");
+
+		// Run 1: In Build
+		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		await scheduler.OnAgentFinishedAsync(step.Id, tokensUsed: 1000, timeSpent: TimeSpan.FromMinutes(2));
+
+		var stepAfterRun1 = await dbContext.Steps.FindAsync(step.Id);
+		Assert.Equal(1000, stepAfterRun1!.TokensUsed);
+		Assert.Equal(TimeSpan.FromMinutes(2), stepAfterRun1.TimeSpent);
+
+		// Run 2: Advance to AgentReview and run again
+		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
+		await scheduler.OnAgentFinishedAsync(step.Id, tokensUsed: 2500, timeSpent: TimeSpan.FromMinutes(5));
+
+		var stepAfterRun2 = await dbContext.Steps.FindAsync(step.Id);
+		Assert.Equal(3500, stepAfterRun2!.TokensUsed);
+		Assert.Equal(TimeSpan.FromMinutes(7), stepAfterRun2.TimeSpent);
+	}
+
+	[Fact]
+	public async Task StopAgentAsync_RecordsUsageOnAgentRun_AndUpdatesStepEntity()
+	{
+		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
+		await CreateAndAssignAgentAsync(board.Id, ColumnScope.StepBuild);
+
+		var feat = await features.CreateAsync(board.Id, "Feat 1");
+		var step = await steps.CreateAsync(feat.Id, "Step 1");
+
+		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+
+		var run = await scheduler.GetCurrentRunAsync(step.Id);
+		Assert.NotNull(run);
+
+		await scheduler.StopAgentAsync(step.Id, tokensUsed: 600, timeSpent: TimeSpan.FromSeconds(45));
+
+		var refreshedRun = await dbContext.AgentRuns.FindAsync(run.Id);
+		Assert.Equal(AgentRunStatus.Stopped, refreshedRun!.Status);
+		Assert.Equal(600, refreshedRun.TokensUsed);
+		Assert.Equal(TimeSpan.FromSeconds(45), refreshedRun.TimeSpent);
+
+		var refreshedStep = await dbContext.Steps.FindAsync(step.Id);
+		Assert.Equal(600, refreshedStep!.TokensUsed);
+		Assert.Equal(TimeSpan.FromSeconds(45), refreshedStep.TimeSpent);
+	}
+
+	[Fact]
+	public async Task RecordRunUsageAsync_DirectlyUpdatesUsage()
+	{
+		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
+		await CreateAndAssignAgentAsync(board.Id, ColumnScope.StepBuild);
+
+		var feat = await features.CreateAsync(board.Id, "Feat 1");
+		var step = await steps.CreateAsync(feat.Id, "Step 1");
+
+		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+
+		await scheduler.RecordRunUsageAsync(step.Id, tokensUsed: 2000, timeSpent: TimeSpan.FromMinutes(4));
+
+		var refreshedStep = await dbContext.Steps.FindAsync(step.Id);
+		Assert.Equal(2000, refreshedStep!.TokensUsed);
+		Assert.Equal(TimeSpan.FromMinutes(4), refreshedStep.TimeSpent);
+	}
 }
