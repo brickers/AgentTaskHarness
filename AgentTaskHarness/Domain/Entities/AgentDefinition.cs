@@ -8,4 +8,5 @@ public class AgentDefinition
 	public string FolderPath { get; set; } = string.Empty;
 	public Board Board { get; set; } = null!;
 	public ICollection<AgentDefinitionComponent> Components { get; set; } = new List<AgentDefinitionComponent>();
+	public ICollection<AgentColumnAssignment> ColumnAssignments { get; set; } = new List<AgentColumnAssignment>();
 }

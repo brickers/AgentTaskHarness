@@ -1,6 +1,11 @@
 @page "/boards/{BoardId:guid}/agents"
+@using AgentTaskHarness.Application.Agents
+@using AgentTaskHarness.Application.Boards
+@using AgentTaskHarness.Domain.Entities
+@using AgentTaskHarness.Domain.Enums
 @inject BoardService BoardService
 @inject AgentDefinitionService AgentDefinitionService
+@inject AgentMatchingService AgentMatchingService
 @inject NavigationManager Navigation
 
 <PageTitle>Agent definitions</PageTitle>
@@ -44,6 +49,62 @@ else
             @foreach (var definition in definitions)
             {
                 <article><div><h3>@definition.Name</h3><p>@definition.FolderPath</p></div><button class="button-quiet" @onclick="() => SelectDefinitionAsync(definition.Id)">Edit</button></article>
+            }
+        </div>
+    </section>
+
+    <section class="definition-panel assignment-panel">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Workflow Assignment</p>
+                <h2>Column assignments</h2>
+            </div>
+            <button class="button-primary" @onclick="() => OpenAssignmentCreator()">Assign agent</button>
+        </div>
+        <p class="muted-copy">Assign agent definitions to eligible column scopes with optional matching criteria (e.g. <code>rework=true</code>, <code>rework=false</code>, or keywords). Feature Build is never assignable.</p>
+
+        <div class="scope-grid">
+            @foreach (var scope in EligibleScopes)
+            {
+                var scopeAssignments = assignments.Where(a => a.ColumnScope == scope).ToList();
+                <div class="scope-card">
+                    <div class="scope-card-header">
+                        <div>
+                            <h3>@GetScopeDisplayName(scope)</h3>
+                            <p class="muted-copy"><small>@GetScopeDescription(scope)</small></p>
+                        </div>
+                        <button class="button-quiet button-small" @onclick="() => OpenAssignmentCreator(scope)">+ Assign</button>
+                    </div>
+                    @if (scopeAssignments.Count > 0)
+                    {
+                        <ul class="assignment-list">
+                            @foreach (var assignment in scopeAssignments)
+                            {
+                                <li class="assignment-item">
+                                    <div class="assignment-details">
+                                        <strong>@(assignment.AgentDefinition?.Name ?? "Agent")</strong>
+                                        @if (!string.IsNullOrWhiteSpace(assignment.MatchCriteria))
+                                        {
+                                            <span class="criteria-badge" title="Match criteria">@assignment.MatchCriteria</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="criteria-badge default-criteria" title="Default catch-all for any card">Default (all cards)</span>
+                                        }
+                                    </div>
+                                    <div class="assignment-item-actions">
+                                        <button class="button-quiet button-small" @onclick="() => OpenAssignmentEditor(assignment)">Edit</button>
+                                        <button class="button-danger button-small" @onclick="() => DeleteAssignmentAsync(assignment.Id)">Remove</button>
+                                    </div>
+                                </li>
+                            }
+                        </ul>
+                    }
+                    else
+                    {
+                        <p class="empty-scope"><small>No agents assigned to this column scope.</small></p>
+                    }
+                </div>
             }
         </div>
     </section>
@@ -95,11 +156,85 @@ else
         </section><div class="modal-actions"><button class="button-danger" type="button" @onclick="DeleteDefinitionAsync">Delete definition</button><span class="modal-action-spacer"></span><button class="button-quiet" type="button" @onclick="CloseDefinitionEditor">Cancel</button><button class="button-primary" type="submit">Save definition</button></div></form></section></div>
 }
 
+@if (isManagingAssignment)
+{
+    <div class="modal-backdrop" role="presentation">
+        <section class="modal" role="dialog" aria-modal="true" aria-labelledby="assignment-modal-title">
+            <div class="modal-heading">
+                <div>
+                    <p class="eyebrow">Workflow Assignment</p>
+                    <h2 id="assignment-modal-title">@(editingAssignment is null ? "Assign agent to column" : "Edit column assignment")</h2>
+                </div>
+                <button class="icon-button" type="button" aria-label="Close" @onclick="CloseAssignmentModal">×</button>
+            </div>
+            <form class="form-panel" @onsubmit="SaveAssignmentAsync" @onsubmit:preventDefault>
+                @if (editingAssignment is null)
+                {
+                    <label>
+                        Column Scope
+                        <select @bind="selectedScope">
+                            @foreach (var scope in EligibleScopes)
+                            {
+                                <option value="@scope">@GetScopeDisplayName(scope)</option>
+                            }
+                        </select>
+                    </label>
+                }
+                else
+                {
+                    <div>
+                        <span class="eyebrow">Column Scope</span>
+                        <p><strong>@GetScopeDisplayName(selectedScope)</strong></p>
+                    </div>
+                }
+
+                <label>
+                    Agent Definition
+                    <select @bind="selectedAgentDefinitionId">
+                        <option value="@Guid.Empty">Select a definition…</option>
+                        @foreach (var definition in definitions)
+                        {
+                            <option value="@definition.Id">@definition.Name</option>
+                        }
+                    </select>
+                </label>
+
+                <label>
+                    Match Criteria
+                    <input @bind="matchCriteriaInput" placeholder="e.g. rework=true, rework=false, or leave blank for default" />
+                    <small class="muted-copy">
+                        Optional. Leave blank to match all cards unconditionally. Specify rules like <code>rework=true</code>, <code>rework=false</code>, or keywords to target specific cards.
+                    </small>
+                </label>
+
+                <div class="modal-actions">
+                    @if (editingAssignment is not null)
+                    {
+                        <button class="button-danger" type="button" @onclick="() => DeleteAssignmentAsync(editingAssignment.Id)">Delete assignment</button>
+                        <span class="modal-action-spacer"></span>
+                    }
+                    <button class="button-quiet" type="button" @onclick="CloseAssignmentModal">Cancel</button>
+                    <button class="button-primary" type="submit" disabled="@(selectedAgentDefinitionId == Guid.Empty)">
+                        @(editingAssignment is null ? "Assign" : "Save changes")
+                    </button>
+                </div>
+            </form>
+        </section>
+    </div>
+}
+
 @code {
     [Parameter] public Guid BoardId { get; set; }
 
+    private static readonly ColumnScope[] EligibleScopes = [
+        ColumnScope.StepBuild,
+        ColumnScope.StepAgentReview,
+        ColumnScope.FeatureAgentReview
+    ];
+
     private List<AgentDefinition> definitions = [];
     private List<AgentComponent> availableComponents = [];
+    private List<AgentColumnAssignment> assignments = [];
     private AgentDefinition? selectedDefinition;
     private List<AgentComponent> selectedComponents = [];
     private string newComponentName = string.Empty;
@@ -115,6 +250,12 @@ else
     private bool isCreatingDefinition;
     private bool isEditingDefinition;
 
+    private bool isManagingAssignment;
+    private AgentColumnAssignment? editingAssignment;
+    private ColumnScope selectedScope = ColumnScope.StepBuild;
+    private Guid selectedAgentDefinitionId;
+    private string matchCriteriaInput = string.Empty;
+
     protected override async Task OnParametersSetAsync()
     {
         if (await BoardService.GetByIdAsync(BoardId) is null)
@@ -129,9 +270,94 @@ else
     {
         definitions = await AgentDefinitionService.GetForBoardAsync(BoardId);
         availableComponents = await AgentDefinitionService.GetComponentsAsync();
+        assignments = await AgentMatchingService.GetAssignmentsAsync(BoardId);
         if (selectedDefinition is not null)
         {
             await SelectDefinitionAsync(selectedDefinition.Id);
+        }
+    }
+
+    private static string GetScopeDisplayName(ColumnScope scope) => scope switch
+    {
+        ColumnScope.StepBuild => "Step: Build",
+        ColumnScope.StepAgentReview => "Step: Agent Review",
+        ColumnScope.FeatureAgentReview => "Feature: Agent Review",
+        _ => scope.ToString()
+    };
+
+    private static string GetScopeDescription(ColumnScope scope) => scope switch
+    {
+        ColumnScope.StepBuild => "Runs when a dev plan step begins active implementation.",
+        ColumnScope.StepAgentReview => "Runs when a step is submitted for automated review.",
+        ColumnScope.FeatureAgentReview => "Runs when all steps complete and the feature enters review.",
+        _ => string.Empty
+    };
+
+    private void OpenAssignmentCreator(ColumnScope? scope = null)
+    {
+        editingAssignment = null;
+        selectedScope = scope ?? ColumnScope.StepBuild;
+        selectedAgentDefinitionId = definitions.FirstOrDefault()?.Id ?? Guid.Empty;
+        matchCriteriaInput = string.Empty;
+        isManagingAssignment = true;
+    }
+
+    private void OpenAssignmentEditor(AgentColumnAssignment assignment)
+    {
+        editingAssignment = assignment;
+        selectedScope = assignment.ColumnScope;
+        selectedAgentDefinitionId = assignment.AgentDefinitionId;
+        matchCriteriaInput = assignment.MatchCriteria;
+        isManagingAssignment = true;
+    }
+
+    private void CloseAssignmentModal()
+    {
+        isManagingAssignment = false;
+        editingAssignment = null;
+    }
+
+    private async Task SaveAssignmentAsync()
+    {
+        if (selectedAgentDefinitionId == Guid.Empty)
+        {
+            ShowMessage("Please select an agent definition.");
+            return;
+        }
+
+        try
+        {
+            if (editingAssignment is null)
+            {
+                await AgentMatchingService.AssignAgentAsync(BoardId, selectedScope, selectedAgentDefinitionId, matchCriteriaInput);
+            }
+            else
+            {
+                await AgentMatchingService.UpdateAssignmentAsync(editingAssignment.Id, selectedAgentDefinitionId, matchCriteriaInput);
+            }
+            CloseAssignmentModal();
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            ShowMessage(exception.Message);
+        }
+    }
+
+    private async Task DeleteAssignmentAsync(Guid assignmentId)
+    {
+        try
+        {
+            await AgentMatchingService.DeleteAssignmentAsync(assignmentId);
+            if (editingAssignment?.Id == assignmentId)
+            {
+                CloseAssignmentModal();
+            }
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            ShowMessage(exception.Message);
         }
     }
 

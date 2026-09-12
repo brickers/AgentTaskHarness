@@ -14,6 +14,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 	public DbSet<AgentDefinition> AgentDefinitions => Set<AgentDefinition>();
 	public DbSet<AgentComponent> AgentComponents => Set<AgentComponent>();
 	public DbSet<AgentDefinitionComponent> AgentDefinitionComponents => Set<AgentDefinitionComponent>();
+	public DbSet<AgentColumnAssignment> AgentColumnAssignments => Set<AgentColumnAssignment>();
 	public DbSet<AgentRun> AgentRuns => Set<AgentRun>();
 
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -125,6 +126,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 				.WithMany(agentComponent => agentComponent.AgentDefinitions)
 				.HasForeignKey(component => component.ComponentId)
 				.OnDelete(DeleteBehavior.Restrict);
+		});
+
+		modelBuilder.Entity<AgentColumnAssignment>(entity =>
+		{
+			entity.Property(assignment => assignment.MatchCriteria).HasMaxLength(1_024);
+			entity.HasIndex(assignment => new { assignment.BoardId, assignment.ColumnScope });
+			entity.HasOne(assignment => assignment.Board)
+				.WithMany(board => board.ColumnAssignments)
+				.HasForeignKey(assignment => assignment.BoardId)
+				.OnDelete(DeleteBehavior.Cascade);
+			entity.HasOne(assignment => assignment.AgentDefinition)
+				.WithMany(definition => definition.ColumnAssignments)
+				.HasForeignKey(assignment => assignment.AgentDefinitionId)
+				.OnDelete(DeleteBehavior.Cascade);
 		});
 
 		modelBuilder.Entity<AgentRun>(entity =>

@@ -13,4 +13,5 @@ public class Board
 
 	public ICollection<Feature> Features { get; set; } = new List<Feature>();
 	public ICollection<AgentDefinition> AgentDefinitions { get; set; } = new List<AgentDefinition>();
+	public ICollection<AgentColumnAssignment> ColumnAssignments { get; set; } = new List<AgentColumnAssignment>();
 }

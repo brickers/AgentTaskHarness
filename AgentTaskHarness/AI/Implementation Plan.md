@@ -7,7 +7,7 @@ Requirements are available in the [Solution Design](Solution%20Design.md) docume
 # Technical Design
 
 ### Current State
-Delivery Steps 1–4 below are ✅ **Completed** — they shipped EF Core+SQLite persistence for the original generic `Board`/`Column`/`TaskItem` model (+ CRUD services), the Kanban UI with a generic column-transition orchestrator, a single-level LibGit2Sharp worktree/merge lifecycle, and agent-definition composition with an on-save folder writer. `Solution Design.md` has since been substantially expanded (Roadmap → Board → Feature → Step hierarchy, a fixed non-configurable six-column workflow, Feature/Step dependency scoping, review-outcome counters/thresholds, comments, agent matching criteria, a Step-only scheduler with prioritization, curated MCP named actions, cost/quality tracking, and a combined drag-and-drop UI). The original Steps 5–6 (generic agent scheduler + generic MCP move/get-allowed-moves) were never implemented; Delivery Steps 5–14 below replace them wholesale and carry the system the rest of the way to the current Solution Design. The configurable `Column` entity and flat `TaskItem`/`TaskDependency` built in Steps 1–2 are retired as part of Step 5 (see the superseded-by notes on those steps).
+Delivery Steps 1–10 below are ✅ **Completed** — they shipped EF Core+SQLite persistence for the original generic `Board`/`Column`/`TaskItem` model (+ CRUD services), the Kanban UI with a generic column-transition orchestrator, a single-level LibGit2Sharp worktree/merge lifecycle, and agent-definition composition with an on-save folder writer. `Solution Design.md` has since been substantially expanded (Roadmap → Board → Feature → Step hierarchy, a fixed non-configurable six-column workflow, Feature/Step dependency scoping, review-outcome counters/thresholds, comments, agent matching criteria, a Step-only scheduler with prioritization, curated MCP named actions, cost/quality tracking, and a combined drag-and-drop UI). The original Steps 5–6 (generic agent scheduler + generic MCP move/get-allowed-moves) were never implemented; Delivery Steps 5–14 below replace them wholesale and carry the system the rest of the way to the current Solution Design. The configurable `Column` entity and flat `TaskItem`/`TaskDependency` built in Steps 1–2 are retired as part of Step 5 (see the superseded-by notes on those steps).
 
 ### Key Decisions (confirmed with stakeholder)
 1. **Persistence: EF Core + SQLite** (code-first models + migrations) — chosen over Dapper/raw ADO.NET for easiest schema evolution and clean DI integration; unchanged by the hierarchy redesign.
@@ -181,14 +181,14 @@ Feature cards automatically track their Steps' progress, and boards/cards can sk
 - Implement skip-human-review auto-advance: when `Board.SkipFeatureHumanReview`/`SkipStepHumanReview` is set and the card's `AlwaysRequireHumanReview` override is false, `AgentReview`→`Done` happens automatically instead of stopping at `HumanReview`.
 - Add UI controls for the per-board toggles and the per-card `AlwaysRequireHumanReview` override.
 
-### Step 8: Comments and review-outcome counters
+### ✅ Step 8: Comments and review-outcome counters — Completed
 Cards carry a comment thread and review-outcome counters that drive derived rework/issue indicators.
 - Implement `CommentService`: add/list comments for a `(CardType, CardId)`, ordered by `CreatedAt`.
 - Implement `ReviewOutcomeService`: increments `AgentReviewFailCount`/`HumanReviewFailCount` on a failed review, compares against the board's thresholds, and exposes a derived "rework"/"issue" indicator once a threshold is crossed.
 - Wire `FeatureTransitionOrchestrator`/`StepTransitionOrchestrator` to call `ReviewOutcomeService` whenever a card is sent back from a review column.
 - Add a comments panel and counter/indicator display to the card UI (basic list view is enough here; full popup styling lands in Step 14).
 
-### Step 9: Two-level git worktree and merge lifecycle
+### ✅ Step 9: Two-level git worktree and merge lifecycle — Completed
 Feature and Step transitions now drive real two-level branches/worktrees, auto-commits, and Done-column merges at both levels, with conflict recovery and pause/resume/discard controls.
 - Rework `Infrastructure/Git/LibGit2WorktreeService` (`IGitWorktreeService`) for two-level branching: a Feature branch created off `main` on its first Step entering Build, and each Step branch created off its Feature's branch on first Build entry.
 - Implement merge-on-Done at both levels: a Step merges into its Feature branch on Step Done; a Feature merges into `main` and deletes both worktrees on Feature Done.
@@ -196,7 +196,7 @@ Feature and Step transitions now drive real two-level branches/worktrees, auto-c
 - Implement backlog-return flow (discard or pause the worktree) and a "discard uncommitted changes" UI action for both Feature and Step cards.
 - Replace the single-level `IGitWorktreeService` implementation from Step 3 with this reworked one in DI.
 
-### Step 10: Agent matching criteria and column-scope assignment
+### ✅ Step 10: Agent matching criteria and column-scope assignment — Completed
 Boards assign agent definitions to eligible column-scopes with matching criteria instead of a single per-column FK.
 - Add `Domain/Entities/AgentColumnAssignment(BoardId, ColumnScope, AgentDefinitionId, MatchCriteria)` and the `ColumnScope` enum (`StepBuild, StepAgentReview, FeatureAgentReview`); retire `Column.AgentDefinitionId`.
 - Implement `AgentMatchingService`: given a card and its column-scope, evaluates `MatchCriteria` across the board's `AgentColumnAssignment`s and resolves the concrete `AgentDefinition` to run.
