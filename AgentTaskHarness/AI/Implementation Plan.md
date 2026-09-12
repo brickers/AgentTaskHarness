@@ -160,7 +160,7 @@ Users can compose an agent from reusable components in the UI, and saving genera
 
 > **Steps 5–14 replace the original Steps 5–6** (never implemented) with the more granular sequence below, covering the rest of `Solution Design.md`.
 
-### Step 5: Hierarchical domain and persistence rework
+### ✅ Step 5: Hierarchical domain and persistence rework — Completed
 The database schema matches the Roadmap/Feature/Step hierarchy, with the old generic model retired.
 - Retire `Column`, `TaskItem`, `TaskDependency` entities, DbSets, and their EF Core configuration.
 - Add `Domain/Entities`: `Feature`, `Step`, `FeatureDependency`, `StepDependency`, `Comment`, plus `WorkflowColumn` and `CardType` enums.
@@ -168,7 +168,7 @@ The database schema matches the Roadmap/Feature/Step hierarchy, with the old gen
 - Update `AppDbContext` fluent configuration (FKs, cascade rules for `Feature`→`Step`, `Comment` keyed by `(CardType, CardId)`) and add a new EF Core migration.
 - Implement `Application` CRUD services: `FeatureService`, `StepService`.
 
-### Step 6: Shared workflow transition rules and dependency gating
+### ✅ Step 6: Shared workflow transition rules and dependency gating — Completed
 A shared rules engine and dependency services back both Feature and Step transitions, ready to be driven by orchestrators in the next step.
 - Implement `Application/Workflow/WorkflowTransitionRules`: a stateless service encoding the fixed `WorkflowColumn` sequence and which moves are legal.
 - Implement `FeatureDependencyService`/`StepDependencyService`: same-board (Feature) and same-feature/cross-feature (Step) dependency validation and "all dependencies Done" gating.
