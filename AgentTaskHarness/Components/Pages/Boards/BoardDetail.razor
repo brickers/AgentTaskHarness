@@ -59,6 +59,10 @@ else
                             <p>@feature.Requirements</p>
                             <div class="card-tags">
                                 <small class="muted-copy">Steps: @feature.Steps.Count</small>
+                                @if (feature.MergeConflictPending)
+                                {
+                                    <span class="tag tag-issue">Merge Conflict Pending</span>
+                                }
                                 @if (ReviewOutcomeService.IsRework(feature))
                                 {
                                     <span class="tag tag-rework">Rework</span>
@@ -78,13 +82,28 @@ else
                             </div>
                         </div>
 
+                        @if (feature.MergeConflictPending)
+                        {
+                            <div class="move-actions">
+                                <button class="button-primary button-small" @onclick="() => ResumeFeatureMergeAsync(feature.Id)">Resume merge</button>
+                            </div>
+                        }
+
                         @if (featureAllowedMoves.TryGetValue(feature.Id, out var fMoves) && fMoves.Count > 0)
                         {
                             <div class="move-actions">
                                 <span class="move-label">Move:</span>
                                 @foreach (var target in fMoves)
                                 {
-                                    <button class="button-move" @onclick="() => MoveFeatureAsync(feature.Id, target)">→ @target</button>
+                                    @if (target == WorkflowColumn.Backlog && !string.IsNullOrWhiteSpace(feature.WorktreePath))
+                                    {
+                                        <button class="button-move" @onclick="() => MoveFeatureAsync(feature.Id, WorkflowColumn.Backlog)">→ Backlog (pause)</button>
+                                        <button class="button-move" @onclick="() => MoveFeatureAndDiscardWorktreeAsync(feature.Id, WorkflowColumn.Backlog)">→ Backlog (discard)</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="button-move" @onclick="() => MoveFeatureAsync(feature.Id, target)">→ @target</button>
+                                    }
                                 }
                             </div>
                         }
@@ -92,6 +111,10 @@ else
                         <div class="card-actions">
                             <button class="button-quiet" @onclick="() => StartEditingFeature(feature)">Edit</button>
                             <button class="button-quiet" @onclick="() => OpenStepCreator(feature.Id)">Add step</button>
+                            @if (!string.IsNullOrWhiteSpace(feature.WorktreePath))
+                            {
+                                <button class="button-quiet" @onclick="() => DiscardFeatureUncommittedChangesAsync(feature.Id)">Discard uncommitted changes</button>
+                            }
                             <button class="button-quiet" @onclick="() => ToggleCommentsAsync(CardType.Feature, feature.Id)">Comments (@GetCommentCount(CardType.Feature, feature.Id))</button>
                             <button class="button-danger" @onclick="() => DeleteFeatureAsync(feature.Id)">Delete</button>
                         </div>
@@ -147,6 +170,10 @@ else
                                             <p><small>@step.Description</small></p>
                                         }
                                         <div class="card-tags">
+                                            @if (step.MergeConflictPending)
+                                            {
+                                                <span class="tag tag-issue">Merge Conflict Pending</span>
+                                            }
                                             @if (ReviewOutcomeService.IsRework(step))
                                             {
                                                 <span class="tag tag-rework">Rework</span>
@@ -164,18 +191,38 @@ else
                                                 <small class="muted-copy">Fails: Agent @step.AgentReviewFailCount | Human @step.HumanReviewFailCount</small>
                                             }
                                         </div>
+
+                                        @if (step.MergeConflictPending)
+                                        {
+                                            <div class="move-actions">
+                                                <button class="button-primary button-small" @onclick="() => ResumeStepMergeAsync(step.Id)">Resume merge</button>
+                                            </div>
+                                        }
+
                                         @if (stepAllowedMoves.TryGetValue(step.Id, out var sMoves) && sMoves.Count > 0)
                                         {
                                             <div class="move-actions">
                                                 <span class="move-label">Move:</span>
                                                 @foreach (var target in sMoves)
                                                 {
-                                                    <button class="button-move" @onclick="() => MoveStepAsync(step.Id, target)">→ @target</button>
+                                                    @if (target == WorkflowColumn.Backlog && !string.IsNullOrWhiteSpace(step.WorktreePath))
+                                                    {
+                                                        <button class="button-move" @onclick="() => MoveStepAsync(step.Id, WorkflowColumn.Backlog)">→ Backlog (pause)</button>
+                                                        <button class="button-move" @onclick="() => MoveStepAndDiscardWorktreeAsync(step.Id, WorkflowColumn.Backlog)">→ Backlog (discard)</button>
+                                                    }
+                                                    else
+                                                    {
+                                                        <button class="button-move" @onclick="() => MoveStepAsync(step.Id, target)">→ @target</button>
+                                                    }
                                                 }
                                             </div>
                                         }
                                         <div class="step-actions">
                                             <button class="button-quiet button-small" @onclick="() => StartEditingStep(step)">Edit</button>
+                                            @if (!string.IsNullOrWhiteSpace(step.WorktreePath))
+                                            {
+                                                <button class="button-quiet button-small" @onclick="() => DiscardStepUncommittedChangesAsync(step.Id)">Discard uncommitted changes</button>
+                                            }
                                             <button class="button-quiet button-small" @onclick="() => ToggleCommentsAsync(CardType.Step, step.Id)">Comments (@GetCommentCount(CardType.Step, step.Id))</button>
                                             <button class="button-danger button-small" @onclick="() => DeleteStepAsync(step.Id)">Delete</button>
                                         </div>
@@ -581,6 +628,39 @@ else
         catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
+    private async Task MoveFeatureAndDiscardWorktreeAsync(Guid featureId, WorkflowColumn target)
+    {
+        try
+        {
+            await FeatureOrchestrator.MoveAndDiscardWorktreeAsync(featureId, target);
+            ShowMessage("Feature moved to Backlog and worktree discarded.");
+            await LoadAsync();
+        }
+        catch (Exception exception) { ShowMessage(exception.Message); }
+    }
+
+    private async Task ResumeFeatureMergeAsync(Guid featureId)
+    {
+        try
+        {
+            await FeatureOrchestrator.ResumeMergeAsync(featureId);
+            ShowMessage("Feature merge completed successfully.");
+            await LoadAsync();
+        }
+        catch (Exception exception) { ShowMessage(exception.Message); }
+    }
+
+    private async Task DiscardFeatureUncommittedChangesAsync(Guid featureId)
+    {
+        try
+        {
+            await FeatureOrchestrator.DiscardUncommittedChangesAsync(featureId);
+            ShowMessage("Uncommitted changes in feature worktree were discarded.");
+            await LoadAsync();
+        }
+        catch (Exception exception) { ShowMessage(exception.Message); }
+    }
+
     private void OpenStepCreator(Guid featureId)
     {
         stepTargetFeatureId = featureId;
@@ -644,6 +724,39 @@ else
         try
         {
             await StepOrchestrator.MoveAsync(stepId, target);
+            await LoadAsync();
+        }
+        catch (Exception exception) { ShowMessage(exception.Message); }
+    }
+
+    private async Task MoveStepAndDiscardWorktreeAsync(Guid stepId, WorkflowColumn target)
+    {
+        try
+        {
+            await StepOrchestrator.MoveAndDiscardWorktreeAsync(stepId, target);
+            ShowMessage("Step moved to Backlog and worktree discarded.");
+            await LoadAsync();
+        }
+        catch (Exception exception) { ShowMessage(exception.Message); }
+    }
+
+    private async Task ResumeStepMergeAsync(Guid stepId)
+    {
+        try
+        {
+            await StepOrchestrator.ResumeMergeAsync(stepId);
+            ShowMessage("Step merge completed successfully.");
+            await LoadAsync();
+        }
+        catch (Exception exception) { ShowMessage(exception.Message); }
+    }
+
+    private async Task DiscardStepUncommittedChangesAsync(Guid stepId)
+    {
+        try
+        {
+            await StepOrchestrator.DiscardUncommittedChangesAsync(stepId);
+            ShowMessage("Uncommitted changes in step worktree were discarded.");
             await LoadAsync();
         }
         catch (Exception exception) { ShowMessage(exception.Message); }

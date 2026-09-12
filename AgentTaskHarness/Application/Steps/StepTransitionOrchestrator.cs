@@ -1,8 +1,10 @@
+using AgentTaskHarness.Application.Abstractions;
 using AgentTaskHarness.Application.Features;
 using AgentTaskHarness.Application.Reviews;
 using AgentTaskHarness.Application.Workflow;
 using AgentTaskHarness.Domain.Entities;
 using AgentTaskHarness.Domain.Enums;
+using AgentTaskHarness.Infrastructure.Git;
 using AgentTaskHarness.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,9 +15,18 @@ public class StepTransitionOrchestrator(
 	WorkflowTransitionRules rules,
 	StepDependencyService dependencyService,
 	FeatureTransitionOrchestrator featureTransitionOrchestrator,
-	ReviewOutcomeService reviewOutcomeService)
+	ReviewOutcomeService reviewOutcomeService,
+	IGitWorktreeService? gitWorktrees = null)
 {
-	public async Task<Step> MoveAsync(Guid stepId, WorkflowColumn targetColumn, CancellationToken cancellationToken = default)
+	private readonly IGitWorktreeService gitWorktrees = gitWorktrees ?? new NoOpGitWorktreeService();
+
+	public Task<Step> MoveAsync(Guid stepId, WorkflowColumn targetColumn, CancellationToken cancellationToken = default) =>
+		MoveAsync(stepId, targetColumn, discardWorktreeOnBacklogReturn: false, cancellationToken);
+
+	public Task<Step> MoveAndDiscardWorktreeAsync(Guid stepId, WorkflowColumn targetColumn, CancellationToken cancellationToken = default) =>
+		MoveAsync(stepId, targetColumn, discardWorktreeOnBacklogReturn: true, cancellationToken);
+
+	public async Task<Step> MoveAsync(Guid stepId, WorkflowColumn targetColumn, bool discardWorktreeOnBacklogReturn, CancellationToken cancellationToken = default)
 	{
 		var step = await dbContext.Steps
 			.Include(s => s.Feature)
@@ -70,6 +81,25 @@ public class StepTransitionOrchestrator(
 		}
 
 		var previousColumn = step.WorkflowColumn;
+
+		try
+		{
+			if (effectiveTarget == WorkflowColumn.Backlog && discardWorktreeOnBacklogReturn)
+			{
+				await gitWorktrees.DiscardStepWorktreeAsync(step, cancellationToken);
+			}
+			else
+			{
+				await gitWorktrees.HandleStepTransitionAsync(step, previousColumn, effectiveTarget, cancellationToken);
+			}
+		}
+		catch (GitMergeConflictException)
+		{
+			step.MergeConflictPending = true;
+			await dbContext.SaveChangesAsync(cancellationToken);
+			throw;
+		}
+
 		step.WorkflowColumn = effectiveTarget;
 
 		reviewOutcomeService.HandleTransition(step, previousColumn, effectiveTarget);
@@ -96,6 +126,66 @@ public class StepTransitionOrchestrator(
 		}
 
 		return step;
+	}
+
+	public async Task<Step> ResumeMergeAsync(Guid stepId, CancellationToken cancellationToken = default)
+	{
+		var step = await dbContext.Steps
+			.Include(s => s.Feature)
+				.ThenInclude(f => f.Board)
+			.SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken)
+			?? throw new KeyNotFoundException($"Step '{stepId}' was not found.");
+
+		if (!step.MergeConflictPending)
+		{
+			throw new InvalidOperationException("This step does not have a merge conflict pending.");
+		}
+
+		await gitWorktrees.ResumeStepMergeAsync(step, cancellationToken);
+		step.WorkflowColumn = WorkflowColumn.Done;
+		step.MergeConflictPending = false;
+		await dbContext.SaveChangesAsync(cancellationToken);
+
+		// Trigger 2: all Steps reaching Done (Feature Build -> AgentReview)
+		var featureSteps = await dbContext.Steps
+			.Where(s => s.FeatureId == step.FeatureId)
+			.ToListAsync(cancellationToken);
+
+		if (featureSteps.Count > 0 && featureSteps.All(s => s.WorkflowColumn == WorkflowColumn.Done))
+		{
+			var feature = step.Feature ?? await dbContext.Features
+				.SingleOrDefaultAsync(f => f.Id == step.FeatureId, cancellationToken);
+
+			if (feature is not null && feature.WorkflowColumn == WorkflowColumn.Build)
+			{
+				await featureTransitionOrchestrator.MoveAsync(feature.Id, WorkflowColumn.AgentReview, cancellationToken);
+			}
+		}
+
+		return step;
+	}
+
+	public async Task DiscardUncommittedChangesAsync(Guid stepId, CancellationToken cancellationToken = default)
+	{
+		var step = await dbContext.Steps
+			.Include(s => s.Feature)
+				.ThenInclude(f => f.Board)
+			.SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken)
+			?? throw new KeyNotFoundException($"Step '{stepId}' was not found.");
+
+		await gitWorktrees.DiscardStepUncommittedChangesAsync(step, cancellationToken);
+	}
+
+	public async Task DiscardWorktreeAsync(Guid stepId, CancellationToken cancellationToken = default)
+	{
+		var step = await dbContext.Steps
+			.Include(s => s.Feature)
+				.ThenInclude(f => f.Board)
+			.SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken)
+			?? throw new KeyNotFoundException($"Step '{stepId}' was not found.");
+
+		await gitWorktrees.DiscardStepWorktreeAsync(step, cancellationToken);
+		await dbContext.SaveChangesAsync(cancellationToken);
 	}
 
 	public async Task<IReadOnlyList<WorkflowColumn>> GetAllowedMovesAsync(Guid stepId, CancellationToken cancellationToken = default)

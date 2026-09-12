@@ -1,7 +1,9 @@
+using AgentTaskHarness.Application.Abstractions;
 using AgentTaskHarness.Application.Reviews;
 using AgentTaskHarness.Application.Workflow;
 using AgentTaskHarness.Domain.Entities;
 using AgentTaskHarness.Domain.Enums;
+using AgentTaskHarness.Infrastructure.Git;
 using AgentTaskHarness.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,9 +13,18 @@ public class FeatureTransitionOrchestrator(
 	AppDbContext dbContext,
 	WorkflowTransitionRules rules,
 	FeatureDependencyService dependencyService,
-	ReviewOutcomeService reviewOutcomeService)
+	ReviewOutcomeService reviewOutcomeService,
+	IGitWorktreeService? gitWorktrees = null)
 {
-	public async Task<Feature> MoveAsync(Guid featureId, WorkflowColumn targetColumn, CancellationToken cancellationToken = default)
+	private readonly IGitWorktreeService gitWorktrees = gitWorktrees ?? new NoOpGitWorktreeService();
+
+	public Task<Feature> MoveAsync(Guid featureId, WorkflowColumn targetColumn, CancellationToken cancellationToken = default) =>
+		MoveAsync(featureId, targetColumn, discardWorktreeOnBacklogReturn: false, cancellationToken);
+
+	public Task<Feature> MoveAndDiscardWorktreeAsync(Guid featureId, WorkflowColumn targetColumn, CancellationToken cancellationToken = default) =>
+		MoveAsync(featureId, targetColumn, discardWorktreeOnBacklogReturn: true, cancellationToken);
+
+	public async Task<Feature> MoveAsync(Guid featureId, WorkflowColumn targetColumn, bool discardWorktreeOnBacklogReturn, CancellationToken cancellationToken = default)
 	{
 		var feature = await dbContext.Features
 			.Include(f => f.Board)
@@ -57,6 +68,25 @@ public class FeatureTransitionOrchestrator(
 		}
 
 		var previousColumn = feature.WorkflowColumn;
+
+		try
+		{
+			if (effectiveTarget == WorkflowColumn.Backlog && discardWorktreeOnBacklogReturn)
+			{
+				await gitWorktrees.DiscardFeatureWorktreeAsync(feature, cancellationToken);
+			}
+			else
+			{
+				await gitWorktrees.HandleFeatureTransitionAsync(feature, previousColumn, effectiveTarget, cancellationToken);
+			}
+		}
+		catch (GitMergeConflictException)
+		{
+			feature.MergeConflictPending = true;
+			await dbContext.SaveChangesAsync(cancellationToken);
+			throw;
+		}
+
 		feature.WorkflowColumn = effectiveTarget;
 
 		reviewOutcomeService.HandleTransition(feature, previousColumn, effectiveTarget);
@@ -76,6 +106,46 @@ public class FeatureTransitionOrchestrator(
 
 		await dbContext.SaveChangesAsync(cancellationToken);
 		return feature;
+	}
+
+	public async Task<Feature> ResumeMergeAsync(Guid featureId, CancellationToken cancellationToken = default)
+	{
+		var feature = await dbContext.Features
+			.Include(f => f.Board)
+			.SingleOrDefaultAsync(f => f.Id == featureId, cancellationToken)
+			?? throw new KeyNotFoundException($"Feature '{featureId}' was not found.");
+
+		if (!feature.MergeConflictPending)
+		{
+			throw new InvalidOperationException("This feature does not have a merge conflict pending.");
+		}
+
+		await gitWorktrees.ResumeFeatureMergeAsync(feature, cancellationToken);
+		feature.WorkflowColumn = WorkflowColumn.Done;
+		feature.MergeConflictPending = false;
+		await dbContext.SaveChangesAsync(cancellationToken);
+		return feature;
+	}
+
+	public async Task DiscardUncommittedChangesAsync(Guid featureId, CancellationToken cancellationToken = default)
+	{
+		var feature = await dbContext.Features
+			.Include(f => f.Board)
+			.SingleOrDefaultAsync(f => f.Id == featureId, cancellationToken)
+			?? throw new KeyNotFoundException($"Feature '{featureId}' was not found.");
+
+		await gitWorktrees.DiscardFeatureUncommittedChangesAsync(feature, cancellationToken);
+	}
+
+	public async Task DiscardWorktreeAsync(Guid featureId, CancellationToken cancellationToken = default)
+	{
+		var feature = await dbContext.Features
+			.Include(f => f.Board)
+			.SingleOrDefaultAsync(f => f.Id == featureId, cancellationToken)
+			?? throw new KeyNotFoundException($"Feature '{featureId}' was not found.");
+
+		await gitWorktrees.DiscardFeatureWorktreeAsync(feature, cancellationToken);
+		await dbContext.SaveChangesAsync(cancellationToken);
 	}
 
 	public async Task<IReadOnlyList<WorkflowColumn>> GetAllowedMovesAsync(Guid featureId, CancellationToken cancellationToken = default)
