@@ -52,9 +52,9 @@
 		</span>
 	}
 
-	@if (!IsMini && ShowText && Status.HasValue)
+	@if (!IsMini && ShowText)
 	{
-		<span class="status-text">@FormatStatus(Status.Value)</span>
+		<span class="status-text">@(Status.HasValue ? FormatStatus(Status.Value) : "Idle")</span>
 	}
 </span>
 
@@ -143,9 +143,11 @@
 
 	private string TooltipText =>
 		!string.IsNullOrWhiteSpace(Label) ? Label :
-		Status.HasValue ? $"Agent: {FormatStatus(Status.Value)}" : "Idle / No Agent";
+		Status.HasValue
+			? $"{FormatStatus(Status.Value)}: {GetStatusDescription(Status.Value)}"
+			: "Idle / No Agent: Card has no active agent task assigned or running";
 
-	private static string FormatStatus(AgentRunStatus status) => status switch
+	public static string FormatStatus(AgentRunStatus status) => status switch
 	{
 		AgentRunStatus.Working => "Working",
 		AgentRunStatus.WaitingForInput => "Waiting for input",
@@ -155,5 +157,17 @@
 		AgentRunStatus.Stopped => "Stopped",
 		AgentRunStatus.Queued => "Queued",
 		_ => status.ToString()
+	};
+
+	public static string GetStatusDescription(AgentRunStatus status) => status switch
+	{
+		AgentRunStatus.Working => "Agent is actively running and modifying code",
+		AgentRunStatus.WaitingForInput => "Agent is waiting for user response or clarification",
+		AgentRunStatus.Queued => "Queued and waiting for an available agent worker slot",
+		AgentRunStatus.Completed => "Agent execution completed successfully",
+		AgentRunStatus.Failed => "Agent execution failed or encountered errors",
+		AgentRunStatus.Blocked => "Blocked by unmet prerequisites or review failure threshold",
+		AgentRunStatus.Stopped => "Agent execution was manually halted",
+		_ => "Idle / No active agent"
 	};
 }

@@ -1,0 +1,232 @@
+@using AgentTaskHarness.Application.Boards
+@using AgentTaskHarness.Domain.Entities
+@inject NavigationManager Navigation
+@inject BoardService BoardService
+@implements IDisposable
+
+<div class="app-nav-container">
+    <div class="nav-brand-section">
+        <a class="brand" href="/boards">
+            <span class="brand-mark" aria-hidden="true"></span>
+            <span class="brand-title">Agent Task Harness</span>
+        </a>
+    </div>
+
+    <nav class="nav-menu-links">
+        <a href="/boards" class="nav-link @(isAllBoards ? "active" : "")">
+            <span class="nav-icon">📋</span>
+            <span>All Boards</span>
+        </a>
+
+        @if (currentBoardId.HasValue)
+        {
+            <span class="nav-divider" aria-hidden="true">/</span>
+            <div class="board-nav-group">
+                <a href="@($"/boards/{currentBoardId}")" class="nav-link @(currentSection == "board" ? "active" : "")" title="Kanban Board">
+                    <span class="nav-icon">📊</span>
+                    <span>Board</span>
+                </a>
+                <a href="@($"/boards/{currentBoardId}/roadmap")" class="nav-link @(currentSection == "roadmap" ? "active" : "")" title="Roadmap & Dependencies">
+                    <span class="nav-icon">🗺️</span>
+                    <span>Roadmap</span>
+                </a>
+                <a href="@($"/boards/{currentBoardId}/agents")" class="nav-link @(currentSection == "agents" ? "active" : "")" title="Agent Definitions & Column Assignments">
+                    <span class="nav-icon">🤖</span>
+                    <span>Agents</span>
+                </a>
+            </div>
+        }
+    </nav>
+
+    <div class="nav-context-section">
+        @if (!string.IsNullOrWhiteSpace(currentBoardName))
+        {
+            <span class="board-name-badge" title="@currentBoardName">@currentBoardName</span>
+        }
+        else
+        {
+            <span class="header-context">Work orchestration</span>
+        }
+    </div>
+</div>
+
+<style>
+    .app-nav-container {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .nav-brand-section {
+        display: flex;
+        align-items: center;
+    }
+
+    .brand {
+        display: inline-flex;
+        align-items: center;
+        font-size: 1.05rem;
+        font-weight: 700;
+        gap: .55rem;
+        text-decoration: none;
+        color: var(--ink);
+    }
+
+    .brand-mark {
+        background: var(--accent);
+        border-radius: 50%;
+        display: inline-block;
+        height: .75rem;
+        width: .75rem;
+    }
+
+    .brand-title {
+        letter-spacing: -0.02em;
+    }
+
+    .nav-menu-links {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .nav-divider {
+        color: var(--border);
+        font-weight: 300;
+        margin: 0 0.25rem;
+    }
+
+    .board-nav-group {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+    }
+
+    .nav-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.4rem 0.75rem;
+        border-radius: 0.45rem;
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: var(--muted);
+        text-decoration: none;
+        transition: all 0.15s ease-in-out;
+    }
+
+    .nav-link:hover {
+        color: var(--ink);
+        background: var(--surface-muted);
+    }
+
+    .nav-link.active {
+        color: var(--ink);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    .nav-icon {
+        font-size: 0.95rem;
+        line-height: 1;
+    }
+
+    .nav-context-section {
+        display: flex;
+        align-items: center;
+    }
+
+    .board-name-badge {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--muted);
+        background: var(--surface-muted);
+        border: 1px solid var(--border);
+        padding: 0.25rem 0.65rem;
+        border-radius: 99rem;
+        max-width: 220px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .header-context {
+        color: var(--muted);
+        font-size: .78rem;
+        letter-spacing: .07em;
+        text-transform: uppercase;
+    }
+
+    @@media (max-width: 768px) {
+        .app-nav-container {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+
+        .nav-menu-links {
+            width: 100%;
+        }
+
+        .nav-context-section {
+            display: none;
+        }
+    }
+</style>
+
+@code {
+    private Guid? currentBoardId;
+    private string? currentBoardName;
+    private string currentSection = "boards";
+    private bool isAllBoards => !currentBoardId.HasValue || currentSection == "boards";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        await UpdateRouteStateAsync(Navigation.Uri);
+    }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        await UpdateRouteStateAsync(e.Location);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task UpdateRouteStateAsync(string uri)
+    {
+        var relative = Navigation.ToBaseRelativePath(uri).Split('?')[0].Trim('/');
+        var parts = relative.Split('/');
+
+        if (parts.Length >= 2 && parts[0].Equals("boards", StringComparison.OrdinalIgnoreCase) && Guid.TryParse(parts[1], out var parsedId))
+        {
+            currentBoardId = parsedId;
+            currentSection = parts.Length > 2 ? parts[2].ToLowerInvariant() : "board";
+
+            try
+            {
+                var board = await BoardService.GetByIdAsync(parsedId);
+                currentBoardName = board?.Name;
+            }
+            catch
+            {
+                currentBoardName = null;
+            }
+        }
+        else
+        {
+            currentBoardId = null;
+            currentBoardName = null;
+            currentSection = "boards";
+        }
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+}

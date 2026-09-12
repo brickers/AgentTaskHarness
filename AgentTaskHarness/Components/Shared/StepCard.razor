@@ -15,6 +15,13 @@
 		</div>
 	</div>
 
+	@if (!string.IsNullOrWhiteSpace(Step.Feature?.Title))
+	{
+		<div class="step-feature-tag" title="Parent feature: @Step.Feature.Title">
+			@Step.Feature.Title
+		</div>
+	}
+
 	<div class="card-badges">
 		@if (IsRework)
 		{
@@ -85,6 +92,19 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+	.step-feature-tag {
+		font-size: 0.72rem;
+		color: #64748b;
+		background: #f1f5f9;
+		padding: 2px 6px;
+		border-radius: 4px;
+		display: inline-block;
+		margin-top: 4px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 100%;
 	}
 	.card-badges {
 		display: flex;

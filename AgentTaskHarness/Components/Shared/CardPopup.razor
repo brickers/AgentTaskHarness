@@ -30,13 +30,16 @@
 		{
 			<header class="popup-header">
 				<div class="header-main">
-					<div class="type-pill @(IsFeature ? "pill-feature" : "pill-step")">
-						@(IsFeature ? "Feature" : "Step")
+					<div class="header-meta">
+						<span class="type-pill @(IsFeature ? "pill-feature" : "pill-step")">
+							@(IsFeature ? "Feature" : "Step")
+						</span>
+						<span class="column-badge">@CurrentColumn</span>
+						<StatusIcon Status="@CurrentRun?.Status" ShowText="true" />
 					</div>
 					<h2 class="popup-title">@CardTitle</h2>
 				</div>
 				<div class="header-actions">
-					<span class="column-badge">@CurrentColumn</span>
 					<button class="btn-close" @onclick="Close" aria-label="Close popup">&times;</button>
 				</div>
 			</header>
@@ -108,6 +111,67 @@
 				@if (activeTab == "details")
 				{
 					<div class="tab-panel">
+						<!-- Status Indicator & Explanation Section -->
+						<div class="status-explanation-card">
+							<div class="current-status-banner">
+								<div class="status-banner-left">
+									<StatusIcon Status="@CurrentRun?.Status" />
+									<span class="status-banner-title">
+										<strong>Status:</strong> @(CurrentRun != null ? CurrentRun.Status.ToString() : "Idle")
+									</span>
+								</div>
+								<span class="status-banner-desc">
+									@(CurrentRun != null
+										? StatusIcon.GetStatusDescription(CurrentRun.Status)
+										: "No active agent run. Card is currently idle.")
+								</span>
+							</div>
+
+							<div class="status-legend-section">
+								<div class="legend-header" @onclick="() => showStatusLegend = !showStatusLegend">
+									<span class="legend-title">Status Indicator Legend</span>
+									<span class="legend-toggle">@(showStatusLegend ? "Hide ▲" : "Show ▼")</span>
+								</div>
+								@if (showStatusLegend)
+								{
+									<div class="status-legend-grid">
+										<div class="legend-item">
+											<StatusIcon Status="@AgentRunStatus.Working" />
+											<div><strong>Working:</strong> Agent is actively executing tasks and modifying code.</div>
+										</div>
+										<div class="legend-item">
+											<StatusIcon Status="@AgentRunStatus.WaitingForInput" />
+											<div><strong>Waiting for input:</strong> Agent is paused waiting for user response.</div>
+										</div>
+										<div class="legend-item">
+											<StatusIcon Status="@AgentRunStatus.Queued" />
+											<div><strong>Queued:</strong> Scheduled and awaiting an available worker slot.</div>
+										</div>
+										<div class="legend-item">
+											<StatusIcon Status="@AgentRunStatus.Completed" />
+											<div><strong>Completed:</strong> Agent finished execution successfully.</div>
+										</div>
+										<div class="legend-item">
+											<StatusIcon Status="@AgentRunStatus.Failed" />
+											<div><strong>Failed:</strong> Agent encountered an error or failed tests/reviews.</div>
+										</div>
+										<div class="legend-item">
+											<StatusIcon Status="@AgentRunStatus.Blocked" />
+											<div><strong>Blocked:</strong> Card is blocked by dependencies or issue threshold.</div>
+										</div>
+										<div class="legend-item">
+											<StatusIcon Status="@AgentRunStatus.Stopped" />
+											<div><strong>Stopped:</strong> Agent process was manually terminated.</div>
+										</div>
+										<div class="legend-item">
+											<StatusIcon Status="null" />
+											<div><strong>Idle:</strong> No agent task currently running or assigned.</div>
+										</div>
+									</div>
+								}
+							</div>
+						</div>
+
 						@if (IsFeature)
 						{
 							<div class="detail-group">
@@ -392,6 +456,12 @@
 		flex: 1;
 		min-width: 0;
 	}
+	.header-meta {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
 	.type-pill {
 		font-size: 0.72rem;
 		font-weight: 700;
@@ -425,7 +495,7 @@
 	.column-badge {
 		font-size: 0.8rem;
 		font-weight: 600;
-		padding: 4px 10px;
+		padding: 2px 8px;
 		background: #e2e8f0;
 		color: #334155;
 		border-radius: 6px;
@@ -477,6 +547,71 @@
 		font-size: 0.88rem;
 		color: #64748b;
 		margin-bottom: 16px;
+	}
+	.status-explanation-card {
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		border-radius: 8px;
+		padding: 12px 14px;
+		margin-bottom: 18px;
+	}
+	.current-status-banner {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		padding-bottom: 10px;
+		border-bottom: 1px solid #e2e8f0;
+	}
+	.status-banner-left {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.status-banner-title {
+		font-size: 0.9rem;
+		color: #0f172a;
+	}
+	.status-banner-desc {
+		font-size: 0.82rem;
+		color: #475569;
+		margin-left: 20px;
+	}
+	.status-legend-section {
+		padding-top: 8px;
+	}
+	.legend-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		cursor: pointer;
+		user-select: none;
+	}
+	.legend-title {
+		font-size: 0.78rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: #64748b;
+	}
+	.legend-toggle {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: #2563eb;
+	}
+	.status-legend-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 8px 12px;
+		margin-top: 10px;
+		padding-top: 6px;
+	}
+	.legend-item {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		font-size: 0.78rem;
+		color: #334155;
+		line-height: 1.35;
 	}
 	.detail-group {
 		margin-bottom: 16px;
@@ -535,6 +670,13 @@
 		font-weight: 500;
 		color: #1e293b;
 		cursor: pointer;
+	}
+	.toggle-label input[type="checkbox"] {
+		width: 1.1rem;
+		height: 1.1rem;
+		margin: 0;
+		cursor: pointer;
+		flex-shrink: 0;
 	}
 	.agent-running-banner {
 		display: flex;
@@ -693,6 +835,7 @@
 	[Parameter] public EventCallback OnChanged { get; set; }
 
 	private string activeTab = "details";
+	private bool showStatusLegend = true;
 	private string? ErrorMessage;
 	private string? SuccessMessage;
 	private List<WorkflowColumn> allowedMoves = [];

@@ -42,8 +42,8 @@
                     <small>Choose a folder to fill this field. Browsers hide its full local path, so replace the name with the server-visible path when needed.</small>
                 </div>
                 <label>Agent concurrency <input type="number" min="1" @bind="newConcurrencyLimit" /></label>
-                <label><input type="checkbox" @bind="newSkipFeatureHumanReview" /> Skip Feature Human Review</label>
-                <label><input type="checkbox" @bind="newSkipStepHumanReview" /> Skip Step Human Review</label>
+                <label class="checkbox-label"><input type="checkbox" @bind="newSkipFeatureHumanReview" /> Skip Feature Human Review</label>
+                <label class="checkbox-label"><input type="checkbox" @bind="newSkipStepHumanReview" /> Skip Step Human Review</label>
                 <div class="modal-actions">
                     <button class="button-quiet" type="button" @onclick="CloseCreateDialog">Cancel</button>
                     <button class="button-primary" type="submit">Create board</button>

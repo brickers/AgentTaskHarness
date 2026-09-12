@@ -6,7 +6,8 @@
 	 draggable="@(!IsAgentRunning)"
 	 @ondragstart="HandleDragStart"
 	 @ondragend="HandleDragEnd"
-	 @onclick="HandleClick">
+	 @onclick="HandleClick"
+	 title="Click to filter steps by this feature">
 
 	<div class="card-header">
 		<div class="card-title-row">
@@ -14,15 +15,24 @@
 			<span class="card-title" title="@Feature.Title">@Feature.Title</span>
 		</div>
 
-		@if (ChildStepStatuses?.Count > 0)
-		{
-			<div class="mini-indicators" title="Step status overview (@ChildStepStatuses.Count steps)">
-				@foreach (var stepStatus in ChildStepStatuses)
-				{
-					<StatusIcon Status="@stepStatus" IsMini="true" />
-				}
-			</div>
-		}
+		<div class="card-header-actions">
+			@if (ChildStepStatuses?.Count > 0)
+			{
+				<div class="mini-indicators" title="Step status overview (@ChildStepStatuses.Count steps)">
+					@foreach (var stepStatus in ChildStepStatuses)
+					{
+						<StatusIcon Status="@stepStatus" IsMini="true" />
+					}
+				</div>
+			}
+			<button class="btn-card-edit"
+					title="Edit feature details"
+					type="button"
+					@onclick="HandleEditClick"
+					@onclick:stopPropagation="true">
+				✏️
+			</button>
+		</div>
 	</div>
 
 	<div class="card-badges">
@@ -92,6 +102,31 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 6px;
+	}
+	.card-header-actions {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex-shrink: 0;
+	}
+	.btn-card-edit {
+		background: transparent;
+		border: 1px solid transparent;
+		border-radius: 4px;
+		font-size: 0.82rem;
+		cursor: pointer;
+		padding: 2px 4px;
+		line-height: 1;
+		color: #64748b;
+		transition: all 0.15s ease;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.btn-card-edit:hover {
+		background: #e2e8f0;
+		color: #0f172a;
+		border-color: #cbd5e1;
 	}
 	.card-title {
 		font-size: 0.88rem;
@@ -190,6 +225,10 @@
 	private async Task HandleClick()
 	{
 		await OnSelect.InvokeAsync(Feature);
+	}
+
+	private async Task HandleEditClick()
+	{
 		await OnOpenDetails.InvokeAsync(Feature);
 	}
 

@@ -43,9 +43,57 @@ a { color: inherit; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .45; }
-input, select, textarea { background: var(--surface); border: 1px solid #cfcfca; border-radius: .45rem; color: var(--ink); padding: .6rem .65rem; width: 100%; }
-input:focus, select:focus, textarea:focus { border-color: #777; box-shadow: 0 0 0 3px rgba(0, 0, 0, .08); outline: none; }
+input:not([type="checkbox"]):not([type="radio"]), select, textarea { background: var(--surface); border: 1px solid #cfcfca; border-radius: .45rem; color: var(--ink); padding: .6rem .65rem; width: 100%; }
+input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:focus { border-color: #777; box-shadow: 0 0 0 3px rgba(0, 0, 0, .08); outline: none; }
 textarea { min-height: 6rem; resize: vertical; }
+
+input[type="checkbox"],
+input[type="radio"] {
+    appearance: auto;
+    width: 1.1rem;
+    height: 1.1rem;
+    margin: 0;
+    padding: 0;
+    cursor: pointer;
+    accent-color: var(--accent);
+    flex-shrink: 0;
+}
+
+.checkbox-label,
+label.checkbox-label,
+.form-panel > label.checkbox-label,
+.form-panel > label:has(input[type="checkbox"]) {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: .55rem;
+    font-size: .9rem;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.form-check {
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    margin-bottom: .5rem;
+}
+
+.form-check-input {
+    margin: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.form-check-label {
+    cursor: pointer;
+    font-size: .88rem;
+    font-weight: 500;
+    color: var(--ink);
+    margin: 0;
+    user-select: none;
+}
+
 .app-header { align-items: center; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; margin-bottom: 2.75rem; padding: 0 0 1rem; }
 .brand { align-items: center; display: inline-flex; font-size: 1rem; font-weight: 700; gap: .55rem; text-decoration: none; }
 .brand-mark { background: var(--accent); border-radius: 50%; display: inline-block; height: .65rem; width: .65rem; }

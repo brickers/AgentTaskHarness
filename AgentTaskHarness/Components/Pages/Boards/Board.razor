@@ -114,7 +114,7 @@ else
 			</div>
 		</section>
 
-		<!-- Row 2: Filtered Steps Kanban Grid for Selected Feature -->
+		<!-- Row 2: Steps Kanban Grid (Filtered by Selected Feature or Showing All Steps) -->
 		<section class="tier-section">
 			<div class="tier-header">
 				<div class="tier-title-area">
@@ -125,66 +125,57 @@ else
 						}
 						else
 						{
-							<span>Steps</span>
+							<span>Steps (All Features)</span>
 						}
 					</h2>
+					<span class="tier-subtitle">(@selectedFeatureSteps.Count dev plan steps)</span>
 					@if (selectedFeature != null)
 					{
-						<span class="tier-subtitle">(@selectedFeatureSteps.Count dev plan steps)</span>
+						<button class="clear-filter-btn" @onclick="ClearFeatureFilter" title="Unselect feature and show all steps">
+							✕ Clear Filter
+						</button>
 					}
 				</div>
 				<div class="tier-actions">
-					@if (selectedFeature != null)
-					{
-						<button class="btn btn-sm btn-outline-primary" @onclick="OpenStepCreator">+ Add Step</button>
-					}
+					<button class="btn btn-sm btn-outline-primary" @onclick="OpenStepCreator">+ Add Step</button>
 				</div>
 			</div>
 
-			@if (selectedFeature == null)
-			{
-				<div class="empty-tier-notice">
-					Click on any Feature above to inspect and manage its dev plan steps across the workflow columns.
-				</div>
-			}
-			else
-			{
-				<div class="kanban-grid">
-					@foreach (var column in columns)
-					{
-						var columnSteps = selectedFeatureSteps.Where(s => s.WorkflowColumn == column).ToList();
-						var isValidTarget = draggedCardType == CardType.Step && currentAllowedDropColumns.Contains(column);
-						var isInvalidTarget = draggedCardType == CardType.Step && !currentAllowedDropColumns.Contains(column);
-						var isOver = draggedOverColumn == column && draggedCardType == CardType.Step;
+			<div class="kanban-grid">
+				@foreach (var column in columns)
+				{
+					var columnSteps = selectedFeatureSteps.Where(s => s.WorkflowColumn == column).ToList();
+					var isValidTarget = draggedCardType == CardType.Step && currentAllowedDropColumns.Contains(column);
+					var isInvalidTarget = draggedCardType == CardType.Step && !currentAllowedDropColumns.Contains(column);
+					var isOver = draggedOverColumn == column && draggedCardType == CardType.Step;
 
-						<div class="kanban-column @(isValidTarget ? "drop-target-valid" : "") @(isInvalidTarget ? "drop-target-invalid" : "") @(isOver ? "drop-over-active" : "")"
-							 ondragover="@(isValidTarget ? "event.preventDefault();" : null)"
-							 @ondragenter="() => HandleDragEnter(column, CardType.Step)"
-							 @ondragleave="() => HandleDragLeave(column)"
-							 @ondrop="() => HandleStepDrop(column)">
+					<div class="kanban-column @(isValidTarget ? "drop-target-valid" : "") @(isInvalidTarget ? "drop-target-invalid" : "") @(isOver ? "drop-over-active" : "")"
+						 ondragover="@(isValidTarget ? "event.preventDefault();" : null)"
+						 @ondragenter="() => HandleDragEnter(column, CardType.Step)"
+						 @ondragleave="() => HandleDragLeave(column)"
+						 @ondrop="() => HandleStepDrop(column)">
 
-							<div class="column-header">
-								<h3>@column</h3>
-								<span class="column-count">@columnSteps.Count</span>
-							</div>
-
-							<div class="column-cards">
-								@foreach (var step in columnSteps)
-								{
-									var run = stepRuns.GetValueOrDefault(step.Id);
-
-									<StepCard Step="@step"
-											  Board="@board"
-											  CurrentRun="@run"
-											  OnOpenDetails="OpenStepPopup"
-											  OnDragStart="HandleStepDragStart"
-											  OnDragEnd="HandleDragEnd" />
-								}
-							</div>
+						<div class="column-header">
+							<h3>@column</h3>
+							<span class="column-count">@columnSteps.Count</span>
 						</div>
-					}
-				</div>
-			}
+
+						<div class="column-cards">
+							@foreach (var step in columnSteps)
+							{
+								var run = stepRuns.GetValueOrDefault(step.Id);
+
+								<StepCard Step="@step"
+										  Board="@board"
+										  CurrentRun="@run"
+										  OnOpenDetails="OpenStepPopup"
+										  OnDragStart="HandleStepDragStart"
+										  OnDragEnd="HandleDragEnd" />
+							}
+						</div>
+					</div>
+				}
+			</div>
 		</section>
 
 		<!-- Card Details & Actions Popup Modal -->
@@ -285,15 +276,24 @@ else
 		}
 
 		<!-- New Step Modal -->
-		@if (isCreatingStep && selectedFeature != null)
+		@if (isCreatingStep)
 		{
 			<div class="modal-backdrop" @onclick="CloseStepCreator">
 				<div class="modal-content" @onclick:stopPropagation="true">
 					<div class="modal-header">
-						<h2>Add Step for: @selectedFeature.Title</h2>
+						<h2>Add Step</h2>
 						<button class="btn-close" @onclick="CloseStepCreator"></button>
 					</div>
 					<form @onsubmit="CreateStepAsync" @onsubmit:preventDefault>
+						<div class="form-group">
+							<label>Feature</label>
+							<select class="form-control" @bind="newStepFeatureId" required>
+								@foreach (var feat in features)
+								{
+									<option value="@feat.Id">@feat.Title</option>
+								}
+							</select>
+						</div>
 						<div class="form-group">
 							<label>Title</label>
 							<input class="form-control" @bind="newStepTitle" placeholder="Step title" required />
@@ -375,6 +375,7 @@ else
 
 	// Step creation state
 	private bool isCreatingStep;
+	private Guid? newStepFeatureId;
 	private string newStepTitle = "";
 	private string newStepDescription = "";
 	private string newStepGuidanceNotes = "";
@@ -413,7 +414,7 @@ else
 
 		features = await FeatureService.GetForBoardAsync(BoardId);
 
-		// Load steps for each feature
+		// Load steps for each feature and assign back-reference
 		var allStepIds = new List<Guid>();
 		var fStepStatuses = new Dictionary<Guid, List<AgentRunStatus?>>();
 
@@ -423,6 +424,10 @@ else
 			if (full != null)
 			{
 				f.Steps = full.Steps;
+				foreach (var s in f.Steps)
+				{
+					s.Feature = f;
+				}
 				allStepIds.AddRange(f.Steps.Select(s => s.Id));
 			}
 		}
@@ -451,20 +456,18 @@ else
 		}
 		featureStepStatuses = fStepStatuses;
 
-		// Maintain selected feature
+		// Maintain selected feature if one was selected
 		if (selectedFeatureId.HasValue)
 		{
 			selectedFeature = features.FirstOrDefault(f => f.Id == selectedFeatureId.Value);
-			if (selectedFeature == null && features.Count > 0)
+			if (selectedFeature == null)
 			{
-				selectedFeature = features[0];
-				selectedFeatureId = selectedFeature.Id;
+				selectedFeatureId = null;
 			}
 		}
-		else if (features.Count > 0)
+		else
 		{
-			selectedFeature = features[0];
-			selectedFeatureId = selectedFeature.Id;
+			selectedFeature = null;
 		}
 
 		if (selectedFeature != null)
@@ -473,15 +476,29 @@ else
 		}
 		else
 		{
-			selectedFeatureSteps = [];
+			selectedFeatureSteps = features.SelectMany(f => f.Steps).OrderBy(s => s.CreatedAt).ToList();
 		}
 	}
 
 	private void HandleFeatureSelected(Feature feature)
 	{
-		selectedFeatureId = feature.Id;
-		selectedFeature = feature;
-		selectedFeatureSteps = feature.Steps.OrderBy(s => s.CreatedAt).ToList();
+		if (selectedFeatureId == feature.Id)
+		{
+			ClearFeatureFilter();
+		}
+		else
+		{
+			selectedFeatureId = feature.Id;
+			selectedFeature = feature;
+			selectedFeatureSteps = feature.Steps.OrderBy(s => s.CreatedAt).ToList();
+		}
+	}
+
+	private void ClearFeatureFilter()
+	{
+		selectedFeatureId = null;
+		selectedFeature = null;
+		selectedFeatureSteps = features.SelectMany(f => f.Steps).OrderBy(s => s.CreatedAt).ToList();
 	}
 
 	private void OpenFeaturePopup(Feature feature)
@@ -509,9 +526,9 @@ else
 		{
 			popupFeature = features.FirstOrDefault(f => f.Id == popupFeature.Id);
 		}
-		if (popupStep != null && selectedFeature != null)
+		if (popupStep != null)
 		{
-			popupStep = selectedFeature.Steps.FirstOrDefault(s => s.Id == popupStep.Id);
+			popupStep = selectedFeatureSteps.FirstOrDefault(s => s.Id == popupStep.Id);
 		}
 	}
 
@@ -661,15 +678,25 @@ else
 	}
 
 	// Step Creator
-	private void OpenStepCreator() => isCreatingStep = true;
+	private void OpenStepCreator()
+	{
+		if (features.Count == 0)
+		{
+			Notify("Please create a feature before adding steps.", isError: true);
+			return;
+		}
+		newStepFeatureId = selectedFeatureId ?? features[0].Id;
+		isCreatingStep = true;
+	}
+
 	private void CloseStepCreator() => isCreatingStep = false;
 
 	private async Task CreateStepAsync()
 	{
-		if (selectedFeature == null) return;
+		if (!newStepFeatureId.HasValue) return;
 		try
 		{
-			await StepService.CreateAsync(selectedFeature.Id, newStepTitle, newStepDescription, newStepGuidanceNotes, newStepAlwaysHumanReview);
+			await StepService.CreateAsync(newStepFeatureId.Value, newStepTitle, newStepDescription, newStepGuidanceNotes, newStepAlwaysHumanReview);
 			newStepTitle = newStepDescription = newStepGuidanceNotes = "";
 			newStepAlwaysHumanReview = false;
 			CloseStepCreator();
