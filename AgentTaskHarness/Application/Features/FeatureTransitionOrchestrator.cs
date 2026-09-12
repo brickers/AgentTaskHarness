@@ -1,3 +1,4 @@
+using AgentTaskHarness.Application.Reviews;
 using AgentTaskHarness.Application.Workflow;
 using AgentTaskHarness.Domain.Entities;
 using AgentTaskHarness.Domain.Enums;
@@ -9,7 +10,8 @@ namespace AgentTaskHarness.Application.Features;
 public class FeatureTransitionOrchestrator(
 	AppDbContext dbContext,
 	WorkflowTransitionRules rules,
-	FeatureDependencyService dependencyService)
+	FeatureDependencyService dependencyService,
+	ReviewOutcomeService reviewOutcomeService)
 {
 	public async Task<Feature> MoveAsync(Guid featureId, WorkflowColumn targetColumn, CancellationToken cancellationToken = default)
 	{
@@ -56,6 +58,8 @@ public class FeatureTransitionOrchestrator(
 
 		var previousColumn = feature.WorkflowColumn;
 		feature.WorkflowColumn = effectiveTarget;
+
+		reviewOutcomeService.HandleTransition(feature, previousColumn, effectiveTarget);
 
 		// Once a Feature successfully moves to Ready, all of its Steps are moved to Ready together as one batch
 		if (previousColumn == WorkflowColumn.Backlog && effectiveTarget == WorkflowColumn.Ready)

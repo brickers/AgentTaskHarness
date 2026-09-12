@@ -1,6 +1,8 @@
 @page "/boards/{BoardId:guid}"
 @using AgentTaskHarness.Application.Boards
+@using AgentTaskHarness.Application.Comments
 @using AgentTaskHarness.Application.Features
+@using AgentTaskHarness.Application.Reviews
 @using AgentTaskHarness.Application.Steps
 @using AgentTaskHarness.Domain.Entities
 @using AgentTaskHarness.Domain.Enums
@@ -9,6 +11,8 @@
 @inject StepService StepService
 @inject FeatureTransitionOrchestrator FeatureOrchestrator
 @inject StepTransitionOrchestrator StepOrchestrator
+@inject CommentService CommentService
+@inject ReviewOutcomeService ReviewOutcomeService
 @inject NavigationManager Navigation
 
 <PageTitle>@(board?.Name ?? "Board")</PageTitle>
@@ -26,6 +30,8 @@ else
             <div class="board-settings-summary">
                 <span class="tag">Feature Human Review: @(board.SkipFeatureHumanReview ? "Skipped" : "Required")</span>
                 <span class="tag">Step Human Review: @(board.SkipStepHumanReview ? "Skipped" : "Required")</span>
+                <span class="tag">Agent Fail Limit: @board.AgentReviewFailThreshold</span>
+                <span class="tag">Human Fail Limit: @board.HumanReviewFailThreshold</span>
             </div>
         </div>
         <div class="header-actions">
@@ -53,9 +59,21 @@ else
                             <p>@feature.Requirements</p>
                             <div class="card-tags">
                                 <small class="muted-copy">Steps: @feature.Steps.Count</small>
+                                @if (ReviewOutcomeService.IsRework(feature))
+                                {
+                                    <span class="tag tag-rework">Rework</span>
+                                }
+                                @if (ReviewOutcomeService.HasIssue(feature, board))
+                                {
+                                    <span class="tag tag-issue">Issue: Threshold Reached</span>
+                                }
                                 @if (feature.AlwaysRequireHumanReview)
                                 {
                                     <span class="tag">Always Human Review</span>
+                                }
+                                @if (feature.AgentReviewFailCount > 0 || feature.HumanReviewFailCount > 0)
+                                {
+                                    <small class="muted-copy">Fails: Agent @feature.AgentReviewFailCount | Human @feature.HumanReviewFailCount</small>
                                 }
                             </div>
                         </div>
@@ -74,8 +92,45 @@ else
                         <div class="card-actions">
                             <button class="button-quiet" @onclick="() => StartEditingFeature(feature)">Edit</button>
                             <button class="button-quiet" @onclick="() => OpenStepCreator(feature.Id)">Add step</button>
+                            <button class="button-quiet" @onclick="() => ToggleCommentsAsync(CardType.Feature, feature.Id)">Comments (@GetCommentCount(CardType.Feature, feature.Id))</button>
                             <button class="button-danger" @onclick="() => DeleteFeatureAsync(feature.Id)">Delete</button>
                         </div>
+
+                        @if (activeCommentsCard == (CardType.Feature, feature.Id))
+                        {
+                            <div class="comments-panel">
+                                <div class="comments-panel-header">
+                                    <strong>Comments</strong>
+                                    <button class="icon-button" type="button" aria-label="Close comments" @onclick="CloseComments">×</button>
+                                </div>
+                                <div class="comments-list">
+                                    @if (loadedComments.TryGetValue((CardType.Feature, feature.Id), out var fComments) && fComments.Count > 0)
+                                    {
+                                        @foreach (var comment in fComments)
+                                        {
+                                            <div class="comment-item">
+                                                <div class="comment-header">
+                                                    <strong class="comment-author">@comment.Author</strong>
+                                                    <span class="comment-time">@comment.CreatedAt.LocalDateTime.ToString("g")</span>
+                                                </div>
+                                                <p class="comment-body">@comment.Body</p>
+                                            </div>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <p class="muted-copy"><small>No comments yet.</small></p>
+                                    }
+                                </div>
+                                <form class="add-comment-form" @onsubmit="() => AddCommentAsync(CardType.Feature, feature.Id)" @onsubmit:preventDefault>
+                                    <input class="comment-author-input" placeholder="Author" @bind="commentAuthor" />
+                                    <textarea class="comment-body-input" placeholder="Write a comment…" @bind="commentBody"></textarea>
+                                    <div class="comment-form-actions">
+                                        <button class="button-primary button-small" type="submit">Post comment</button>
+                                    </div>
+                                </form>
+                            </div>
+                        }
 
                         @if (feature.Steps.Count > 0)
                         {
@@ -91,12 +146,24 @@ else
                                         {
                                             <p><small>@step.Description</small></p>
                                         }
-                                        @if (step.AlwaysRequireHumanReview)
-                                        {
-                                            <div class="card-tags">
+                                        <div class="card-tags">
+                                            @if (ReviewOutcomeService.IsRework(step))
+                                            {
+                                                <span class="tag tag-rework">Rework</span>
+                                            }
+                                            @if (ReviewOutcomeService.HasIssue(step, board))
+                                            {
+                                                <span class="tag tag-issue">Issue: Threshold Reached</span>
+                                            }
+                                            @if (step.AlwaysRequireHumanReview)
+                                            {
                                                 <span class="tag">Always Human Review</span>
-                                            </div>
-                                        }
+                                            }
+                                            @if (step.AgentReviewFailCount > 0 || step.HumanReviewFailCount > 0)
+                                            {
+                                                <small class="muted-copy">Fails: Agent @step.AgentReviewFailCount | Human @step.HumanReviewFailCount</small>
+                                            }
+                                        </div>
                                         @if (stepAllowedMoves.TryGetValue(step.Id, out var sMoves) && sMoves.Count > 0)
                                         {
                                             <div class="move-actions">
@@ -109,8 +176,45 @@ else
                                         }
                                         <div class="step-actions">
                                             <button class="button-quiet button-small" @onclick="() => StartEditingStep(step)">Edit</button>
+                                            <button class="button-quiet button-small" @onclick="() => ToggleCommentsAsync(CardType.Step, step.Id)">Comments (@GetCommentCount(CardType.Step, step.Id))</button>
                                             <button class="button-danger button-small" @onclick="() => DeleteStepAsync(step.Id)">Delete</button>
                                         </div>
+
+                                        @if (activeCommentsCard == (CardType.Step, step.Id))
+                                        {
+                                            <div class="comments-panel">
+                                                <div class="comments-panel-header">
+                                                    <strong>Step comments</strong>
+                                                    <button class="icon-button" type="button" aria-label="Close comments" @onclick="CloseComments">×</button>
+                                                </div>
+                                                <div class="comments-list">
+                                                    @if (loadedComments.TryGetValue((CardType.Step, step.Id), out var sComments) && sComments.Count > 0)
+                                                    {
+                                                        @foreach (var comment in sComments)
+                                                        {
+                                                            <div class="comment-item">
+                                                                <div class="comment-header">
+                                                                    <strong class="comment-author">@comment.Author</strong>
+                                                                    <span class="comment-time">@comment.CreatedAt.LocalDateTime.ToString("g")</span>
+                                                                </div>
+                                                                <p class="comment-body">@comment.Body</p>
+                                                            </div>
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        <p class="muted-copy"><small>No comments yet.</small></p>
+                                                    }
+                                                </div>
+                                                <form class="add-comment-form" @onsubmit="() => AddCommentAsync(CardType.Step, step.Id)" @onsubmit:preventDefault>
+                                                    <input class="comment-author-input" placeholder="Author" @bind="commentAuthor" />
+                                                    <textarea class="comment-body-input" placeholder="Write a comment…" @bind="commentBody"></textarea>
+                                                    <div class="comment-form-actions">
+                                                        <button class="button-primary button-small" type="submit">Post comment</button>
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        }
                                     </div>
                                 }
                             </div>
@@ -251,6 +355,12 @@ else
     private Dictionary<Guid, IReadOnlyList<WorkflowColumn>> featureAllowedMoves = new();
     private Dictionary<Guid, IReadOnlyList<WorkflowColumn>> stepAllowedMoves = new();
 
+    private Dictionary<(CardType CardType, Guid CardId), int> commentCounts = new();
+    private (CardType CardType, Guid CardId)? activeCommentsCard;
+    private Dictionary<(CardType CardType, Guid CardId), List<Comment>> loadedComments = new();
+    private string commentAuthor = "Human";
+    private string commentBody = string.Empty;
+
     private string boardName = string.Empty;
     private string repoPath = string.Empty;
     private int concurrencyLimit;
@@ -341,6 +451,59 @@ else
                     stepAllowedMoves[step.Id] = [];
                 }
             }
+        }
+
+        commentCounts = await CommentService.GetCommentCountsForBoardAsync(BoardId);
+
+        if (activeCommentsCard is not null)
+        {
+            var comments = await CommentService.GetCommentsAsync(activeCommentsCard.Value.CardType, activeCommentsCard.Value.CardId);
+            loadedComments[activeCommentsCard.Value] = comments.ToList();
+        }
+    }
+
+    private int GetCommentCount(CardType cardType, Guid cardId) =>
+        commentCounts.GetValueOrDefault((cardType, cardId), 0);
+
+    private async Task ToggleCommentsAsync(CardType cardType, Guid cardId)
+    {
+        var key = (cardType, cardId);
+        if (activeCommentsCard == key)
+        {
+            activeCommentsCard = null;
+            return;
+        }
+
+        activeCommentsCard = key;
+        commentBody = string.Empty;
+        var comments = await CommentService.GetCommentsAsync(cardType, cardId);
+        loadedComments[key] = comments.ToList();
+    }
+
+    private void CloseComments() => activeCommentsCard = null;
+
+    private async Task AddCommentAsync(CardType cardType, Guid cardId)
+    {
+        if (string.IsNullOrWhiteSpace(commentBody))
+        {
+            ShowMessage("Comment text cannot be empty.");
+            return;
+        }
+
+        var author = string.IsNullOrWhiteSpace(commentAuthor) ? "Human" : commentAuthor.Trim();
+
+        try
+        {
+            await CommentService.AddCommentAsync(cardType, cardId, author, commentBody);
+            commentBody = string.Empty;
+            var key = (cardType, cardId);
+            var comments = await CommentService.GetCommentsAsync(cardType, cardId);
+            loadedComments[key] = comments.ToList();
+            commentCounts[key] = comments.Count;
+        }
+        catch (Exception ex)
+        {
+            ShowMessage(ex.Message);
         }
     }
 

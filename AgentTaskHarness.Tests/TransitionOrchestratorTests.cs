@@ -1,5 +1,6 @@
 using AgentTaskHarness.Application.Boards;
 using AgentTaskHarness.Application.Features;
+using AgentTaskHarness.Application.Reviews;
 using AgentTaskHarness.Application.Steps;
 using AgentTaskHarness.Application.Workflow;
 using AgentTaskHarness.Domain.Enums;
@@ -20,6 +21,7 @@ public class TransitionOrchestratorTests : IAsyncLifetime
 	private WorkflowTransitionRules rules = null!;
 	private FeatureDependencyService featureDeps = null!;
 	private StepDependencyService stepDeps = null!;
+	private ReviewOutcomeService reviewOutcomeService = null!;
 	private FeatureTransitionOrchestrator featureOrchestrator = null!;
 	private StepTransitionOrchestrator stepOrchestrator = null!;
 
@@ -34,8 +36,9 @@ public class TransitionOrchestratorTests : IAsyncLifetime
 		rules = new WorkflowTransitionRules();
 		featureDeps = new FeatureDependencyService(dbContext);
 		stepDeps = new StepDependencyService(dbContext);
-		featureOrchestrator = new FeatureTransitionOrchestrator(dbContext, rules, featureDeps);
-		stepOrchestrator = new StepTransitionOrchestrator(dbContext, rules, stepDeps, featureOrchestrator);
+		reviewOutcomeService = new ReviewOutcomeService(dbContext);
+		featureOrchestrator = new FeatureTransitionOrchestrator(dbContext, rules, featureDeps, reviewOutcomeService);
+		stepOrchestrator = new StepTransitionOrchestrator(dbContext, rules, stepDeps, featureOrchestrator, reviewOutcomeService);
 	}
 
 	public async Task DisposeAsync()
@@ -483,5 +486,128 @@ public class TransitionOrchestratorTests : IAsyncLifetime
 		// Since all steps of the feature are Done, parent Feature automatically advances from Build to AgentReview
 		var refreshedFeat = await features.GetByIdAsync(feat.Id);
 		Assert.Equal(WorkflowColumn.AgentReview, refreshedFeat!.WorkflowColumn);
+	}
+
+	[Fact]
+	public async Task Feature_MoveAsync_FromAgentReviewToBuild_IncrementsAgentReviewFailCount()
+	{
+		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
+		var feat = await features.CreateAsync(board.Id, "Feat 1");
+
+		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Build);
+		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.AgentReview);
+
+		Assert.Equal(0, feat.AgentReviewFailCount);
+		Assert.Equal(0, feat.HumanReviewFailCount);
+
+		// Failed review: AgentReview -> Build
+		var moved = await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Build);
+		Assert.Equal(WorkflowColumn.Build, moved.WorkflowColumn);
+		Assert.Equal(1, moved.AgentReviewFailCount);
+		Assert.Equal(0, moved.HumanReviewFailCount);
+
+		var refreshed = await features.GetByIdAsync(feat.Id);
+		Assert.Equal(1, refreshed!.AgentReviewFailCount);
+		Assert.Equal(0, refreshed.HumanReviewFailCount);
+	}
+
+	[Fact]
+	public async Task Feature_MoveAsync_FromHumanReviewToBuild_IncrementsHumanReviewFailCount()
+	{
+		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
+		var feat = await features.CreateAsync(board.Id, "Feat 1", alwaysRequireHumanReview: true);
+
+		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Build);
+		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.AgentReview);
+		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.HumanReview);
+
+		Assert.Equal(0, feat.AgentReviewFailCount);
+		Assert.Equal(0, feat.HumanReviewFailCount);
+
+		// Failed review: HumanReview -> Build
+		var moved = await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Build);
+		Assert.Equal(WorkflowColumn.Build, moved.WorkflowColumn);
+		Assert.Equal(0, moved.AgentReviewFailCount);
+		Assert.Equal(1, moved.HumanReviewFailCount);
+
+		var refreshed = await features.GetByIdAsync(feat.Id);
+		Assert.Equal(0, refreshed!.AgentReviewFailCount);
+		Assert.Equal(1, refreshed.HumanReviewFailCount);
+	}
+
+	[Fact]
+	public async Task Step_MoveAsync_FromAgentReviewToBuild_IncrementsAgentReviewFailCount()
+	{
+		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
+		var feat = await features.CreateAsync(board.Id, "Feat 1");
+		var step = await steps.CreateAsync(feat.Id, "Step 1");
+
+		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
+
+		Assert.Equal(0, step.AgentReviewFailCount);
+		Assert.Equal(0, step.HumanReviewFailCount);
+
+		// Failed review: AgentReview -> Build
+		var moved = await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		Assert.Equal(WorkflowColumn.Build, moved.WorkflowColumn);
+		Assert.Equal(1, moved.AgentReviewFailCount);
+		Assert.Equal(0, moved.HumanReviewFailCount);
+
+		var refreshed = await steps.GetByIdAsync(step.Id);
+		Assert.Equal(1, refreshed!.AgentReviewFailCount);
+		Assert.Equal(0, refreshed.HumanReviewFailCount);
+	}
+
+	[Fact]
+	public async Task Step_MoveAsync_FromHumanReviewToBuild_IncrementsHumanReviewFailCount()
+	{
+		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
+		var feat = await features.CreateAsync(board.Id, "Feat 1");
+		var step = await steps.CreateAsync(feat.Id, "Step 1", alwaysRequireHumanReview: true);
+
+		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
+		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.HumanReview);
+
+		Assert.Equal(0, step.AgentReviewFailCount);
+		Assert.Equal(0, step.HumanReviewFailCount);
+
+		// Failed review: HumanReview -> Build
+		var moved = await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		Assert.Equal(WorkflowColumn.Build, moved.WorkflowColumn);
+		Assert.Equal(0, moved.AgentReviewFailCount);
+		Assert.Equal(1, moved.HumanReviewFailCount);
+
+		var refreshed = await steps.GetByIdAsync(step.Id);
+		Assert.Equal(0, refreshed!.AgentReviewFailCount);
+		Assert.Equal(1, refreshed.HumanReviewFailCount);
+	}
+
+	[Fact]
+	public async Task MoveAsync_ToBacklog_DoesNotIncrementFailCounts()
+	{
+		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
+		var feat = await features.CreateAsync(board.Id, "Feat 1");
+		var step = await steps.CreateAsync(feat.Id, "Step 1");
+
+		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
+		// Fail step review
+		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		Assert.Equal(1, step.AgentReviewFailCount);
+
+		// Now move to Backlog
+		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Backlog);
+		var refreshedStep = await steps.GetByIdAsync(step.Id);
+		Assert.Equal(WorkflowColumn.Backlog, refreshedStep!.WorkflowColumn);
+		// Counters never reset, but moving to Backlog did NOT increment them either
+		Assert.Equal(1, refreshedStep.AgentReviewFailCount);
+		Assert.Equal(0, refreshedStep.HumanReviewFailCount);
 	}
 }

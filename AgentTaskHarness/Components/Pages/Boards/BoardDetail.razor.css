@@ -42,8 +42,22 @@
 .card-tags {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: .35rem;
     margin-top: .35rem;
+}
+
+.tag-rework {
+    background: #fef3c7;
+    border: 1px solid #f59e0b;
+    color: #b45309;
+}
+
+.tag-issue {
+    background: #fee2e2;
+    border: 1px solid #ef4444;
+    color: #b91c1c;
+    font-weight: 700;
 }
 
 .card-actions {
@@ -118,4 +132,88 @@
     flex-wrap: wrap;
     gap: .5rem;
     margin-top: .4rem;
+}
+
+.comments-panel {
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: .45rem;
+    padding: .6rem;
+    margin-top: .45rem;
+    display: flex;
+    flex-direction: column;
+    gap: .45rem;
+}
+
+.comments-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: .8rem;
+}
+
+.comments-list {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+    max-height: 12rem;
+    overflow-y: auto;
+}
+
+.comment-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: .35rem;
+    padding: .35rem .5rem;
+    font-size: .8rem;
+}
+
+.comment-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: .4rem;
+    margin-bottom: .2rem;
+}
+
+.comment-author {
+    font-size: .78rem;
+}
+
+.comment-time {
+    font-size: .7rem;
+    color: var(--muted);
+}
+
+.comment-body {
+    margin: 0;
+    font-size: .8rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.add-comment-form {
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+    margin-top: .3rem;
+    border-top: 1px dashed var(--border);
+    padding-top: .4rem;
+}
+
+.comment-author-input {
+    padding: .25rem .45rem;
+    font-size: .8rem;
+}
+
+.comment-body-input {
+    padding: .35rem .45rem;
+    font-size: .8rem;
+    min-height: 3rem;
+    resize: vertical;
+}
+
+.comment-form-actions {
+    display: flex;
+    justify-content: flex-end;
 }

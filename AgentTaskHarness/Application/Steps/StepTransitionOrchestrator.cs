@@ -1,4 +1,5 @@
 using AgentTaskHarness.Application.Features;
+using AgentTaskHarness.Application.Reviews;
 using AgentTaskHarness.Application.Workflow;
 using AgentTaskHarness.Domain.Entities;
 using AgentTaskHarness.Domain.Enums;
@@ -11,7 +12,8 @@ public class StepTransitionOrchestrator(
 	AppDbContext dbContext,
 	WorkflowTransitionRules rules,
 	StepDependencyService dependencyService,
-	FeatureTransitionOrchestrator featureTransitionOrchestrator)
+	FeatureTransitionOrchestrator featureTransitionOrchestrator,
+	ReviewOutcomeService reviewOutcomeService)
 {
 	public async Task<Step> MoveAsync(Guid stepId, WorkflowColumn targetColumn, CancellationToken cancellationToken = default)
 	{
@@ -67,7 +69,11 @@ public class StepTransitionOrchestrator(
 			}
 		}
 
+		var previousColumn = step.WorkflowColumn;
 		step.WorkflowColumn = effectiveTarget;
+
+		reviewOutcomeService.HandleTransition(step, previousColumn, effectiveTarget);
+
 		await dbContext.SaveChangesAsync(cancellationToken);
 
 		// Trigger 2: all Steps reaching Done (Feature Build -> AgentReview)
