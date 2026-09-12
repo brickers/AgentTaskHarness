@@ -1,4 +1,5 @@
 using AgentTaskHarness.Application.Abstractions;
+using AgentTaskHarness.Application.Agents;
 using AgentTaskHarness.Application.Features;
 using AgentTaskHarness.Application.Reviews;
 using AgentTaskHarness.Application.Workflow;
@@ -16,17 +17,24 @@ public class StepTransitionOrchestrator(
 	StepDependencyService dependencyService,
 	FeatureTransitionOrchestrator featureTransitionOrchestrator,
 	ReviewOutcomeService reviewOutcomeService,
-	IGitWorktreeService? gitWorktrees = null)
+	IGitWorktreeService? gitWorktrees = null,
+	IAgentScheduler? agentScheduler = null)
 {
 	private readonly IGitWorktreeService gitWorktrees = gitWorktrees ?? new NoOpGitWorktreeService();
 
 	public Task<Step> MoveAsync(Guid stepId, WorkflowColumn targetColumn, CancellationToken cancellationToken = default) =>
-		MoveAsync(stepId, targetColumn, discardWorktreeOnBacklogReturn: false, cancellationToken);
+		MoveAsync(stepId, targetColumn, discardWorktreeOnBacklogReturn: false, isMcpMove: false, cancellationToken);
 
 	public Task<Step> MoveAndDiscardWorktreeAsync(Guid stepId, WorkflowColumn targetColumn, CancellationToken cancellationToken = default) =>
-		MoveAsync(stepId, targetColumn, discardWorktreeOnBacklogReturn: true, cancellationToken);
+		MoveAsync(stepId, targetColumn, discardWorktreeOnBacklogReturn: true, isMcpMove: false, cancellationToken);
 
-	public async Task<Step> MoveAsync(Guid stepId, WorkflowColumn targetColumn, bool discardWorktreeOnBacklogReturn, CancellationToken cancellationToken = default)
+	public Task<Step> MoveAsync(Guid stepId, WorkflowColumn targetColumn, bool discardWorktreeOnBacklogReturn, CancellationToken cancellationToken = default) =>
+		MoveAsync(stepId, targetColumn, discardWorktreeOnBacklogReturn, isMcpMove: false, cancellationToken);
+
+	public Task<Step> MoveMcpAsync(Guid stepId, WorkflowColumn targetColumn, CancellationToken cancellationToken = default) =>
+		MoveAsync(stepId, targetColumn, discardWorktreeOnBacklogReturn: false, isMcpMove: true, cancellationToken);
+
+	public async Task<Step> MoveAsync(Guid stepId, WorkflowColumn targetColumn, bool discardWorktreeOnBacklogReturn, bool isMcpMove, CancellationToken cancellationToken = default)
 	{
 		var step = await dbContext.Steps
 			.Include(s => s.Feature)
@@ -37,6 +45,17 @@ public class StepTransitionOrchestrator(
 		if (step.WorkflowColumn == WorkflowColumn.Done)
 		{
 			throw new InvalidOperationException("Completed steps are terminal and cannot be moved.");
+		}
+
+		// Hard-block UI moves if an agent is currently running. MCP moves allow the transition and apply the soft blocked flag.
+		var hasActiveAgent = await dbContext.AgentRuns.AnyAsync(r =>
+			r.CardType == CardType.Step && r.CardId == stepId &&
+			(r.Status == AgentRunStatus.Working || r.Status == AgentRunStatus.WaitingForInput),
+			cancellationToken);
+
+		if (!isMcpMove && hasActiveAgent)
+		{
+			throw new InvalidOperationException("Cannot move a step while an agent is running.");
 		}
 
 		var canSkipHumanReview = step.Feature?.Board is not null && step.Feature.Board.SkipStepHumanReview && !step.AlwaysRequireHumanReview;
@@ -125,6 +144,34 @@ public class StepTransitionOrchestrator(
 			}
 		}
 
+		// Wire agent scheduler on entering Build or AgentReview
+		if (step.WorkflowColumn is WorkflowColumn.Build or WorkflowColumn.AgentReview)
+		{
+			if (agentScheduler != null)
+			{
+				await agentScheduler.RequestStartAsync(step.Id, cancellationToken);
+			}
+		}
+		else
+		{
+			// Leaving Build / AgentReview: clean up any queued or blocked runs
+			var pendingRuns = await dbContext.AgentRuns
+				.Where(r => r.CardType == CardType.Step && r.CardId == stepId &&
+							(r.Status == AgentRunStatus.Queued || r.Status == AgentRunStatus.Blocked))
+				.ToListAsync(cancellationToken);
+
+			foreach (var run in pendingRuns)
+			{
+				run.Status = AgentRunStatus.Stopped;
+				run.EndedAt = DateTimeOffset.UtcNow;
+			}
+
+			if (pendingRuns.Count > 0)
+			{
+				await dbContext.SaveChangesAsync(cancellationToken);
+			}
+		}
+
 		return step;
 	}
 
@@ -196,7 +243,13 @@ public class StepTransitionOrchestrator(
 			.SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken)
 			?? throw new KeyNotFoundException($"Step '{stepId}' was not found.");
 
-		if (step.WorkflowColumn == WorkflowColumn.Done || step.MergeConflictPending)
+		// UI hard-blocks moving a card while an agent is currently running
+		var hasActiveAgent = await dbContext.AgentRuns.AnyAsync(r =>
+			r.CardType == CardType.Step && r.CardId == stepId &&
+			(r.Status == AgentRunStatus.Working || r.Status == AgentRunStatus.WaitingForInput),
+			cancellationToken);
+
+		if (step.WorkflowColumn == WorkflowColumn.Done || step.MergeConflictPending || hasActiveAgent)
 		{
 			return [];
 		}

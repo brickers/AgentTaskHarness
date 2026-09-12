@@ -19,12 +19,18 @@ public class FeatureTransitionOrchestrator(
 	private readonly IGitWorktreeService gitWorktrees = gitWorktrees ?? new NoOpGitWorktreeService();
 
 	public Task<Feature> MoveAsync(Guid featureId, WorkflowColumn targetColumn, CancellationToken cancellationToken = default) =>
-		MoveAsync(featureId, targetColumn, discardWorktreeOnBacklogReturn: false, cancellationToken);
+		MoveAsync(featureId, targetColumn, discardWorktreeOnBacklogReturn: false, isMcpMove: false, cancellationToken);
 
 	public Task<Feature> MoveAndDiscardWorktreeAsync(Guid featureId, WorkflowColumn targetColumn, CancellationToken cancellationToken = default) =>
-		MoveAsync(featureId, targetColumn, discardWorktreeOnBacklogReturn: true, cancellationToken);
+		MoveAsync(featureId, targetColumn, discardWorktreeOnBacklogReturn: true, isMcpMove: false, cancellationToken);
 
-	public async Task<Feature> MoveAsync(Guid featureId, WorkflowColumn targetColumn, bool discardWorktreeOnBacklogReturn, CancellationToken cancellationToken = default)
+	public Task<Feature> MoveAsync(Guid featureId, WorkflowColumn targetColumn, bool discardWorktreeOnBacklogReturn, CancellationToken cancellationToken = default) =>
+		MoveAsync(featureId, targetColumn, discardWorktreeOnBacklogReturn, isMcpMove: false, cancellationToken);
+
+	public Task<Feature> MoveMcpAsync(Guid featureId, WorkflowColumn targetColumn, CancellationToken cancellationToken = default) =>
+		MoveAsync(featureId, targetColumn, discardWorktreeOnBacklogReturn: false, isMcpMove: true, cancellationToken);
+
+	public async Task<Feature> MoveAsync(Guid featureId, WorkflowColumn targetColumn, bool discardWorktreeOnBacklogReturn, bool isMcpMove, CancellationToken cancellationToken = default)
 	{
 		var feature = await dbContext.Features
 			.Include(f => f.Board)
@@ -34,6 +40,17 @@ public class FeatureTransitionOrchestrator(
 		if (feature.WorkflowColumn == WorkflowColumn.Done)
 		{
 			throw new InvalidOperationException("Completed features are terminal and cannot be moved.");
+		}
+
+		// Hard-block UI moves if an agent is currently running.
+		var hasActiveAgent = await dbContext.AgentRuns.AnyAsync(r =>
+			r.CardType == CardType.Feature && r.CardId == featureId &&
+			(r.Status == AgentRunStatus.Working || r.Status == AgentRunStatus.WaitingForInput),
+			cancellationToken);
+
+		if (!isMcpMove && hasActiveAgent)
+		{
+			throw new InvalidOperationException("Cannot move a feature while an agent is running.");
 		}
 
 		var canSkipHumanReview = feature.Board is not null && feature.Board.SkipFeatureHumanReview && !feature.AlwaysRequireHumanReview;
@@ -155,7 +172,13 @@ public class FeatureTransitionOrchestrator(
 			.SingleOrDefaultAsync(f => f.Id == featureId, cancellationToken)
 			?? throw new KeyNotFoundException($"Feature '{featureId}' was not found.");
 
-		if (feature.WorkflowColumn == WorkflowColumn.Done || feature.MergeConflictPending)
+		// UI hard-blocks moving a card while an agent is currently running
+		var hasActiveAgent = await dbContext.AgentRuns.AnyAsync(r =>
+			r.CardType == CardType.Feature && r.CardId == featureId &&
+			(r.Status == AgentRunStatus.Working || r.Status == AgentRunStatus.WaitingForInput),
+			cancellationToken);
+
+		if (feature.WorkflowColumn == WorkflowColumn.Done || feature.MergeConflictPending || hasActiveAgent)
 		{
 			return [];
 		}

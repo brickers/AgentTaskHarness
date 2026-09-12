@@ -34,7 +34,8 @@ builder.Services.AddScoped<IAgentDefinitionFolderWriter, AgentDefinitionFolderWr
 builder.Services.AddScoped<AgentDefinitionService>();
 builder.Services.AddScoped<AgentMatchingService>();
 builder.Services.AddScoped<IGitWorktreeService, LibGit2WorktreeService>();
-builder.Services.AddSingleton<IAgentScheduler, NoOpAgentScheduler>();
+builder.Services.AddScoped<IAgentProcessRunner, NoOpAgentProcessRunner>();
+builder.Services.AddScoped<IAgentScheduler, AgentSchedulerService>();
 
 var app = builder.Build();
 
