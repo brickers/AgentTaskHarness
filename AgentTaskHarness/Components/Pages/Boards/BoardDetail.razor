@@ -7,6 +7,8 @@
 @inject BoardService BoardService
 @inject FeatureService FeatureService
 @inject StepService StepService
+@inject FeatureTransitionOrchestrator FeatureOrchestrator
+@inject StepTransitionOrchestrator StepOrchestrator
 @inject NavigationManager Navigation
 
 <PageTitle>@(board?.Name ?? "Board")</PageTitle>
@@ -21,6 +23,10 @@ else
         <div>
             <p class="breadcrumb"><a href="/boards">Boards</a> <span>/</span> @board.Name</p>
             <h1>@board.Name</h1>
+            <div class="board-settings-summary">
+                <span class="tag">Feature Human Review: @(board.SkipFeatureHumanReview ? "Skipped" : "Required")</span>
+                <span class="tag">Step Human Review: @(board.SkipStepHumanReview ? "Skipped" : "Required")</span>
+            </div>
         </div>
         <div class="header-actions">
             <a class="button-quiet" href="@($"/boards/{BoardId}/agents")">Agents</a>
@@ -45,13 +51,70 @@ else
                         <div>
                             <h3>@feature.Title</h3>
                             <p>@feature.Requirements</p>
-                            <small class="muted-copy">Steps: @feature.Steps.Count</small>
+                            <div class="card-tags">
+                                <small class="muted-copy">Steps: @feature.Steps.Count</small>
+                                @if (feature.AlwaysRequireHumanReview)
+                                {
+                                    <span class="tag">Always Human Review</span>
+                                }
+                            </div>
                         </div>
+
+                        @if (featureAllowedMoves.TryGetValue(feature.Id, out var fMoves) && fMoves.Count > 0)
+                        {
+                            <div class="move-actions">
+                                <span class="move-label">Move:</span>
+                                @foreach (var target in fMoves)
+                                {
+                                    <button class="button-move" @onclick="() => MoveFeatureAsync(feature.Id, target)">→ @target</button>
+                                }
+                            </div>
+                        }
+
                         <div class="card-actions">
                             <button class="button-quiet" @onclick="() => StartEditingFeature(feature)">Edit</button>
                             <button class="button-quiet" @onclick="() => OpenStepCreator(feature.Id)">Add step</button>
                             <button class="button-danger" @onclick="() => DeleteFeatureAsync(feature.Id)">Delete</button>
                         </div>
+
+                        @if (feature.Steps.Count > 0)
+                        {
+                            <div class="step-list">
+                                @foreach (var step in feature.Steps)
+                                {
+                                    <div class="step-item">
+                                        <div class="step-header">
+                                            <strong>@step.Title</strong>
+                                            <span class="status-pill">@step.WorkflowColumn</span>
+                                        </div>
+                                        @if (!string.IsNullOrWhiteSpace(step.Description))
+                                        {
+                                            <p><small>@step.Description</small></p>
+                                        }
+                                        @if (step.AlwaysRequireHumanReview)
+                                        {
+                                            <div class="card-tags">
+                                                <span class="tag">Always Human Review</span>
+                                            </div>
+                                        }
+                                        @if (stepAllowedMoves.TryGetValue(step.Id, out var sMoves) && sMoves.Count > 0)
+                                        {
+                                            <div class="move-actions">
+                                                <span class="move-label">Move:</span>
+                                                @foreach (var target in sMoves)
+                                                {
+                                                    <button class="button-move" @onclick="() => MoveStepAsync(step.Id, target)">→ @target</button>
+                                                }
+                                            </div>
+                                        }
+                                        <div class="step-actions">
+                                            <button class="button-quiet button-small" @onclick="() => StartEditingStep(step)">Edit</button>
+                                            <button class="button-danger button-small" @onclick="() => DeleteStepAsync(step.Id)">Delete</button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
                     </article>
                 }
             </section>
@@ -156,6 +219,28 @@ else
             </section>
         </div>
     }
+
+    @if (editingStep is not null)
+    {
+        <div class="modal-backdrop" role="presentation">
+            <section class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-step-title">
+                <div class="modal-heading">
+                    <div><p class="eyebrow">Step details</p><h2 id="edit-step-title">Edit step</h2></div>
+                    <button class="icon-button" type="button" aria-label="Close" @onclick="CloseStepEditor">×</button>
+                </div>
+                <form class="form-panel" @onsubmit="SaveStepAsync" @onsubmit:preventDefault>
+                    <label>Title <input @bind="editStepTitle" /></label>
+                    <label>Description <textarea @bind="editStepDescription"></textarea></label>
+                    <label>Guidance Notes <textarea @bind="editStepGuidanceNotes"></textarea></label>
+                    <label><input type="checkbox" @bind="editStepAlwaysHumanReview" /> Always require Human Review</label>
+                    <div class="modal-actions">
+                        <button class="button-quiet" type="button" @onclick="CloseStepEditor">Cancel</button>
+                        <button class="button-primary" type="submit">Save changes</button>
+                    </div>
+                </form>
+            </section>
+        </div>
+    }
 }
 
 @code {
@@ -163,6 +248,9 @@ else
 
     private Board? board;
     private List<Feature> features = [];
+    private Dictionary<Guid, IReadOnlyList<WorkflowColumn>> featureAllowedMoves = new();
+    private Dictionary<Guid, IReadOnlyList<WorkflowColumn>> stepAllowedMoves = new();
+
     private string boardName = string.Empty;
     private string repoPath = string.Empty;
     private int concurrencyLimit;
@@ -193,6 +281,12 @@ else
     private string newStepGuidanceNotes = string.Empty;
     private bool newStepAlwaysHumanReview;
 
+    private Step? editingStep;
+    private string editStepTitle = string.Empty;
+    private string editStepDescription = string.Empty;
+    private string editStepGuidanceNotes = string.Empty;
+    private bool editStepAlwaysHumanReview;
+
     private string? message;
     private int messageVersion;
 
@@ -216,12 +310,36 @@ else
         humanReviewFailThreshold = board.HumanReviewFailThreshold;
 
         features = await FeatureService.GetForBoardAsync(BoardId);
+        featureAllowedMoves.Clear();
+        stepAllowedMoves.Clear();
+
         foreach (var f in features)
         {
             var fullFeature = await FeatureService.GetByIdAsync(f.Id);
             if (fullFeature is not null)
             {
                 f.Steps = fullFeature.Steps;
+            }
+
+            try
+            {
+                featureAllowedMoves[f.Id] = await FeatureOrchestrator.GetAllowedMovesAsync(f.Id);
+            }
+            catch
+            {
+                featureAllowedMoves[f.Id] = [];
+            }
+
+            foreach (var step in f.Steps)
+            {
+                try
+                {
+                    stepAllowedMoves[step.Id] = await StepOrchestrator.GetAllowedMovesAsync(step.Id);
+                }
+                catch
+                {
+                    stepAllowedMoves[step.Id] = [];
+                }
             }
         }
     }
@@ -290,9 +408,23 @@ else
         catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
+    private async Task MoveFeatureAsync(Guid featureId, WorkflowColumn target)
+    {
+        try
+        {
+            await FeatureOrchestrator.MoveAsync(featureId, target);
+            await LoadAsync();
+        }
+        catch (Exception exception) { ShowMessage(exception.Message); }
+    }
+
     private void OpenStepCreator(Guid featureId)
     {
         stepTargetFeatureId = featureId;
+        newStepTitle = string.Empty;
+        newStepDescription = string.Empty;
+        newStepGuidanceNotes = string.Empty;
+        newStepAlwaysHumanReview = false;
         isCreatingStep = true;
     }
 
@@ -306,6 +438,49 @@ else
             newStepTitle = newStepDescription = newStepGuidanceNotes = string.Empty;
             newStepAlwaysHumanReview = false;
             CloseStepCreator();
+            await LoadAsync();
+        }
+        catch (Exception exception) { ShowMessage(exception.Message); }
+    }
+
+    private void StartEditingStep(Step step)
+    {
+        editingStep = step;
+        editStepTitle = step.Title;
+        editStepDescription = step.Description;
+        editStepGuidanceNotes = step.GuidanceNotes;
+        editStepAlwaysHumanReview = step.AlwaysRequireHumanReview;
+    }
+
+    private void CloseStepEditor() => editingStep = null;
+
+    private async Task SaveStepAsync()
+    {
+        if (editingStep is null) return;
+        try
+        {
+            await StepService.UpdateAsync(editingStep.Id, editStepTitle, editStepDescription, editStepGuidanceNotes, editStepAlwaysHumanReview);
+            CloseStepEditor();
+            await LoadAsync();
+        }
+        catch (Exception exception) { ShowMessage(exception.Message); }
+    }
+
+    private async Task DeleteStepAsync(Guid stepId)
+    {
+        try
+        {
+            await StepService.DeleteAsync(stepId);
+            await LoadAsync();
+        }
+        catch (Exception exception) { ShowMessage(exception.Message); }
+    }
+
+    private async Task MoveStepAsync(Guid stepId, WorkflowColumn target)
+    {
+        try
+        {
+            await StepOrchestrator.MoveAsync(stepId, target);
             await LoadAsync();
         }
         catch (Exception exception) { ShowMessage(exception.Message); }

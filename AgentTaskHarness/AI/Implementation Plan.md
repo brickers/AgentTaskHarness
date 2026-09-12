@@ -175,7 +175,7 @@ A shared rules engine and dependency services back both Feature and Step transit
 - Implement `FeatureTransitionOrchestrator`/`StepTransitionOrchestrator` composed around `WorkflowTransitionRules` and the dependency services, exposing a `MoveAsync(cardId, targetColumn)` that enforces allowed-transition + dependency gating (git/scheduler/review side effects land in later steps).
 - Unit-test the rules engine and both orchestrators' gating logic in isolation.
 
-### Step 7: Automatic Feature lifecycle and skip-human-review behavior
+### ✅ Step 7: Automatic Feature lifecycle and skip-human-review behavior — Completed
 Feature cards automatically track their Steps' progress, and boards/cards can skip human review per the configured toggles.
 - Wire `StepTransitionOrchestrator` to call into `FeatureTransitionOrchestrator` on two triggers: first Step entering Build (Feature Ready→Build) and all Steps reaching Done (Feature Build→AgentReview).
 - Implement skip-human-review auto-advance: when `Board.SkipFeatureHumanReview`/`SkipStepHumanReview` is set and the card's `AlwaysRequireHumanReview` override is false, `AgentReview`→`Done` happens automatically instead of stopping at `HumanReview`.
