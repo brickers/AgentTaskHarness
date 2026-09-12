@@ -42,7 +42,7 @@ public class FeatureTransitionOrchestrator(
 			throw new InvalidOperationException("Completed features are terminal and cannot be moved.");
 		}
 
-		// Hard-block UI moves if an agent is currently running.
+		// Hard-block UI moves if an agent is currently running. MCP moves allow the transition and apply the soft blocked flag.
 		var hasActiveAgent = await dbContext.AgentRuns.AnyAsync(r =>
 			r.CardType == CardType.Feature && r.CardId == featureId &&
 			(r.Status == AgentRunStatus.Working || r.Status == AgentRunStatus.WaitingForInput),
@@ -119,6 +119,17 @@ public class FeatureTransitionOrchestrator(
 			{
 				step.WorkflowColumn = WorkflowColumn.Ready;
 			}
+		}
+
+		if (isMcpMove && hasActiveAgent)
+		{
+			dbContext.AgentRuns.Add(new AgentRun
+			{
+				CardType = CardType.Feature,
+				CardId = featureId,
+				Status = AgentRunStatus.Blocked,
+				StartedAt = DateTimeOffset.UtcNow
+			});
 		}
 
 		await dbContext.SaveChangesAsync(cancellationToken);

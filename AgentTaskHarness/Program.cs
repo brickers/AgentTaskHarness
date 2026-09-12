@@ -9,8 +9,11 @@ using AgentTaskHarness.Application.Steps;
 using AgentTaskHarness.Application.Workflow;
 using AgentTaskHarness.Infrastructure.Agents;
 using AgentTaskHarness.Infrastructure.Git;
+using AgentTaskHarness.Infrastructure.Mcp;
 using AgentTaskHarness.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using ModelContextProtocol;
+using ModelContextProtocol.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,6 +40,10 @@ builder.Services.AddScoped<IGitWorktreeService, LibGit2WorktreeService>();
 builder.Services.AddScoped<IAgentProcessRunner, NoOpAgentProcessRunner>();
 builder.Services.AddScoped<IAgentScheduler, AgentSchedulerService>();
 
+builder.Services.AddScoped<BoardMcpTools>();
+builder.Services.AddMcpServer()
+	.WithToolsFromAssembly();
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -49,7 +56,7 @@ using (var scope = app.Services.CreateScope())
 if (!app.Environment.IsDevelopment())
 {
 	app.UseExceptionHandler("/Error", createScopeForErrors: true);
-	// The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
+	// The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/dotnet-support-policy.
 	app.UseHsts();
 }
 
@@ -61,5 +68,7 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
 	.AddInteractiveServerRenderMode();
+
+app.MapMcp();
 
 app.Run();

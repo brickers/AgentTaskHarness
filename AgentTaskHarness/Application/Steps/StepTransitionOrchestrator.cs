@@ -166,10 +166,18 @@ public class StepTransitionOrchestrator(
 				run.EndedAt = DateTimeOffset.UtcNow;
 			}
 
-			if (pendingRuns.Count > 0)
+			if (isMcpMove && hasActiveAgent)
 			{
-				await dbContext.SaveChangesAsync(cancellationToken);
+				dbContext.AgentRuns.Add(new AgentRun
+				{
+					CardType = CardType.Step,
+					CardId = stepId,
+					Status = AgentRunStatus.Blocked,
+					StartedAt = DateTimeOffset.UtcNow
+				});
 			}
+
+			await dbContext.SaveChangesAsync(cancellationToken);
 		}
 
 		return step;
