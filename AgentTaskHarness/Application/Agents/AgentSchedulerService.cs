@@ -117,6 +117,57 @@ public class AgentSchedulerService(
 		}
 	}
 
+	public async Task RetryAgentAsync(Guid stepId, CancellationToken cancellationToken = default)
+	{
+		var step = await dbContext.Steps
+			.Include(s => s.Feature)
+				.ThenInclude(f => f.Board)
+			.SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken)
+			?? throw new KeyNotFoundException($"Step '{stepId}' was not found.");
+
+		if (step.WorkflowColumn is not (WorkflowColumn.Build or WorkflowColumn.AgentReview))
+		{
+			throw new InvalidOperationException("Only steps in Build or AgentReview can run agents.");
+		}
+
+		var activeRuns = await dbContext.AgentRuns
+			.Where(r => r.CardType == CardType.Step && r.CardId == stepId &&
+						(r.Status == AgentRunStatus.Working || r.Status == AgentRunStatus.WaitingForInput))
+			.ToListAsync(cancellationToken);
+
+		foreach (var activeRun in activeRuns)
+		{
+			if (activeRun.ProcessId.HasValue)
+			{
+				await processRunner.StopAsync(activeRun.ProcessId.Value, cancellationToken);
+			}
+			activeRun.Status = AgentRunStatus.Stopped;
+			activeRun.EndedAt = DateTimeOffset.UtcNow;
+		}
+
+		var nonFinishedRuns = await dbContext.AgentRuns
+			.Where(r => r.CardType == CardType.Step && r.CardId == stepId &&
+						(r.Status == AgentRunStatus.Failed || r.Status == AgentRunStatus.Stopped || r.Status == AgentRunStatus.Blocked || r.Status == AgentRunStatus.Queued))
+			.ToListAsync(cancellationToken);
+
+		dbContext.AgentRuns.RemoveRange(nonFinishedRuns);
+
+		var newRun = new AgentRun
+		{
+			CardType = CardType.Step,
+			CardId = stepId,
+			Status = AgentRunStatus.Queued,
+			StartedAt = DateTimeOffset.UtcNow
+		};
+		dbContext.AgentRuns.Add(newRun);
+		await dbContext.SaveChangesAsync(cancellationToken);
+
+		if (step.Feature?.Board != null)
+		{
+			await ProcessQueueAsync(step.Feature.Board.Id, cancellationToken);
+		}
+	}
+
 	public async Task ProcessQueueAsync(Guid boardId, CancellationToken cancellationToken = default)
 	{
 		var board = await dbContext.Boards
@@ -358,6 +409,44 @@ public class AgentSchedulerService(
 		}
 	}
 
+	public async Task StopAgentAsync(
+		CardType cardType,
+		Guid cardId,
+		long tokensUsed = 0,
+		TimeSpan? timeSpent = null,
+		CancellationToken cancellationToken = default)
+	{
+		if (cardType == CardType.Step)
+		{
+			await StopAgentAsync(cardId, tokensUsed, timeSpent, cancellationToken);
+			return;
+		}
+
+		var activeRuns = await dbContext.AgentRuns
+			.Where(r => r.CardType == cardType && r.CardId == cardId &&
+						(r.Status == AgentRunStatus.Working || r.Status == AgentRunStatus.WaitingForInput))
+			.ToListAsync(cancellationToken);
+
+		var activeRun = activeRuns.OrderByDescending(r => r.StartedAt).FirstOrDefault();
+
+		if (activeRun != null)
+		{
+			if (activeRun.ProcessId.HasValue)
+			{
+				await processRunner.StopAsync(activeRun.ProcessId.Value, cancellationToken);
+			}
+			activeRun.Status = AgentRunStatus.Stopped;
+			activeRun.EndedAt = DateTimeOffset.UtcNow;
+			activeRun.TokensUsed = tokensUsed;
+			var duration = timeSpent ?? (activeRun.EndedAt.Value >= activeRun.StartedAt
+				? activeRun.EndedAt.Value - activeRun.StartedAt
+				: TimeSpan.Zero);
+			activeRun.TimeSpent = duration;
+		}
+
+		await dbContext.SaveChangesAsync(cancellationToken);
+	}
+
 	public async Task RecordRunUsageAsync(
 		Guid stepId,
 		long tokensUsed,
@@ -402,8 +491,13 @@ public class AgentSchedulerService(
 
 	public Task<bool> IsAgentRunningAsync(Guid stepId, CancellationToken cancellationToken = default)
 	{
+		return IsAgentRunningAsync(CardType.Step, stepId, cancellationToken);
+	}
+
+	public Task<bool> IsAgentRunningAsync(CardType cardType, Guid cardId, CancellationToken cancellationToken = default)
+	{
 		return dbContext.AgentRuns.AnyAsync(r =>
-			r.CardType == CardType.Step && r.CardId == stepId &&
+			r.CardType == cardType && r.CardId == cardId &&
 			(r.Status == AgentRunStatus.Working || r.Status == AgentRunStatus.WaitingForInput),
 			cancellationToken);
 	}
@@ -414,10 +508,15 @@ public class AgentSchedulerService(
 		return run?.Status;
 	}
 
-	public async Task<AgentRun?> GetCurrentRunAsync(Guid stepId, CancellationToken cancellationToken = default)
+	public Task<AgentRun?> GetCurrentRunAsync(Guid stepId, CancellationToken cancellationToken = default)
+	{
+		return GetCurrentRunAsync(CardType.Step, stepId, cancellationToken);
+	}
+
+	public async Task<AgentRun?> GetCurrentRunAsync(CardType cardType, Guid cardId, CancellationToken cancellationToken = default)
 	{
 		var runs = await dbContext.AgentRuns
-			.Where(r => r.CardType == CardType.Step && r.CardId == stepId)
+			.Where(r => r.CardType == cardType && r.CardId == cardId)
 			.ToListAsync(cancellationToken);
 
 		return runs.OrderByDescending(r => r.StartedAt).FirstOrDefault();

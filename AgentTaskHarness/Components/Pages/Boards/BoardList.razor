@@ -1,5 +1,6 @@
 @page "/"
 @page "/boards"
+@using BoardEntity = AgentTaskHarness.Domain.Entities.Board
 @inject BoardService BoardService
 @inject NavigationManager Navigation
 
@@ -72,7 +73,9 @@ else
                     <span>@board.RepoPath</span>
                 </div>
                 <div class="board-list-actions">
-                    <a class="button-quiet" href="@($"/boards/{board.Id}")">Open</a>
+                    <a class="button-quiet" href="@($"/boards/{board.Id}")">Board</a>
+                    <a class="button-quiet" href="@($"/boards/{board.Id}/roadmap")">Roadmap</a>
+                    <a class="button-quiet" href="@($"/boards/{board.Id}/agents")">Agents</a>
                     <button class="button-danger" @onclick="() => DeleteAsync(board.Id)">Delete</button>
                 </div>
             </li>
@@ -81,7 +84,7 @@ else
 }
 
 @code {
-    private List<Board> boards = [];
+    private List<BoardEntity> boards = [];
     private string newName = string.Empty;
     private string newRepoPath = string.Empty;
     private int newConcurrencyLimit = 1;

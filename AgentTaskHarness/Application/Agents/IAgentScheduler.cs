@@ -14,6 +14,12 @@ public interface IAgentScheduler
 	Task RequestStartAsync(Guid stepId, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Manually retries or restarts an agent for a dev plan step in Build or AgentReview.
+	/// Clears previous failed or stopped runs and re-evaluates the board queue.
+	/// </summary>
+	Task RetryAgentAsync(Guid stepId, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Notifies the scheduler that an agent on a step has completed, recording token and time usage,
 	/// freeing up a concurrency slot and re-evaluating the queue.
 	/// </summary>
@@ -28,6 +34,16 @@ public interface IAgentScheduler
 	/// </summary>
 	Task StopAgentAsync(
 		Guid stepId,
+		long tokensUsed = 0,
+		TimeSpan? timeSpent = null,
+		CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Manually stops any active running agent for the specified card (Step or Feature).
+	/// </summary>
+	Task StopAgentAsync(
+		CardType cardType,
+		Guid cardId,
 		long tokensUsed = 0,
 		TimeSpan? timeSpent = null,
 		CancellationToken cancellationToken = default);
@@ -52,6 +68,11 @@ public interface IAgentScheduler
 	Task<bool> IsAgentRunningAsync(Guid stepId, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Checks whether an agent is actively running (Working or WaitingForInput) for the specified card.
+	/// </summary>
+	Task<bool> IsAgentRunningAsync(CardType cardType, Guid cardId, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Returns the status of the current or most recent agent run for the step.
 	/// </summary>
 	Task<AgentRunStatus?> GetStepAgentStatusAsync(Guid stepId, CancellationToken cancellationToken = default);
@@ -60,4 +81,9 @@ public interface IAgentScheduler
 	/// Returns the current or most recent agent run for the step.
 	/// </summary>
 	Task<AgentRun?> GetCurrentRunAsync(Guid stepId, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Returns the current or most recent agent run for the specified card.
+	/// </summary>
+	Task<AgentRun?> GetCurrentRunAsync(CardType cardType, Guid cardId, CancellationToken cancellationToken = default);
 }

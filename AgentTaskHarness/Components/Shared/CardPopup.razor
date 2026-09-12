@@ -1,0 +1,932 @@
+@using AgentTaskHarness.Application.Agents
+@using AgentTaskHarness.Application.Comments
+@using AgentTaskHarness.Application.Features
+@using AgentTaskHarness.Application.Reviews
+@using AgentTaskHarness.Application.Steps
+@using AgentTaskHarness.Application.Usage
+@using AgentTaskHarness.Domain.Entities
+@using AgentTaskHarness.Domain.Enums
+@using AgentTaskHarness.Infrastructure.Persistence
+@using Microsoft.EntityFrameworkCore
+
+@inject AppDbContext DbContext
+@inject FeatureTransitionOrchestrator FeatureOrchestrator
+@inject StepTransitionOrchestrator StepOrchestrator
+@inject IAgentScheduler AgentScheduler
+@inject ReviewOutcomeService ReviewOutcomeService
+@inject UsageTrackingService UsageTrackingService
+@inject CommentService CommentService
+
+<div class="popup-backdrop" @onclick="HandleBackdropClick">
+	<div class="popup-container" @onclick:stopPropagation="true">
+		@if (Feature is null && Step is null)
+		{
+			<div class="popup-body">
+				<p>No card selected.</p>
+				<button class="btn btn-secondary" @onclick="Close">Close</button>
+			</div>
+		}
+		else
+		{
+			<header class="popup-header">
+				<div class="header-main">
+					<div class="type-pill @(IsFeature ? "pill-feature" : "pill-step")">
+						@(IsFeature ? "Feature" : "Step")
+					</div>
+					<h2 class="popup-title">@CardTitle</h2>
+				</div>
+				<div class="header-actions">
+					<span class="column-badge">@CurrentColumn</span>
+					<button class="btn-close" @onclick="Close" aria-label="Close popup">&times;</button>
+				</div>
+			</header>
+
+			@if (!string.IsNullOrEmpty(ErrorMessage))
+			{
+				<div class="alert alert-danger" role="alert">
+					@ErrorMessage
+					<button type="button" class="btn-dismiss" @onclick="() => ErrorMessage = null">&times;</button>
+				</div>
+			}
+
+			@if (!string.IsNullOrEmpty(SuccessMessage))
+			{
+				<div class="alert alert-success" role="alert">
+					@SuccessMessage
+					<button type="button" class="btn-dismiss" @onclick="() => SuccessMessage = null">&times;</button>
+				</div>
+			}
+
+			<!-- Rework / Issue Alerts -->
+			@if (IsRework)
+			{
+				<div class="alert alert-warning rework-banner">
+					<strong>Rework in progress:</strong> This card was returned to Build after review failures.
+				</div>
+			}
+
+			@if (HasThresholdIssue)
+			{
+				<div class="alert alert-danger issue-banner">
+					<strong>Issue threshold reached:</strong> Review failure counters reached the board limit. Agent auto-start is suspended.
+				</div>
+			}
+
+			@if (MergeConflictPending)
+			{
+				<div class="alert alert-warning conflict-banner">
+					<strong>Merge conflict pending:</strong> Worktree has git conflicts. Resolve them in the worktree and click <em>Resume Merge</em>.
+				</div>
+			}
+
+			<!-- Active Agent Session Alert -->
+			@if (IsAgentRunning)
+			{
+				<div class="agent-running-banner">
+					<StatusIcon Status="@CurrentRun?.Status" ShowText="true" />
+					<div class="agent-banner-info">
+						<span>Agent is currently active. Card cannot be moved while agent is running.</span>
+						@if (!string.IsNullOrWhiteSpace(CurrentRun?.SessionLink))
+						{
+							<a href="@CurrentRun.SessionLink" target="_blank" rel="noreferrer noopener" class="session-link-button">
+								Open Live Copilot CLI Session &nearr;
+							</a>
+						}
+					</div>
+				</div>
+			}
+
+			<div class="popup-nav-tabs">
+				<button class="nav-tab @(activeTab == "details" ? "active" : "")" @onclick='() => activeTab = "details"'>Details</button>
+				<button class="nav-tab @(activeTab == "moves" ? "active" : "")" @onclick='() => activeTab = "moves"'>Available Moves</button>
+				<button class="nav-tab @(activeTab == "controls" ? "active" : "")" @onclick='() => activeTab = "controls"'>Manual Controls</button>
+				<button class="nav-tab @(activeTab == "usage" ? "active" : "")" @onclick='() => activeTab = "usage"'>Cost &amp; Quality</button>
+				<button class="nav-tab @(activeTab == "comments" ? "active" : "")" @onclick='() => activeTab = "comments"'>Comments (@comments.Count)</button>
+			</div>
+
+			<div class="popup-content">
+				@if (activeTab == "details")
+				{
+					<div class="tab-panel">
+						@if (IsFeature)
+						{
+							<div class="detail-group">
+								<label>Requirements</label>
+								<div class="detail-value text-block">@(string.IsNullOrWhiteSpace(Feature!.Requirements) ? "No requirements provided." : Feature.Requirements)</div>
+							</div>
+							<div class="detail-group">
+								<label>Acceptance Criteria</label>
+								<div class="detail-value text-block">@(string.IsNullOrWhiteSpace(Feature.AcceptanceCriteria) ? "No acceptance criteria specified." : Feature.AcceptanceCriteria)</div>
+							</div>
+							<div class="detail-group">
+								<label>Suggested Solution</label>
+								<div class="detail-value text-block">@(string.IsNullOrWhiteSpace(Feature.SuggestedSolution) ? "None specified." : Feature.SuggestedSolution)</div>
+							</div>
+						}
+						else
+						{
+							<div class="detail-group">
+								<label>Description</label>
+								<div class="detail-value text-block">@(string.IsNullOrWhiteSpace(Step!.Description) ? "No description provided." : Step.Description)</div>
+							</div>
+							<div class="detail-group">
+								<label>Guidance Notes</label>
+								<div class="detail-value text-block">@(string.IsNullOrWhiteSpace(Step.GuidanceNotes) ? "No guidance notes." : Step.GuidanceNotes)</div>
+							</div>
+						}
+
+						<div class="detail-grid">
+							<div class="detail-item">
+								<span class="detail-label">Branch Name:</span>
+								<span class="detail-val">@(BranchName ?? "None")</span>
+							</div>
+							<div class="detail-item">
+								<span class="detail-label">Worktree Path:</span>
+								<span class="detail-val">@(WorktreePath ?? "None")</span>
+							</div>
+						</div>
+
+						<div class="toggle-group">
+							<label class="toggle-label">
+								<input type="checkbox" checked="@AlwaysRequireHumanReview" @onchange="ToggleAlwaysRequireHumanReview" />
+								<span>Always require human review (overrides board-level skip)</span>
+							</label>
+						</div>
+					</div>
+				}
+				else if (activeTab == "moves")
+				{
+					<div class="tab-panel">
+						<p class="tab-subtitle">Allowed column transitions according to workflow rules and dependency gating:</p>
+
+						@if (IsAgentRunning)
+						{
+							<div class="alert alert-info">
+								Card moves are hard-blocked while an agent is currently running. Stop the agent under <em>Manual Controls</em> if you need to move it.
+							</div>
+						}
+						else if (MergeConflictPending)
+						{
+							<div class="alert alert-warning">
+								Card has an unresolved merge conflict. Resolve the conflict and resume merge before moving.
+								<div class="mt-2">
+									<button class="btn btn-primary" @onclick="HandleResumeMerge">Resume Merge</button>
+								</div>
+							</div>
+						}
+						else if (allowedMoves.Count == 0)
+						{
+							<div class="alert alert-secondary">
+								No transitions available from <strong>@CurrentColumn</strong>.
+							</div>
+						}
+						else
+						{
+							<div class="moves-container">
+								@foreach (var move in allowedMoves)
+								{
+									@if (move == WorkflowColumn.Backlog)
+									{
+										<div class="backlog-move-group">
+											<span class="move-target-label">Move to Backlog:</span>
+											<button class="btn btn-outline-warning" @onclick="() => ExecuteMove(move, discardWorktree: false)">
+												Pause Worktree
+											</button>
+											<button class="btn btn-outline-danger" @onclick="() => ExecuteMove(move, discardWorktree: true)">
+												Discard Worktree
+											</button>
+										</div>
+									}
+									else
+									{
+										<button class="btn btn-primary btn-move" @onclick="() => ExecuteMove(move, discardWorktree: false)">
+											Move to @move
+										</button>
+									}
+								}
+							</div>
+						}
+					</div>
+				}
+				else if (activeTab == "controls")
+				{
+					<div class="tab-panel">
+						<p class="tab-subtitle">Direct agent execution and worktree controls:</p>
+
+						<div class="controls-list">
+							<!-- Stop agent -->
+							<div class="control-row">
+								<div class="control-desc">
+									<strong>Stop Agent Process</strong>
+									<p>Terminates the active copilot CLI process and marks the run as Stopped.</p>
+								</div>
+								<button class="btn btn-danger" disabled="@(!IsAgentRunning)" @onclick="HandleStopAgent">
+									Stop Agent
+								</button>
+							</div>
+
+							<!-- Retry agent -->
+							@if (!IsFeature && (CurrentColumn == WorkflowColumn.Build || CurrentColumn == WorkflowColumn.AgentReview))
+							{
+								<div class="control-row">
+									<div class="control-desc">
+										<strong>Retry / Restart Agent</strong>
+										<p>Clears previous failed or stopped runs and requests execution anew.</p>
+									</div>
+									<button class="btn btn-warning" disabled="@IsAgentRunning" @onclick="HandleRetryAgent">
+										Retry Agent
+									</button>
+								</div>
+							}
+
+							<!-- Discard uncommitted changes -->
+							@if (!string.IsNullOrWhiteSpace(WorktreePath))
+							{
+								<div class="control-row">
+									<div class="control-desc">
+										<strong>Discard Uncommitted Changes</strong>
+										<p>Removes all unstaged and uncommitted changes from the card's git worktree.</p>
+									</div>
+									<button class="btn btn-outline-danger" @onclick="HandleDiscardUncommitted">
+										Discard Uncommitted Changes
+									</button>
+								</div>
+							}
+
+							<!-- Resume merge -->
+							@if (MergeConflictPending)
+							{
+								<div class="control-row">
+									<div class="control-desc">
+										<strong>Resume Merge</strong>
+										<p>Commits resolved merge conflicts and finalizes the transition to Done.</p>
+									</div>
+									<button class="btn btn-success" @onclick="HandleResumeMerge">
+										Resume Merge
+									</button>
+								</div>
+							}
+						</div>
+					</div>
+				}
+				else if (activeTab == "usage")
+				{
+					<div class="tab-panel">
+						<div class="usage-stats-grid">
+							<div class="usage-stat-card">
+								<span class="usage-label">Agent Review Failures</span>
+								<span class="usage-number text-danger">@AgentReviewFailCount</span>
+							</div>
+							<div class="usage-stat-card">
+								<span class="usage-label">Human Review Failures</span>
+								<span class="usage-number text-warning">@HumanReviewFailCount</span>
+							</div>
+							<div class="usage-stat-card">
+								<span class="usage-label">Tokens Used</span>
+								<span class="usage-number">@FormatTokens(TokensUsed)</span>
+							</div>
+							<div class="usage-stat-card">
+								<span class="usage-label">Time Spent</span>
+								<span class="usage-number">@FormatDuration(TimeSpent)</span>
+							</div>
+						</div>
+
+						@if (qualitySignals != null)
+						{
+							<div class="quality-signals-box mt-3">
+								<h5>Quality Signals</h5>
+								<div class="signals-list">
+									<div><strong>Total Review Failures:</strong> @qualitySignals.TotalReviewFailures</div>
+									<div><strong>Churn Ratio:</strong> @qualitySignals.ChurnRatio.ToString("F2")</div>
+									<div><strong>Is Rework:</strong> @(qualitySignals.IsRework ? "Yes" : "No")</div>
+								</div>
+							</div>
+						}
+					</div>
+				}
+				else if (activeTab == "comments")
+				{
+					<div class="tab-panel">
+						<div class="comments-thread">
+							@if (comments.Count == 0)
+							{
+								<p class="text-muted">No comments yet. Start a discussion below.</p>
+							}
+							else
+							{
+								@foreach (var c in comments)
+								{
+									<div class="comment-bubble">
+										<div class="comment-meta">
+											<span class="comment-author">@c.Author</span>
+											<span class="comment-date">@c.CreatedAt.LocalDateTime.ToString("MMM d, yyyy h:mm tt")</span>
+										</div>
+										<div class="comment-text">@c.Body</div>
+									</div>
+								}
+							}
+						</div>
+
+						<div class="add-comment-box">
+							<div class="input-row">
+								<input class="form-control author-input" placeholder="Your name" @bind="newCommentAuthor" />
+							</div>
+							<div class="input-row mt-2">
+								<textarea class="form-control" rows="3" placeholder="Write a comment..." @bind="newCommentBody"></textarea>
+							</div>
+							<div class="mt-2 text-end">
+								<button class="btn btn-primary" @onclick="AddComment" disabled="@(string.IsNullOrWhiteSpace(newCommentBody))">
+									Add Comment
+								</button>
+							</div>
+						</div>
+					</div>
+				}
+			</div>
+
+			<footer class="popup-footer">
+				<button class="btn btn-secondary" @onclick="Close">Close</button>
+			</footer>
+		}
+	</div>
+</div>
+
+<style>
+	.popup-backdrop {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100vw;
+		height: 100vh;
+		background: rgba(15, 23, 42, 0.6);
+		backdrop-filter: blur(2px);
+		z-index: 1050;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 20px;
+	}
+	.popup-container {
+		background: #ffffff;
+		border-radius: 12px;
+		width: 100%;
+		max-width: 680px;
+		max-height: 90vh;
+		display: flex;
+		flex-direction: column;
+		box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+		overflow: hidden;
+	}
+	.popup-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		padding: 18px 24px;
+		border-bottom: 1px solid #e2e8f0;
+		background: #f8fafc;
+	}
+	.header-main {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		flex: 1;
+		min-width: 0;
+	}
+	.type-pill {
+		font-size: 0.72rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		padding: 2px 8px;
+		border-radius: 4px;
+		align-self: flex-start;
+	}
+	.pill-feature {
+		background: #e0f2fe;
+		color: #0369a1;
+	}
+	.pill-step {
+		background: #f3e8ff;
+		color: #7e22ce;
+	}
+	.popup-title {
+		font-size: 1.25rem;
+		font-weight: 700;
+		color: #0f172a;
+		margin: 0;
+		word-break: break-word;
+	}
+	.header-actions {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin-left: 12px;
+	}
+	.column-badge {
+		font-size: 0.8rem;
+		font-weight: 600;
+		padding: 4px 10px;
+		background: #e2e8f0;
+		color: #334155;
+		border-radius: 6px;
+	}
+	.btn-close {
+		background: none;
+		border: none;
+		font-size: 1.5rem;
+		cursor: pointer;
+		color: #64748b;
+		padding: 0;
+		line-height: 1;
+	}
+	.btn-close:hover {
+		color: #0f172a;
+	}
+	.popup-nav-tabs {
+		display: flex;
+		border-bottom: 1px solid #e2e8f0;
+		background: #f8fafc;
+		padding: 0 16px;
+		gap: 4px;
+	}
+	.nav-tab {
+		background: none;
+		border: none;
+		padding: 10px 14px;
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: #64748b;
+		cursor: pointer;
+		border-bottom: 2px solid transparent;
+		transition: all 0.15s;
+	}
+	.nav-tab:hover {
+		color: #0f172a;
+	}
+	.nav-tab.active {
+		color: #2563eb;
+		border-bottom-color: #2563eb;
+		background: #ffffff;
+	}
+	.popup-content {
+		padding: 20px 24px;
+		overflow-y: auto;
+		flex: 1;
+	}
+	.tab-subtitle {
+		font-size: 0.88rem;
+		color: #64748b;
+		margin-bottom: 16px;
+	}
+	.detail-group {
+		margin-bottom: 16px;
+	}
+	.detail-group label {
+		display: block;
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: #475569;
+		margin-bottom: 4px;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+	.text-block {
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		border-radius: 6px;
+		padding: 10px 12px;
+		font-size: 0.9rem;
+		color: #1e293b;
+		white-space: pre-wrap;
+	}
+	.detail-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 12px;
+		margin: 16px 0;
+	}
+	.detail-item {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.detail-label {
+		font-size: 0.75rem;
+		color: #64748b;
+		font-weight: 600;
+	}
+	.detail-val {
+		font-family: monospace;
+		font-size: 0.82rem;
+		color: #334155;
+		word-break: break-all;
+	}
+	.toggle-group {
+		margin-top: 16px;
+		padding: 12px;
+		background: #f1f5f9;
+		border-radius: 6px;
+	}
+	.toggle-label {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		font-size: 0.88rem;
+		font-weight: 500;
+		color: #1e293b;
+		cursor: pointer;
+	}
+	.agent-running-banner {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		background: #ecfdf5;
+		border-bottom: 1px solid #a7f3d0;
+		padding: 12px 24px;
+	}
+	.agent-banner-info {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		flex: 1;
+		font-size: 0.85rem;
+		color: #065f46;
+	}
+	.session-link-button {
+		font-weight: 600;
+		color: #047857;
+		text-decoration: underline;
+	}
+	.moves-container {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	.backlog-move-group {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 10px;
+		background: #fffbeb;
+		border-radius: 6px;
+		border: 1px solid #fef3c7;
+	}
+	.move-target-label {
+		font-weight: 600;
+		font-size: 0.88rem;
+		color: #92400e;
+	}
+	.controls-list {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+	.control-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		padding: 14px;
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		border-radius: 8px;
+	}
+	.control-desc strong {
+		display: block;
+		font-size: 0.9rem;
+		color: #0f172a;
+	}
+	.control-desc p {
+		margin: 4px 0 0;
+		font-size: 0.8rem;
+		color: #64748b;
+	}
+	.usage-stats-grid {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 14px;
+	}
+	.usage-stat-card {
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		border-radius: 8px;
+		padding: 14px;
+		text-align: center;
+	}
+	.usage-label {
+		display: block;
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: #64748b;
+		margin-bottom: 6px;
+		text-transform: uppercase;
+	}
+	.usage-number {
+		font-size: 1.3rem;
+		font-weight: 700;
+		color: #0f172a;
+	}
+	.comments-thread {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		max-height: 250px;
+		overflow-y: auto;
+		margin-bottom: 16px;
+		padding-right: 4px;
+	}
+	.comment-bubble {
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		border-radius: 8px;
+		padding: 10px 12px;
+	}
+	.comment-meta {
+		display: flex;
+		justify-content: space-between;
+		font-size: 0.75rem;
+		margin-bottom: 4px;
+	}
+	.comment-author {
+		font-weight: 600;
+		color: #2563eb;
+	}
+	.comment-date {
+		color: #94a3b8;
+	}
+	.comment-text {
+		font-size: 0.88rem;
+		color: #1e293b;
+		white-space: pre-wrap;
+	}
+	.author-input {
+		max-width: 200px;
+	}
+	.popup-footer {
+		display: flex;
+		justify-content: flex-end;
+		padding: 14px 24px;
+		border-top: 1px solid #e2e8f0;
+		background: #f8fafc;
+	}
+	.alert {
+		padding: 10px 14px;
+		font-size: 0.85rem;
+		border-radius: 6px;
+		margin: 10px 24px 0;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.alert-danger { background: #fef2f2; border: 1px solid #fee2e2; color: #991b1b; }
+	.alert-warning { background: #fffbeb; border: 1px solid #fef3c7; color: #92400e; }
+	.alert-success { background: #ecfdf5; border: 1px solid #d1fae5; color: #065f46; }
+	.btn-dismiss { background: none; border: none; font-size: 1.1rem; cursor: pointer; color: inherit; }
+</style>
+
+@code {
+	[Parameter] public Feature? Feature { get; set; }
+	[Parameter] public Step? Step { get; set; }
+	[Parameter] public Board? Board { get; set; }
+	[Parameter] public AgentRun? CurrentRun { get; set; }
+	[Parameter] public EventCallback OnClose { get; set; }
+	[Parameter] public EventCallback OnChanged { get; set; }
+
+	private string activeTab = "details";
+	private string? ErrorMessage;
+	private string? SuccessMessage;
+	private List<WorkflowColumn> allowedMoves = [];
+	private List<Comment> comments = [];
+	private QualitySignals? qualitySignals;
+	private string newCommentAuthor = "User";
+	private string newCommentBody = "";
+
+	private bool IsFeature => Feature != null;
+	private Guid CardId => IsFeature ? Feature!.Id : Step!.Id;
+	private CardType CardTypeEnum => IsFeature ? CardType.Feature : CardType.Step;
+	private string CardTitle => IsFeature ? Feature!.Title : Step!.Title;
+	private WorkflowColumn CurrentColumn => IsFeature ? Feature!.WorkflowColumn : Step!.WorkflowColumn;
+	private string? BranchName => IsFeature ? Feature!.BranchName : Step!.BranchName;
+	private string? WorktreePath => IsFeature ? Feature!.WorktreePath : Step!.WorktreePath;
+	private bool AlwaysRequireHumanReview => IsFeature ? Feature!.AlwaysRequireHumanReview : Step!.AlwaysRequireHumanReview;
+	private int AgentReviewFailCount => IsFeature ? Feature!.AgentReviewFailCount : Step!.AgentReviewFailCount;
+	private int HumanReviewFailCount => IsFeature ? Feature!.HumanReviewFailCount : Step!.HumanReviewFailCount;
+	private long TokensUsed => IsFeature ? (featureSummary?.TotalTokensUsed ?? 0) : Step!.TokensUsed;
+	private TimeSpan TimeSpent => IsFeature ? (featureSummary?.TotalTimeSpent ?? TimeSpan.Zero) : Step!.TimeSpent;
+	private bool MergeConflictPending => IsFeature ? Feature!.MergeConflictPending : Step!.MergeConflictPending;
+
+	private FeatureUsageSummary? featureSummary;
+
+	private bool IsAgentRunning =>
+		CurrentRun?.Status == AgentRunStatus.Working || CurrentRun?.Status == AgentRunStatus.WaitingForInput;
+
+	private bool IsRework =>
+		CurrentColumn == WorkflowColumn.Build &&
+		(IsFeature ? ReviewOutcomeService.IsRework(Feature!) : ReviewOutcomeService.IsRework(Step!));
+
+	private bool HasThresholdIssue =>
+		Board != null &&
+		(IsFeature ? ReviewOutcomeService.HasIssue(Feature!, Board) : ReviewOutcomeService.HasIssue(Step!, Board));
+
+	protected override async Task OnParametersSetAsync()
+	{
+		await RefreshDataAsync();
+	}
+
+	private async Task RefreshDataAsync()
+	{
+		ErrorMessage = null;
+		if (Feature == null && Step == null) return;
+
+		try
+		{
+			// Load allowed moves
+			if (IsFeature)
+			{
+				var moves = await FeatureOrchestrator.GetAllowedMovesAsync(Feature!.Id);
+				allowedMoves = moves.ToList();
+				featureSummary = await UsageTrackingService.GetFeatureSummaryAsync(Feature.Id);
+				qualitySignals = await UsageTrackingService.GetQualitySignalsAsync(Feature.Id);
+			}
+			else
+			{
+				var moves = await StepOrchestrator.GetAllowedMovesAsync(Step!.Id);
+				allowedMoves = moves.ToList();
+			}
+
+			// Load comments
+			var loadedComments = await CommentService.GetCommentsAsync(CardTypeEnum, CardId);
+			comments = loadedComments.ToList();
+
+			// Load active run
+			CurrentRun = await AgentScheduler.GetCurrentRunAsync(CardTypeEnum, CardId);
+		}
+		catch (Exception ex)
+		{
+			ErrorMessage = ex.Message;
+		}
+	}
+
+	private async Task ExecuteMove(WorkflowColumn targetColumn, bool discardWorktree)
+	{
+		ErrorMessage = null;
+		SuccessMessage = null;
+		try
+		{
+			if (IsFeature)
+			{
+				await FeatureOrchestrator.MoveAsync(Feature!.Id, targetColumn, discardWorktree);
+			}
+			else
+			{
+				await StepOrchestrator.MoveAsync(Step!.Id, targetColumn, discardWorktree);
+			}
+
+			SuccessMessage = $"Moved successfully to {targetColumn}.";
+			await OnChanged.InvokeAsync();
+			await RefreshDataAsync();
+		}
+		catch (Exception ex)
+		{
+			ErrorMessage = ex.Message;
+		}
+	}
+
+	private async Task HandleStopAgent()
+	{
+		ErrorMessage = null;
+		try
+		{
+			await AgentScheduler.StopAgentAsync(CardTypeEnum, CardId);
+			SuccessMessage = "Agent stopped.";
+			await OnChanged.InvokeAsync();
+			await RefreshDataAsync();
+		}
+		catch (Exception ex)
+		{
+			ErrorMessage = ex.Message;
+		}
+	}
+
+	private async Task HandleRetryAgent()
+	{
+		ErrorMessage = null;
+		try
+		{
+			if (!IsFeature)
+			{
+				await AgentScheduler.RetryAgentAsync(Step!.Id);
+				SuccessMessage = "Agent restarted.";
+				await OnChanged.InvokeAsync();
+				await RefreshDataAsync();
+			}
+		}
+		catch (Exception ex)
+		{
+			ErrorMessage = ex.Message;
+		}
+	}
+
+	private async Task HandleDiscardUncommitted()
+	{
+		ErrorMessage = null;
+		try
+		{
+			if (IsFeature)
+			{
+				await FeatureOrchestrator.DiscardUncommittedChangesAsync(Feature!.Id);
+			}
+			else
+			{
+				await StepOrchestrator.DiscardUncommittedChangesAsync(Step!.Id);
+			}
+			SuccessMessage = "Uncommitted changes discarded.";
+			await OnChanged.InvokeAsync();
+		}
+		catch (Exception ex)
+		{
+			ErrorMessage = ex.Message;
+		}
+	}
+
+	private async Task HandleResumeMerge()
+	{
+		ErrorMessage = null;
+		try
+		{
+			if (IsFeature)
+			{
+				await FeatureOrchestrator.ResumeMergeAsync(Feature!.Id);
+			}
+			else
+			{
+				await StepOrchestrator.ResumeMergeAsync(Step!.Id);
+			}
+			SuccessMessage = "Merge resumed and finalized to Done.";
+			await OnChanged.InvokeAsync();
+			await RefreshDataAsync();
+		}
+		catch (Exception ex)
+		{
+			ErrorMessage = ex.Message;
+		}
+	}
+
+	private async Task ToggleAlwaysRequireHumanReview(ChangeEventArgs e)
+	{
+		var value = e.Value is bool b && b;
+		if (IsFeature)
+		{
+			Feature!.AlwaysRequireHumanReview = value;
+		}
+		else
+		{
+			Step!.AlwaysRequireHumanReview = value;
+		}
+		await DbContext.SaveChangesAsync();
+		await OnChanged.InvokeAsync();
+	}
+
+	private async Task AddComment()
+	{
+		if (string.IsNullOrWhiteSpace(newCommentBody)) return;
+
+		try
+		{
+			await CommentService.AddCommentAsync(CardTypeEnum, CardId, newCommentAuthor, newCommentBody);
+			newCommentBody = "";
+			var loadedComments = await CommentService.GetCommentsAsync(CardTypeEnum, CardId);
+			comments = loadedComments.ToList();
+			await OnChanged.InvokeAsync();
+		}
+		catch (Exception ex)
+		{
+			ErrorMessage = ex.Message;
+		}
+	}
+
+	private async Task Close()
+	{
+		await OnClose.InvokeAsync();
+	}
+
+	private async Task HandleBackdropClick()
+	{
+		await Close();
+	}
+
+	private static string FormatTokens(long tokens) =>
+		tokens switch
+		{
+			>= 1_000_000 => $"{tokens / 1_000_000.0:F1}M",
+			>= 1_000 => $"{tokens / 1_000.0:F1}k",
+			_ => tokens.ToString()
+		};
+
+	private static string FormatDuration(TimeSpan ts) =>
+		ts.TotalHours >= 1
+			? $"{(int)ts.TotalHours}h {ts.Minutes}m"
+			: ts.TotalMinutes >= 1
+				? $"{ts.Minutes}m {ts.Seconds}s"
+				: $"{ts.Seconds}s";
+}

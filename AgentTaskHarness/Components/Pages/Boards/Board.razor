@@ -1,0 +1,690 @@
+@page "/boards/{BoardId:guid}"
+@using BoardEntity = AgentTaskHarness.Domain.Entities.Board
+@using AgentTaskHarness.Application.Agents
+@using AgentTaskHarness.Application.Boards
+@using AgentTaskHarness.Application.Features
+@using AgentTaskHarness.Application.Reviews
+@using AgentTaskHarness.Application.Steps
+@using AgentTaskHarness.Application.Usage
+@using AgentTaskHarness.Domain.Entities
+@using AgentTaskHarness.Domain.Enums
+@using AgentTaskHarness.Infrastructure.Persistence
+@using Microsoft.EntityFrameworkCore
+
+@inject BoardService BoardService
+@inject FeatureService FeatureService
+@inject StepService StepService
+@inject FeatureTransitionOrchestrator FeatureOrchestrator
+@inject StepTransitionOrchestrator StepOrchestrator
+@inject IAgentScheduler AgentScheduler
+@inject ReviewOutcomeService ReviewOutcomeService
+@inject UsageTrackingService UsageService
+@inject AppDbContext DbContext
+@inject NavigationManager Navigation
+
+<PageTitle>@(board?.Name ?? "Board") - AgentTaskHarness</PageTitle>
+
+@if (board is null)
+{
+	<div class="p-4">Loading board...</div>
+}
+else
+{
+	<div class="board-container">
+		<!-- Top Bar & Workspace Info -->
+		<header class="board-header">
+			<div>
+				<p class="breadcrumb"><a href="/boards">Boards</a> <span>/</span> @board.Name</p>
+				<h1 class="board-title">@board.Name</h1>
+				<div class="board-settings-summary">
+					<span class="tag">Concurrency: @board.ConcurrencyLimit</span>
+					<span class="tag">Feature Review: @(board.SkipFeatureHumanReview ? "Skip Human" : "Require Human")</span>
+					<span class="tag">Step Review: @(board.SkipStepHumanReview ? "Skip Human" : "Require Human")</span>
+					<span class="tag">Agent Fail Limit: @board.AgentReviewFailThreshold</span>
+					<span class="tag">Human Fail Limit: @board.HumanReviewFailThreshold</span>
+				</div>
+			</div>
+			<div class="header-actions">
+				<a class="btn btn-outline-primary" href="@($"/boards/{BoardId}/roadmap")">Roadmap</a>
+				<a class="btn btn-outline-secondary" href="@($"/boards/{BoardId}/agents")">Agents</a>
+				<button class="btn btn-outline-secondary" @onclick="OpenBoardEditor">Settings</button>
+				<button class="btn btn-primary" @onclick="OpenFeatureCreator">+ New Feature</button>
+			</div>
+		</header>
+
+		@if (!string.IsNullOrWhiteSpace(notificationMessage))
+		{
+			<div class="toast-alert @(isNotificationError ? "toast-error" : "toast-info")" role="alert">
+				<span>@notificationMessage</span>
+				<button type="button" class="btn-close" aria-label="Dismiss" @onclick="() => notificationMessage = null"></button>
+			</div>
+		}
+
+		<!-- Row 1: Features Kanban Grid -->
+		<section class="tier-section">
+			<div class="tier-header">
+				<div class="tier-title-area">
+					<h2 class="tier-title">Features</h2>
+					<span class="tier-subtitle">(@features.Count total)</span>
+				</div>
+				<div class="tier-actions">
+					<button class="btn btn-sm btn-outline-primary" @onclick="OpenFeatureCreator">+ Add Feature</button>
+				</div>
+			</div>
+
+			<div class="kanban-grid">
+				@foreach (var column in columns)
+				{
+					var columnFeatures = features.Where(f => f.WorkflowColumn == column).ToList();
+					var isValidTarget = draggedCardType == CardType.Feature && currentAllowedDropColumns.Contains(column);
+					var isInvalidTarget = draggedCardType == CardType.Feature && !currentAllowedDropColumns.Contains(column);
+					var isOver = draggedOverColumn == column && draggedCardType == CardType.Feature;
+
+					<div class="kanban-column @(isValidTarget ? "drop-target-valid" : "") @(isInvalidTarget ? "drop-target-invalid" : "") @(isOver ? "drop-over-active" : "")"
+						 ondragover="@(isValidTarget ? "event.preventDefault();" : null)"
+						 @ondragenter="() => HandleDragEnter(column, CardType.Feature)"
+						 @ondragleave="() => HandleDragLeave(column)"
+						 @ondrop="() => HandleFeatureDrop(column)">
+
+						<div class="column-header">
+							<h3>@column</h3>
+							<span class="column-count">@columnFeatures.Count</span>
+						</div>
+
+						<div class="column-cards">
+							@foreach (var feature in columnFeatures)
+							{
+								var run = featureRuns.GetValueOrDefault(feature.Id);
+								var stepStatuses = featureStepStatuses.GetValueOrDefault(feature.Id, []);
+								var isSelected = selectedFeatureId == feature.Id;
+
+								<FeatureCard Feature="@feature"
+											 Board="@board"
+											 CurrentRun="@run"
+											 ChildStepStatuses="@stepStatuses"
+											 IsSelected="@isSelected"
+											 OnSelect="HandleFeatureSelected"
+											 OnOpenDetails="OpenFeaturePopup"
+											 OnDragStart="HandleFeatureDragStart"
+											 OnDragEnd="HandleDragEnd" />
+							}
+						</div>
+					</div>
+				}
+			</div>
+		</section>
+
+		<!-- Row 2: Filtered Steps Kanban Grid for Selected Feature -->
+		<section class="tier-section">
+			<div class="tier-header">
+				<div class="tier-title-area">
+					<h2 class="tier-title">
+						@if (selectedFeature != null)
+						{
+							<span>Steps for: <strong>@selectedFeature.Title</strong></span>
+						}
+						else
+						{
+							<span>Steps</span>
+						}
+					</h2>
+					@if (selectedFeature != null)
+					{
+						<span class="tier-subtitle">(@selectedFeatureSteps.Count dev plan steps)</span>
+					}
+				</div>
+				<div class="tier-actions">
+					@if (selectedFeature != null)
+					{
+						<button class="btn btn-sm btn-outline-primary" @onclick="OpenStepCreator">+ Add Step</button>
+					}
+				</div>
+			</div>
+
+			@if (selectedFeature == null)
+			{
+				<div class="empty-tier-notice">
+					Click on any Feature above to inspect and manage its dev plan steps across the workflow columns.
+				</div>
+			}
+			else
+			{
+				<div class="kanban-grid">
+					@foreach (var column in columns)
+					{
+						var columnSteps = selectedFeatureSteps.Where(s => s.WorkflowColumn == column).ToList();
+						var isValidTarget = draggedCardType == CardType.Step && currentAllowedDropColumns.Contains(column);
+						var isInvalidTarget = draggedCardType == CardType.Step && !currentAllowedDropColumns.Contains(column);
+						var isOver = draggedOverColumn == column && draggedCardType == CardType.Step;
+
+						<div class="kanban-column @(isValidTarget ? "drop-target-valid" : "") @(isInvalidTarget ? "drop-target-invalid" : "") @(isOver ? "drop-over-active" : "")"
+							 ondragover="@(isValidTarget ? "event.preventDefault();" : null)"
+							 @ondragenter="() => HandleDragEnter(column, CardType.Step)"
+							 @ondragleave="() => HandleDragLeave(column)"
+							 @ondrop="() => HandleStepDrop(column)">
+
+							<div class="column-header">
+								<h3>@column</h3>
+								<span class="column-count">@columnSteps.Count</span>
+							</div>
+
+							<div class="column-cards">
+								@foreach (var step in columnSteps)
+								{
+									var run = stepRuns.GetValueOrDefault(step.Id);
+
+									<StepCard Step="@step"
+											  Board="@board"
+											  CurrentRun="@run"
+											  OnOpenDetails="OpenStepPopup"
+											  OnDragStart="HandleStepDragStart"
+											  OnDragEnd="HandleDragEnd" />
+								}
+							</div>
+						</div>
+					}
+				</div>
+			}
+		</section>
+
+		<!-- Card Details & Actions Popup Modal -->
+		@if (popupFeature != null || popupStep != null)
+		{
+			<CardPopup Feature="@popupFeature"
+					   Step="@popupStep"
+					   Board="@board"
+					   CurrentRun="@(popupFeature != null ? featureRuns.GetValueOrDefault(popupFeature.Id) : stepRuns.GetValueOrDefault(popupStep!.Id))"
+					   OnClose="CloseCardPopup"
+					   OnChanged="HandleCardChanged" />
+		}
+
+		<!-- Board Settings Modal -->
+		@if (isEditingBoard)
+		{
+			<div class="modal-backdrop" @onclick="CloseBoardEditor">
+				<div class="modal-content" @onclick:stopPropagation="true">
+					<div class="modal-header">
+						<h2>Edit Board Settings</h2>
+						<button class="btn-close" @onclick="CloseBoardEditor"></button>
+					</div>
+					<form @onsubmit="SaveBoardAsync" @onsubmit:preventDefault>
+						<div class="form-group">
+							<label>Board Name</label>
+							<input class="form-control" @bind="boardName" />
+						</div>
+						<div class="form-group">
+							<label>Repository Path</label>
+							<input class="form-control" @bind="repoPath" />
+						</div>
+						<div class="form-group">
+							<label>Agent Concurrency Limit</label>
+							<input type="number" min="1" class="form-control" @bind="concurrencyLimit" />
+						</div>
+						<div class="form-check mb-2">
+							<input type="checkbox" class="form-check-input" id="skipFeatureReview" @bind="skipFeatureHumanReview" />
+							<label class="form-check-label" for="skipFeatureReview">Skip Feature Human Review</label>
+						</div>
+						<div class="form-check mb-3">
+							<input type="checkbox" class="form-check-input" id="skipStepReview" @bind="skipStepHumanReview" />
+							<label class="form-check-label" for="skipStepReview">Skip Step Human Review</label>
+						</div>
+						<div class="form-group">
+							<label>Agent Review Fail Threshold</label>
+							<input type="number" min="0" class="form-control" @bind="agentReviewFailThreshold" />
+						</div>
+						<div class="form-group">
+							<label>Human Review Fail Threshold</label>
+							<input type="number" min="0" class="form-control" @bind="humanReviewFailThreshold" />
+						</div>
+						<div class="form-actions">
+							<button type="button" class="btn btn-secondary" @onclick="CloseBoardEditor">Cancel</button>
+							<button type="submit" class="btn btn-primary">Save Changes</button>
+						</div>
+					</form>
+				</div>
+			</div>
+		}
+
+		<!-- New Feature Modal -->
+		@if (isCreatingFeature)
+		{
+			<div class="modal-backdrop" @onclick="CloseFeatureCreator">
+				<div class="modal-content" @onclick:stopPropagation="true">
+					<div class="modal-header">
+						<h2>Create Feature</h2>
+						<button class="btn-close" @onclick="CloseFeatureCreator"></button>
+					</div>
+					<form @onsubmit="CreateFeatureAsync" @onsubmit:preventDefault>
+						<div class="form-group">
+							<label>Title</label>
+							<input class="form-control" @bind="newFeatureTitle" placeholder="Feature title" required />
+						</div>
+						<div class="form-group">
+							<label>Requirements</label>
+							<textarea class="form-control" rows="3" @bind="newFeatureRequirements" placeholder="Requirements"></textarea>
+						</div>
+						<div class="form-group">
+							<label>Acceptance Criteria</label>
+							<textarea class="form-control" rows="3" @bind="newFeatureAcceptanceCriteria" placeholder="Acceptance criteria"></textarea>
+						</div>
+						<div class="form-group">
+							<label>Suggested Solution</label>
+							<textarea class="form-control" rows="2" @bind="newFeatureSuggestedSolution" placeholder="Suggested solution notes"></textarea>
+						</div>
+						<div class="form-check mb-3">
+							<input type="checkbox" class="form-check-input" id="featAlwaysReview" @bind="newFeatureAlwaysHumanReview" />
+							<label class="form-check-label" for="featAlwaysReview">Always require Human Review</label>
+						</div>
+						<div class="form-actions">
+							<button type="button" class="btn btn-secondary" @onclick="CloseFeatureCreator">Cancel</button>
+							<button type="submit" class="btn btn-primary">Create Feature</button>
+						</div>
+					</form>
+				</div>
+			</div>
+		}
+
+		<!-- New Step Modal -->
+		@if (isCreatingStep && selectedFeature != null)
+		{
+			<div class="modal-backdrop" @onclick="CloseStepCreator">
+				<div class="modal-content" @onclick:stopPropagation="true">
+					<div class="modal-header">
+						<h2>Add Step for: @selectedFeature.Title</h2>
+						<button class="btn-close" @onclick="CloseStepCreator"></button>
+					</div>
+					<form @onsubmit="CreateStepAsync" @onsubmit:preventDefault>
+						<div class="form-group">
+							<label>Title</label>
+							<input class="form-control" @bind="newStepTitle" placeholder="Step title" required />
+						</div>
+						<div class="form-group">
+							<label>Description</label>
+							<textarea class="form-control" rows="3" @bind="newStepDescription" placeholder="Step description"></textarea>
+						</div>
+						<div class="form-group">
+							<label>Guidance Notes for Agent</label>
+							<textarea class="form-control" rows="2" @bind="newStepGuidanceNotes" placeholder="Guidance notes"></textarea>
+						</div>
+						<div class="form-check mb-3">
+							<input type="checkbox" class="form-check-input" id="stepAlwaysReview" @bind="newStepAlwaysHumanReview" />
+							<label class="form-check-label" for="stepAlwaysReview">Always require Human Review</label>
+						</div>
+						<div class="form-actions">
+							<button type="button" class="btn btn-secondary" @onclick="CloseStepCreator">Cancel</button>
+							<button type="submit" class="btn btn-primary">Create Step</button>
+						</div>
+					</form>
+				</div>
+			</div>
+		}
+	</div>
+}
+
+@code {
+	[Parameter] public Guid BoardId { get; set; }
+
+	private readonly WorkflowColumn[] columns =
+	[
+		WorkflowColumn.Backlog,
+		WorkflowColumn.Ready,
+		WorkflowColumn.Build,
+		WorkflowColumn.AgentReview,
+		WorkflowColumn.HumanReview,
+		WorkflowColumn.Done
+	];
+
+	private BoardEntity? board;
+	private List<Feature> features = [];
+	private Guid? selectedFeatureId;
+	private Feature? selectedFeature;
+	private List<Step> selectedFeatureSteps = [];
+
+	private Dictionary<Guid, AgentRun> featureRuns = [];
+	private Dictionary<Guid, AgentRun> stepRuns = [];
+	private Dictionary<Guid, List<AgentRunStatus?>> featureStepStatuses = [];
+
+	// Popup state
+	private Feature? popupFeature;
+	private Step? popupStep;
+
+	// Drag & Drop state
+	private CardType? draggedCardType;
+	private Feature? draggedFeature;
+	private Step? draggedStep;
+	private List<WorkflowColumn> currentAllowedDropColumns = [];
+	private WorkflowColumn? draggedOverColumn;
+
+	// Board editing state
+	private bool isEditingBoard;
+	private string boardName = "";
+	private string repoPath = "";
+	private int concurrencyLimit = 1;
+	private bool skipFeatureHumanReview;
+	private bool skipStepHumanReview;
+	private int agentReviewFailThreshold;
+	private int humanReviewFailThreshold;
+
+	// Feature creation state
+	private bool isCreatingFeature;
+	private string newFeatureTitle = "";
+	private string newFeatureRequirements = "";
+	private string newFeatureAcceptanceCriteria = "";
+	private string newFeatureSuggestedSolution = "";
+	private bool newFeatureAlwaysHumanReview;
+
+	// Step creation state
+	private bool isCreatingStep;
+	private string newStepTitle = "";
+	private string newStepDescription = "";
+	private string newStepGuidanceNotes = "";
+	private bool newStepAlwaysHumanReview;
+
+	// Notifications
+	private string? notificationMessage;
+	private bool isNotificationError;
+
+	protected override async Task OnInitializedAsync()
+	{
+		await LoadBoardDataAsync();
+	}
+
+	protected override async Task OnParametersSetAsync()
+	{
+		await LoadBoardDataAsync();
+	}
+
+	private async Task LoadBoardDataAsync()
+	{
+		board = await BoardService.GetByIdAsync(BoardId);
+		if (board == null)
+		{
+			Navigation.NavigateTo("/boards");
+			return;
+		}
+
+		boardName = board.Name;
+		repoPath = board.RepoPath;
+		concurrencyLimit = board.ConcurrencyLimit;
+		skipFeatureHumanReview = board.SkipFeatureHumanReview;
+		skipStepHumanReview = board.SkipStepHumanReview;
+		agentReviewFailThreshold = board.AgentReviewFailThreshold;
+		humanReviewFailThreshold = board.HumanReviewFailThreshold;
+
+		features = await FeatureService.GetForBoardAsync(BoardId);
+
+		// Load steps for each feature
+		var allStepIds = new List<Guid>();
+		var fStepStatuses = new Dictionary<Guid, List<AgentRunStatus?>>();
+
+		foreach (var f in features)
+		{
+			var full = await FeatureService.GetByIdAsync(f.Id);
+			if (full != null)
+			{
+				f.Steps = full.Steps;
+				allStepIds.AddRange(f.Steps.Select(s => s.Id));
+			}
+		}
+
+		// Load agent runs
+		var featureIds = features.Select(f => f.Id).ToList();
+		var runs = await DbContext.AgentRuns
+			.AsNoTracking()
+			.Where(r => (r.CardType == CardType.Feature && featureIds.Contains(r.CardId)) ||
+						(r.CardType == CardType.Step && allStepIds.Contains(r.CardId)))
+			.ToListAsync();
+
+		featureRuns = runs
+			.Where(r => r.CardType == CardType.Feature)
+			.GroupBy(r => r.CardId)
+			.ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.StartedAt).First());
+
+		stepRuns = runs
+			.Where(r => r.CardType == CardType.Step)
+			.GroupBy(r => r.CardId)
+			.ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.StartedAt).First());
+
+		foreach (var f in features)
+		{
+			fStepStatuses[f.Id] = f.Steps.Select(s => stepRuns.GetValueOrDefault(s.Id)?.Status).ToList();
+		}
+		featureStepStatuses = fStepStatuses;
+
+		// Maintain selected feature
+		if (selectedFeatureId.HasValue)
+		{
+			selectedFeature = features.FirstOrDefault(f => f.Id == selectedFeatureId.Value);
+			if (selectedFeature == null && features.Count > 0)
+			{
+				selectedFeature = features[0];
+				selectedFeatureId = selectedFeature.Id;
+			}
+		}
+		else if (features.Count > 0)
+		{
+			selectedFeature = features[0];
+			selectedFeatureId = selectedFeature.Id;
+		}
+
+		if (selectedFeature != null)
+		{
+			selectedFeatureSteps = selectedFeature.Steps.OrderBy(s => s.CreatedAt).ToList();
+		}
+		else
+		{
+			selectedFeatureSteps = [];
+		}
+	}
+
+	private void HandleFeatureSelected(Feature feature)
+	{
+		selectedFeatureId = feature.Id;
+		selectedFeature = feature;
+		selectedFeatureSteps = feature.Steps.OrderBy(s => s.CreatedAt).ToList();
+	}
+
+	private void OpenFeaturePopup(Feature feature)
+	{
+		popupFeature = feature;
+		popupStep = null;
+	}
+
+	private void OpenStepPopup(Step step)
+	{
+		popupStep = step;
+		popupFeature = null;
+	}
+
+	private void CloseCardPopup()
+	{
+		popupFeature = null;
+		popupStep = null;
+	}
+
+	private async Task HandleCardChanged()
+	{
+		await LoadBoardDataAsync();
+		if (popupFeature != null)
+		{
+			popupFeature = features.FirstOrDefault(f => f.Id == popupFeature.Id);
+		}
+		if (popupStep != null && selectedFeature != null)
+		{
+			popupStep = selectedFeature.Steps.FirstOrDefault(s => s.Id == popupStep.Id);
+		}
+	}
+
+	// Drag & Drop
+	private async Task HandleFeatureDragStart(Feature feature)
+	{
+		if (await AgentScheduler.IsAgentRunningAsync(CardType.Feature, feature.Id))
+		{
+			return; // Hard blocked
+		}
+
+		draggedCardType = CardType.Feature;
+		draggedFeature = feature;
+		draggedStep = null;
+
+		var allowed = await FeatureOrchestrator.GetAllowedMovesAsync(feature.Id);
+		currentAllowedDropColumns = allowed.ToList();
+	}
+
+	private async Task HandleStepDragStart(Step step)
+	{
+		if (await AgentScheduler.IsAgentRunningAsync(CardType.Step, step.Id))
+		{
+			return; // Hard blocked
+		}
+
+		draggedCardType = CardType.Step;
+		draggedStep = step;
+		draggedFeature = null;
+
+		var allowed = await StepOrchestrator.GetAllowedMovesAsync(step.Id);
+		currentAllowedDropColumns = allowed.ToList();
+	}
+
+	private void HandleDragEnter(WorkflowColumn column, CardType cardType)
+	{
+		if (draggedCardType == cardType)
+		{
+			draggedOverColumn = column;
+		}
+	}
+
+	private void HandleDragLeave(WorkflowColumn column)
+	{
+		if (draggedOverColumn == column)
+		{
+			draggedOverColumn = null;
+		}
+	}
+
+	private void HandleDragEnd()
+	{
+		draggedCardType = null;
+		draggedFeature = null;
+		draggedStep = null;
+		currentAllowedDropColumns.Clear();
+		draggedOverColumn = null;
+	}
+
+	private async Task HandleFeatureDrop(WorkflowColumn targetColumn)
+	{
+		if (draggedFeature == null || !currentAllowedDropColumns.Contains(targetColumn))
+		{
+			HandleDragEnd();
+			return;
+		}
+
+		try
+		{
+			await FeatureOrchestrator.MoveAsync(draggedFeature.Id, targetColumn);
+			Notify($"Moved feature to {targetColumn}.", isError: false);
+			await LoadBoardDataAsync();
+		}
+		catch (Exception ex)
+		{
+			Notify(ex.Message, isError: true);
+		}
+		finally
+		{
+			HandleDragEnd();
+		}
+	}
+
+	private async Task HandleStepDrop(WorkflowColumn targetColumn)
+	{
+		if (draggedStep == null || !currentAllowedDropColumns.Contains(targetColumn))
+		{
+			HandleDragEnd();
+			return;
+		}
+
+		try
+		{
+			await StepOrchestrator.MoveAsync(draggedStep.Id, targetColumn);
+			Notify($"Moved step to {targetColumn}.", isError: false);
+			await LoadBoardDataAsync();
+		}
+		catch (Exception ex)
+		{
+			Notify(ex.Message, isError: true);
+		}
+		finally
+		{
+			HandleDragEnd();
+		}
+	}
+
+	// Board Editor
+	private void OpenBoardEditor() => isEditingBoard = true;
+	private void CloseBoardEditor() => isEditingBoard = false;
+
+	private async Task SaveBoardAsync()
+	{
+		try
+		{
+			await BoardService.UpdateAsync(BoardId, boardName, repoPath, concurrencyLimit, skipFeatureHumanReview, skipStepHumanReview, agentReviewFailThreshold, humanReviewFailThreshold);
+			CloseBoardEditor();
+			Notify("Board updated.", isError: false);
+			await LoadBoardDataAsync();
+		}
+		catch (Exception ex)
+		{
+			Notify(ex.Message, isError: true);
+		}
+	}
+
+	// Feature Creator
+	private void OpenFeatureCreator() => isCreatingFeature = true;
+	private void CloseFeatureCreator() => isCreatingFeature = false;
+
+	private async Task CreateFeatureAsync()
+	{
+		try
+		{
+			var feat = await FeatureService.CreateAsync(BoardId, newFeatureTitle, newFeatureRequirements, newFeatureAcceptanceCriteria, newFeatureSuggestedSolution, newFeatureAlwaysHumanReview);
+			newFeatureTitle = newFeatureRequirements = newFeatureAcceptanceCriteria = newFeatureSuggestedSolution = "";
+			newFeatureAlwaysHumanReview = false;
+			CloseFeatureCreator();
+			selectedFeatureId = feat.Id;
+			Notify("Feature created.", isError: false);
+			await LoadBoardDataAsync();
+		}
+		catch (Exception ex)
+		{
+			Notify(ex.Message, isError: true);
+		}
+	}
+
+	// Step Creator
+	private void OpenStepCreator() => isCreatingStep = true;
+	private void CloseStepCreator() => isCreatingStep = false;
+
+	private async Task CreateStepAsync()
+	{
+		if (selectedFeature == null) return;
+		try
+		{
+			await StepService.CreateAsync(selectedFeature.Id, newStepTitle, newStepDescription, newStepGuidanceNotes, newStepAlwaysHumanReview);
+			newStepTitle = newStepDescription = newStepGuidanceNotes = "";
+			newStepAlwaysHumanReview = false;
+			CloseStepCreator();
+			Notify("Step created.", isError: false);
+			await LoadBoardDataAsync();
+		}
+		catch (Exception ex)
+		{
+			Notify(ex.Message, isError: true);
+		}
+	}
+
+	private void Notify(string text, bool isError)
+	{
+		notificationMessage = text;
+		isNotificationError = isError;
+	}
+}

@@ -1,0 +1,159 @@
+@using AgentTaskHarness.Domain.Enums
+
+<span class="status-indicator-wrapper @(IsMini ? "status-mini" : "status-regular")" title="@TooltipText">
+	@if (Status == AgentRunStatus.Working)
+	{
+		<span class="status-dot working" aria-label="Agent Working">
+			<span class="status-ping"></span>
+			<span class="status-core"></span>
+		</span>
+	}
+	else if (Status == AgentRunStatus.WaitingForInput)
+	{
+		<span class="status-dot waiting" aria-label="Agent Waiting for Input">
+			<span class="status-pulse"></span>
+			<span class="status-core"></span>
+		</span>
+	}
+	else if (Status == AgentRunStatus.Completed)
+	{
+		<span class="status-dot completed" aria-label="Agent Completed">
+			<span class="status-core"></span>
+		</span>
+	}
+	else if (Status == AgentRunStatus.Failed)
+	{
+		<span class="status-dot failed" aria-label="Agent Failed">
+			<span class="status-core"></span>
+		</span>
+	}
+	else if (Status == AgentRunStatus.Blocked)
+	{
+		<span class="status-dot blocked" aria-label="Agent Blocked">
+			<span class="status-core"></span>
+		</span>
+	}
+	else if (Status == AgentRunStatus.Stopped)
+	{
+		<span class="status-dot stopped" aria-label="Agent Stopped">
+			<span class="status-core"></span>
+		</span>
+	}
+	else if (Status == AgentRunStatus.Queued)
+	{
+		<span class="status-dot queued" aria-label="Agent Queued">
+			<span class="status-core"></span>
+		</span>
+	}
+	else
+	{
+		<span class="status-dot idle" aria-label="Idle">
+			<span class="status-core"></span>
+		</span>
+	}
+
+	@if (!IsMini && ShowText && Status.HasValue)
+	{
+		<span class="status-text">@FormatStatus(Status.Value)</span>
+	}
+</span>
+
+<style>
+	.status-indicator-wrapper {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		vertical-align: middle;
+	}
+	.status-dot {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 50%;
+	}
+	.status-regular .status-dot {
+		width: 12px;
+		height: 12px;
+	}
+	.status-mini .status-dot {
+		width: 8px;
+		height: 8px;
+	}
+	.status-core {
+		width: 100%;
+		height: 100%;
+		border-radius: 50%;
+		display: inline-block;
+	}
+	.status-ping {
+		position: absolute;
+		width: 100%;
+		height: 100%;
+		border-radius: 50%;
+		animation: status-ping-anim 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+		opacity: 0.75;
+	}
+	.status-pulse {
+		position: absolute;
+		width: 100%;
+		height: 100%;
+		border-radius: 50%;
+		animation: status-pulse-anim 1.5s ease-in-out infinite;
+		opacity: 0.6;
+	}
+	@@keyframes status-ping-anim {
+		75%, 100% {
+			transform: scale(2.2);
+			opacity: 0;
+		}
+	}
+	@@keyframes status-pulse-anim {
+		0%, 100% {
+			transform: scale(1);
+			opacity: 0.6;
+		}
+		50% {
+			transform: scale(1.6);
+			opacity: 0.1;
+		}
+	}
+	.working .status-core { background-color: #22c55e; }
+	.working .status-ping { background-color: #4ade80; }
+	.waiting .status-core { background-color: #f59e0b; }
+	.waiting .status-pulse { background-color: #fbbf24; }
+	.completed .status-core { background-color: #10b981; }
+	.failed .status-core { background-color: #ef4444; }
+	.blocked .status-core { background-color: #a855f7; }
+	.stopped .status-core { background-color: #64748b; }
+	.queued .status-core { background-color: #3b82f6; }
+	.idle .status-core { background-color: #cbd5e1; }
+	.status-text {
+		font-size: 0.78rem;
+		font-weight: 500;
+		color: #475569;
+	}
+</style>
+
+@code {
+	[Parameter] public AgentRunStatus? Status { get; set; }
+	[Parameter] public bool IsMini { get; set; }
+	[Parameter] public bool ShowText { get; set; }
+	[Parameter] public string? Label { get; set; }
+
+	private string TooltipText =>
+		!string.IsNullOrWhiteSpace(Label) ? Label :
+		Status.HasValue ? $"Agent: {FormatStatus(Status.Value)}" : "Idle / No Agent";
+
+	private static string FormatStatus(AgentRunStatus status) => status switch
+	{
+		AgentRunStatus.Working => "Working",
+		AgentRunStatus.WaitingForInput => "Waiting for input",
+		AgentRunStatus.Completed => "Completed",
+		AgentRunStatus.Failed => "Failed",
+		AgentRunStatus.Blocked => "Blocked",
+		AgentRunStatus.Stopped => "Stopped",
+		AgentRunStatus.Queued => "Queued",
+		_ => status.ToString()
+	};
+}

@@ -1,0 +1,565 @@
+@page "/boards/{BoardId:guid}/roadmap"
+@using AgentTaskHarness.Application.Agents
+@using AgentTaskHarness.Application.Boards
+@using AgentTaskHarness.Application.Features
+@using AgentTaskHarness.Application.Reviews
+@using AgentTaskHarness.Domain.Entities
+@using AgentTaskHarness.Domain.Enums
+@using AgentTaskHarness.Infrastructure.Persistence
+@using Microsoft.EntityFrameworkCore
+
+@inject AppDbContext DbContext
+@inject FeatureDependencyService FeatureDependencyService
+@inject ReviewOutcomeService ReviewOutcomeService
+@inject IAgentScheduler AgentScheduler
+@inject NavigationManager Navigation
+
+<PageTitle>@(board?.Name ?? "Roadmap") - Roadmap</PageTitle>
+
+<div class="roadmap-page">
+	<header class="roadmap-header">
+		<div class="header-left">
+			<a href="@($"/boards/{BoardId}")" class="back-link">&larr; Back to Board</a>
+			<h1 class="page-title">Roadmap: @(board?.Name ?? "Loading...")</h1>
+			<p class="page-desc">Computed dependency tree and delivery plan for features on this board.</p>
+		</div>
+		<div class="header-right">
+			<a href="@($"/boards/{BoardId}")" class="btn btn-primary">Kanban Board</a>
+			<a href="@($"/boards/{BoardId}/agents")" class="btn btn-outline-secondary">Agents</a>
+		</div>
+	</header>
+
+	@if (!string.IsNullOrEmpty(errorMessage))
+	{
+		<div class="alert alert-danger" role="alert">
+			@errorMessage
+			<button type="button" class="btn-dismiss" @onclick="() => errorMessage = null">&times;</button>
+		</div>
+	}
+
+	@if (!string.IsNullOrEmpty(successMessage))
+	{
+		<div class="alert alert-success" role="alert">
+			@successMessage
+			<button type="button" class="btn-dismiss" @onclick="() => successMessage = null">&times;</button>
+		</div>
+	}
+
+	@if (board == null)
+	{
+		<div class="loading-state">Loading board roadmap...</div>
+	}
+	else if (features.Count == 0)
+	{
+		<div class="empty-state">
+			<h3>No features created yet</h3>
+			<p>Create features on the <a href="@($"/boards/{BoardId}")">Board</a> to view their roadmap plan and dependencies here.</p>
+		</div>
+	}
+	else
+	{
+		<div class="roadmap-grid">
+			@foreach (var feature in features)
+			{
+				var isUnmet = unmetDependencyMap.GetValueOrDefault(feature.Id, false);
+				var deps = dependencyMap.GetValueOrDefault(feature.Id, []);
+				var dependedOnBy = dependedOnByMap.GetValueOrDefault(feature.Id, []);
+				var run = agentRuns.GetValueOrDefault(feature.Id);
+				var isRework = feature.WorkflowColumn == WorkflowColumn.Build && ReviewOutcomeService.IsRework(feature);
+				var hasIssue = ReviewOutcomeService.HasIssue(feature, board);
+
+				<div class="feature-node-card @(feature.WorkflowColumn == WorkflowColumn.Done ? "feature-done" : "")">
+					<div class="feature-node-header">
+						<div class="feature-title-area">
+							<StatusIcon Status="@run?.Status" />
+							<h3 class="feature-title">@feature.Title</h3>
+						</div>
+						<div class="feature-badges">
+							<span class="column-pill pill-@feature.WorkflowColumn.ToString().ToLower()">@feature.WorkflowColumn</span>
+							@if (isRework)
+							{
+								<span class="badge badge-rework">Rework</span>
+							}
+							@if (hasIssue)
+							{
+								<span class="badge badge-issue">Issue</span>
+							}
+						</div>
+					</div>
+
+					@if (!string.IsNullOrWhiteSpace(feature.Requirements))
+					{
+						<p class="feature-requirements">@feature.Requirements</p>
+					}
+
+					<!-- Dependencies Section -->
+					<div class="dependency-block">
+						<div class="dependency-header">
+							<span class="dependency-title">Dependencies (@deps.Count)</span>
+							@if (feature.WorkflowColumn == WorkflowColumn.Backlog)
+							{
+								<button class="btn btn-sm btn-outline-primary" @onclick="() => ToggleAddDependencyForm(feature.Id)">
+									@(activeAddDepFeatureId == feature.Id ? "Cancel" : "+ Add Dependency")
+								</button>
+							}
+						</div>
+
+						@if (activeAddDepFeatureId == feature.Id)
+						{
+							<div class="add-dep-form">
+								<select class="form-select form-select-sm" @bind="selectedDependsOnFeatureId">
+									<option value="">Select feature this depends on...</option>
+									@foreach (var candidate in features.Where(f => f.Id != feature.Id && !deps.Any(d => d.DependsOnFeatureId == f.Id)))
+									{
+										<option value="@candidate.Id">@candidate.Title (@candidate.WorkflowColumn)</option>
+									}
+								</select>
+								<button class="btn btn-sm btn-success" @onclick="() => SaveDependency(feature.Id)" disabled="@(selectedDependsOnFeatureId == Guid.Empty)">
+									Add
+								</button>
+							</div>
+						}
+
+						@if (deps.Count == 0)
+						{
+							<span class="text-muted small">No prerequisites (root feature)</span>
+						}
+						else
+						{
+							<div class="dep-list">
+								@foreach (var d in deps)
+								{
+									var depFeat = features.FirstOrDefault(f => f.Id == d.DependsOnFeatureId);
+									<div class="dep-item @(depFeat?.WorkflowColumn == WorkflowColumn.Done ? "dep-satisfied" : "dep-pending")">
+										<span class="dep-dot"></span>
+										<span class="dep-name">@(depFeat?.Title ?? "Unknown")</span>
+										<span class="dep-status">(@(depFeat?.WorkflowColumn.ToString() ?? "Unknown"))</span>
+
+										@if (feature.WorkflowColumn == WorkflowColumn.Backlog)
+										{
+											<button class="btn-remove-dep" title="Remove dependency" @onclick="() => RemoveDependency(feature.Id, d.DependsOnFeatureId)">&times;</button>
+										}
+									</div>
+								}
+							</div>
+						}
+
+						@if (dependedOnBy.Count > 0)
+						{
+							<div class="depended-by-section mt-2">
+								<span class="dependency-title text-muted">Blocks:</span>
+								<div class="dep-list">
+									@foreach (var blocker in dependedOnBy)
+									{
+										<span class="dep-badge">@blocker.Title</span>
+									}
+								</div>
+							</div>
+						}
+					</div>
+
+					<!-- Dev Plan Steps Section -->
+					@if (feature.Steps.Count > 0)
+					{
+						<div class="steps-plan-block">
+							<div class="steps-header">
+								<span class="steps-count">Dev Plan: @feature.Steps.Count(s => s.WorkflowColumn == WorkflowColumn.Done) / @feature.Steps.Count completed</span>
+							</div>
+							<div class="steps-progress-bar">
+								@{
+									var pct = feature.Steps.Count > 0 ? (feature.Steps.Count(s => s.WorkflowColumn == WorkflowColumn.Done) * 100) / feature.Steps.Count : 0;
+								}
+								<div class="progress-fill" style="width: @pct%"></div>
+							</div>
+							<div class="nested-steps-list">
+								@foreach (var step in feature.Steps.OrderBy(s => s.CreatedAt))
+								{
+									var stepRun = stepRuns.GetValueOrDefault(step.Id);
+									<div class="nested-step-item">
+										<StatusIcon Status="@stepRun?.Status" IsMini="true" />
+										<span class="nested-step-title">@step.Title</span>
+										<span class="nested-step-pill">@step.WorkflowColumn</span>
+									</div>
+								}
+							</div>
+						</div>
+					}
+				</div>
+			}
+		</div>
+	}
+</div>
+
+<style>
+	.roadmap-page {
+		padding: 24px;
+		max-width: 1200px;
+		margin: 0 auto;
+		font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	}
+	.roadmap-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		margin-bottom: 24px;
+		border-bottom: 1px solid #e2e8f0;
+		padding-bottom: 16px;
+	}
+	.back-link {
+		display: inline-block;
+		font-size: 0.85rem;
+		color: #2563eb;
+		text-decoration: none;
+		margin-bottom: 6px;
+	}
+	.back-link:hover {
+		text-decoration: underline;
+	}
+	.page-title {
+		font-size: 1.75rem;
+		font-weight: 700;
+		color: #0f172a;
+		margin: 0;
+	}
+	.page-desc {
+		font-size: 0.9rem;
+		color: #64748b;
+		margin: 4px 0 0;
+	}
+	.header-right {
+		display: flex;
+		gap: 10px;
+	}
+	.roadmap-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+		gap: 20px;
+	}
+	.feature-node-card {
+		background: #ffffff;
+		border: 1px solid #e2e8f0;
+		border-radius: 10px;
+		padding: 16px;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+	.feature-node-card.feature-done {
+		border-left: 4px solid #10b981;
+		background: #fbfdfc;
+	}
+	.feature-node-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 10px;
+	}
+	.feature-title-area {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex: 1;
+	}
+	.feature-title {
+		font-size: 1.05rem;
+		font-weight: 600;
+		color: #1e293b;
+		margin: 0;
+	}
+	.feature-badges {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.column-pill {
+		font-size: 0.72rem;
+		font-weight: 600;
+		padding: 2px 8px;
+		border-radius: 4px;
+		background: #e2e8f0;
+		color: #334155;
+	}
+	.pill-backlog { background: #f1f5f9; color: #475569; }
+	.pill-ready { background: #dbeafe; color: #1d4ed8; }
+	.pill-build { background: #fef3c7; color: #b45309; }
+	.pill-agentreview { background: #ede9fe; color: #6d28d9; }
+	.pill-humanreview { background: #fae8ff; color: #86198f; }
+	.pill-done { background: #dcfce7; color: #15803d; }
+	.badge {
+		font-size: 0.7rem;
+		font-weight: 700;
+		padding: 2px 6px;
+		border-radius: 4px;
+	}
+	.badge-rework { background: #ffedd5; color: #c2410c; }
+	.badge-issue { background: #fee2e2; color: #b91c1c; }
+	.feature-requirements {
+		font-size: 0.85rem;
+		color: #475569;
+		margin: 0;
+		line-height: 1.4;
+	}
+	.dependency-block {
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		border-radius: 6px;
+		padding: 10px 12px;
+	}
+	.dependency-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 6px;
+	}
+	.dependency-title {
+		font-size: 0.78rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		color: #64748b;
+	}
+	.add-dep-form {
+		display: flex;
+		gap: 6px;
+		margin-bottom: 8px;
+	}
+	.dep-list {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.dep-item {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 0.82rem;
+	}
+	.dep-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+	}
+	.dep-satisfied .dep-dot { background: #10b981; }
+	.dep-pending .dep-dot { background: #f59e0b; }
+	.dep-name {
+		font-weight: 500;
+		color: #1e293b;
+	}
+	.dep-status {
+		color: #64748b;
+		font-size: 0.75rem;
+	}
+	.btn-remove-dep {
+		background: none;
+		border: none;
+		color: #ef4444;
+		font-size: 1rem;
+		cursor: pointer;
+		margin-left: auto;
+		line-height: 1;
+	}
+	.dep-badge {
+		display: inline-block;
+		background: #e2e8f0;
+		color: #334155;
+		font-size: 0.75rem;
+		padding: 2px 6px;
+		border-radius: 4px;
+		margin-right: 4px;
+	}
+	.steps-plan-block {
+		border-top: 1px solid #e2e8f0;
+		padding-top: 10px;
+	}
+	.steps-header {
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: #64748b;
+		margin-bottom: 4px;
+	}
+	.steps-progress-bar {
+		width: 100%;
+		height: 6px;
+		background: #e2e8f0;
+		border-radius: 3px;
+		overflow: hidden;
+		margin-bottom: 8px;
+	}
+	.progress-fill {
+		height: 100%;
+		background: #22c55e;
+		border-radius: 3px;
+	}
+	.nested-steps-list {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.nested-step-item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 0.8rem;
+		color: #334155;
+	}
+	.nested-step-title {
+		flex: 1;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.nested-step-pill {
+		font-size: 0.7rem;
+		color: #64748b;
+		background: #f1f5f9;
+		padding: 1px 5px;
+		border-radius: 3px;
+	}
+	.alert {
+		padding: 10px 14px;
+		font-size: 0.85rem;
+		border-radius: 6px;
+		margin-bottom: 16px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.alert-danger { background: #fef2f2; border: 1px solid #fee2e2; color: #991b1b; }
+	.alert-success { background: #ecfdf5; border: 1px solid #d1fae5; color: #065f46; }
+	.btn-dismiss { background: none; border: none; font-size: 1.1rem; cursor: pointer; color: inherit; }
+</style>
+
+@code {
+	[Parameter] public Guid BoardId { get; set; }
+
+	private Board? board;
+	private List<Feature> features = [];
+	private Dictionary<Guid, List<FeatureDependency>> dependencyMap = [];
+	private Dictionary<Guid, List<Feature>> dependedOnByMap = [];
+	private Dictionary<Guid, bool> unmetDependencyMap = [];
+	private Dictionary<Guid, AgentRun> agentRuns = [];
+	private Dictionary<Guid, AgentRun> stepRuns = [];
+	private string? errorMessage;
+	private string? successMessage;
+	private Guid? activeAddDepFeatureId;
+	private Guid selectedDependsOnFeatureId;
+
+	protected override async Task OnInitializedAsync()
+	{
+		await LoadRoadmapAsync();
+	}
+
+	private async Task LoadRoadmapAsync()
+	{
+		errorMessage = null;
+		try
+		{
+			board = await DbContext.Boards
+				.AsNoTracking()
+				.SingleOrDefaultAsync(b => b.Id == BoardId);
+
+			if (board == null) return;
+
+			features = await DbContext.Features
+				.Include(f => f.Steps)
+				.Where(f => f.BoardId == BoardId)
+				.OrderBy(f => f.CreatedAt)
+				.ToListAsync();
+
+			var featureIds = features.Select(f => f.Id).ToList();
+
+			var allDependencies = await DbContext.FeatureDependencies
+				.AsNoTracking()
+				.Include(d => d.DependsOnFeature)
+				.Where(d => featureIds.Contains(d.FeatureId))
+				.ToListAsync();
+
+			dependencyMap = allDependencies
+				.GroupBy(d => d.FeatureId)
+				.ToDictionary(g => g.Key, g => g.ToList());
+
+			dependedOnByMap = featureIds.ToDictionary(
+				fId => fId,
+				fId => features.Where(f => allDependencies.Any(d => d.FeatureId == f.Id && d.DependsOnFeatureId == fId)).ToList()
+			);
+
+			unmetDependencyMap = [];
+			foreach (var f in features)
+			{
+				var areMet = await FeatureDependencyService.AreDependenciesMetAsync(f.Id);
+				unmetDependencyMap[f.Id] = !areMet;
+			}
+
+			// Load runs for features and steps
+			var stepIds = features.SelectMany(f => f.Steps).Select(s => s.Id).ToList();
+
+			var activeRuns = await DbContext.AgentRuns
+				.AsNoTracking()
+				.Where(r => (r.CardType == CardType.Feature && featureIds.Contains(r.CardId)) ||
+							(r.CardType == CardType.Step && stepIds.Contains(r.CardId)))
+				.ToListAsync();
+
+			agentRuns = activeRuns
+				.Where(r => r.CardType == CardType.Feature)
+				.GroupBy(r => r.CardId)
+				.ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.StartedAt).First());
+
+			stepRuns = activeRuns
+				.Where(r => r.CardType == CardType.Step)
+				.GroupBy(r => r.CardId)
+				.ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.StartedAt).First());
+		}
+		catch (Exception ex)
+		{
+			errorMessage = ex.Message;
+		}
+	}
+
+	private void ToggleAddDependencyForm(Guid featureId)
+	{
+		if (activeAddDepFeatureId == featureId)
+		{
+			activeAddDepFeatureId = null;
+		}
+		else
+		{
+			activeAddDepFeatureId = featureId;
+			selectedDependsOnFeatureId = Guid.Empty;
+		}
+	}
+
+	private async Task SaveDependency(Guid featureId)
+	{
+		if (selectedDependsOnFeatureId == Guid.Empty) return;
+
+		errorMessage = null;
+		successMessage = null;
+		try
+		{
+			await FeatureDependencyService.AddAsync(featureId, selectedDependsOnFeatureId);
+			successMessage = "Dependency added.";
+			activeAddDepFeatureId = null;
+			await LoadRoadmapAsync();
+		}
+		catch (Exception ex)
+		{
+			errorMessage = ex.Message;
+		}
+	}
+
+	private async Task RemoveDependency(Guid featureId, Guid dependsOnFeatureId)
+	{
+		errorMessage = null;
+		successMessage = null;
+		try
+		{
+			await FeatureDependencyService.RemoveAsync(featureId, dependsOnFeatureId);
+			successMessage = "Dependency removed.";
+			await LoadRoadmapAsync();
+		}
+		catch (Exception ex)
+		{
+			errorMessage = ex.Message;
+		}
+	}
+}
