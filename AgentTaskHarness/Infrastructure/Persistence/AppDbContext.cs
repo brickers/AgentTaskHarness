@@ -6,10 +6,11 @@ namespace AgentTaskHarness.Infrastructure.Persistence;
 public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
 	public DbSet<Board> Boards => Set<Board>();
-	public DbSet<Column> Columns => Set<Column>();
-	public DbSet<ColumnTransition> ColumnTransitions => Set<ColumnTransition>();
-	public DbSet<TaskItem> Tasks => Set<TaskItem>();
-	public DbSet<TaskDependency> TaskDependencies => Set<TaskDependency>();
+	public DbSet<Feature> Features => Set<Feature>();
+	public DbSet<Step> Steps => Set<Step>();
+	public DbSet<FeatureDependency> FeatureDependencies => Set<FeatureDependency>();
+	public DbSet<StepDependency> StepDependencies => Set<StepDependency>();
+	public DbSet<Comment> Comments => Set<Comment>();
 	public DbSet<AgentDefinition> AgentDefinitions => Set<AgentDefinition>();
 	public DbSet<AgentComponent> AgentComponents => Set<AgentComponent>();
 	public DbSet<AgentDefinitionComponent> AgentDefinitionComponents => Set<AgentDefinitionComponent>();
@@ -23,67 +24,76 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 		{
 			entity.Property(board => board.Name).HasMaxLength(200).IsRequired();
 			entity.Property(board => board.RepoPath).HasMaxLength(1_024).IsRequired();
-			entity.ToTable(table => table.HasCheckConstraint("CK_Boards_ConcurrencyLimit", "ConcurrencyLimit > 0"));
+			entity.ToTable(table =>
+			{
+				table.HasCheckConstraint("CK_Boards_ConcurrencyLimit", "ConcurrencyLimit > 0");
+				table.HasCheckConstraint("CK_Boards_AgentReviewFailThreshold", "AgentReviewFailThreshold >= 0");
+				table.HasCheckConstraint("CK_Boards_HumanReviewFailThreshold", "HumanReviewFailThreshold >= 0");
+			});
 		});
 
-		modelBuilder.Entity<Column>(entity =>
+		modelBuilder.Entity<Feature>(entity =>
 		{
-			entity.Property(column => column.Name).HasMaxLength(200).IsRequired();
-			entity.HasIndex(column => new { column.BoardId, column.Order }).IsUnique();
-			entity.HasIndex(column => new { column.BoardId, column.IsBacklog }).IsUnique().HasFilter("IsBacklog = 1");
-			entity.HasIndex(column => new { column.BoardId, column.IsTerminal }).IsUnique().HasFilter("IsTerminal = 1");
-			entity.HasOne(column => column.Board)
-				.WithMany(board => board.Columns)
-				.HasForeignKey(column => column.BoardId)
+			entity.Property(feature => feature.Title).HasMaxLength(500).IsRequired();
+			entity.Property(feature => feature.Requirements).IsRequired();
+			entity.Property(feature => feature.AcceptanceCriteria).IsRequired();
+			entity.Property(feature => feature.SuggestedSolution).IsRequired();
+			entity.Property(feature => feature.BranchName).HasMaxLength(200);
+			entity.Property(feature => feature.WorktreePath).HasMaxLength(1_024);
+			entity.Property(feature => feature.MergeConflictPending).HasDefaultValue(false);
+			entity.HasIndex(feature => new { feature.BoardId, feature.WorkflowColumn });
+			entity.HasOne(feature => feature.Board)
+				.WithMany(board => board.Features)
+				.HasForeignKey(feature => feature.BoardId)
 				.OnDelete(DeleteBehavior.Cascade);
-			entity.HasOne(column => column.AgentDefinition)
-				.WithMany(definition => definition.Columns)
-				.HasForeignKey(column => column.AgentDefinitionId)
-				.OnDelete(DeleteBehavior.SetNull);
 		});
 
-		modelBuilder.Entity<ColumnTransition>(entity =>
+		modelBuilder.Entity<Step>(entity =>
 		{
-			entity.HasKey(transition => new { transition.FromColumnId, transition.ToColumnId });
-			entity.HasOne(transition => transition.FromColumn)
-				.WithMany(column => column.OutgoingTransitions)
-				.HasForeignKey(transition => transition.FromColumnId)
-				.OnDelete(DeleteBehavior.Restrict);
-			entity.HasOne(transition => transition.ToColumn)
-				.WithMany(column => column.IncomingTransitions)
-				.HasForeignKey(transition => transition.ToColumnId)
-				.OnDelete(DeleteBehavior.Restrict);
-		});
-
-		modelBuilder.Entity<TaskItem>(entity =>
-		{
-			entity.Property(task => task.Title).HasMaxLength(500).IsRequired();
-			entity.Property(task => task.Description).IsRequired();
-			entity.Property(task => task.BranchName).HasMaxLength(200);
-			entity.Property(task => task.WorktreePath).HasMaxLength(1_024);
-			entity.Property(task => task.MergeConflictPending).HasDefaultValue(false);
-			entity.HasIndex(task => new { task.BoardId, task.ColumnId });
-			entity.HasOne(task => task.Board)
-				.WithMany(board => board.Tasks)
-				.HasForeignKey(task => task.BoardId)
+			entity.Property(step => step.Title).HasMaxLength(500).IsRequired();
+			entity.Property(step => step.Description).IsRequired();
+			entity.Property(step => step.GuidanceNotes).IsRequired();
+			entity.Property(step => step.BranchName).HasMaxLength(200);
+			entity.Property(step => step.WorktreePath).HasMaxLength(1_024);
+			entity.Property(step => step.MergeConflictPending).HasDefaultValue(false);
+			entity.HasIndex(step => new { step.FeatureId, step.WorkflowColumn });
+			entity.HasOne(step => step.Feature)
+				.WithMany(feature => feature.Steps)
+				.HasForeignKey(step => step.FeatureId)
 				.OnDelete(DeleteBehavior.Cascade);
-			entity.HasOne(task => task.Column)
-				.WithMany(column => column.Tasks)
-				.HasForeignKey(task => task.ColumnId)
+		});
+
+		modelBuilder.Entity<FeatureDependency>(entity =>
+		{
+			entity.HasKey(dependency => new { dependency.FeatureId, dependency.DependsOnFeatureId });
+			entity.HasOne(dependency => dependency.Feature)
+				.WithMany(feature => feature.Dependencies)
+				.HasForeignKey(dependency => dependency.FeatureId)
+				.OnDelete(DeleteBehavior.Cascade);
+			entity.HasOne(dependency => dependency.DependsOnFeature)
+				.WithMany(feature => feature.DependedOnBy)
+				.HasForeignKey(dependency => dependency.DependsOnFeatureId)
 				.OnDelete(DeleteBehavior.Restrict);
 		});
 
-		modelBuilder.Entity<TaskDependency>(entity =>
+		modelBuilder.Entity<StepDependency>(entity =>
 		{
-			entity.HasKey(dependency => new { dependency.TaskId, dependency.DependsOnTaskId });
-			entity.HasOne(dependency => dependency.Task)
-				.WithMany(task => task.Dependencies)
-				.HasForeignKey(dependency => dependency.TaskId)
+			entity.HasKey(dependency => new { dependency.StepId, dependency.DependsOnStepId });
+			entity.HasOne(dependency => dependency.Step)
+				.WithMany(step => step.Dependencies)
+				.HasForeignKey(dependency => dependency.StepId)
 				.OnDelete(DeleteBehavior.Cascade);
-			entity.HasOne(dependency => dependency.DependsOnTask)
-				.WithMany(task => task.DependedOnBy)
-				.HasForeignKey(dependency => dependency.DependsOnTaskId)
+			entity.HasOne(dependency => dependency.DependsOnStep)
+				.WithMany(step => step.DependedOnBy)
+				.HasForeignKey(dependency => dependency.DependsOnStepId)
 				.OnDelete(DeleteBehavior.Restrict);
+		});
+
+		modelBuilder.Entity<Comment>(entity =>
+		{
+			entity.Property(comment => comment.Author).HasMaxLength(200).IsRequired();
+			entity.Property(comment => comment.Body).IsRequired();
+			entity.HasIndex(comment => new { comment.CardType, comment.CardId, comment.CreatedAt });
 		});
 
 		modelBuilder.Entity<AgentDefinition>(entity =>
@@ -120,14 +130,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 		modelBuilder.Entity<AgentRun>(entity =>
 		{
 			entity.Property(run => run.SessionLink).HasMaxLength(2_048);
-			entity.HasOne(run => run.Task)
-				.WithMany(task => task.AgentRuns)
-				.HasForeignKey(run => run.TaskId)
-				.OnDelete(DeleteBehavior.Cascade);
-			entity.HasOne(run => run.Column)
-				.WithMany(column => column.AgentRuns)
-				.HasForeignKey(run => run.ColumnId)
-				.OnDelete(DeleteBehavior.Restrict);
+			entity.HasIndex(run => new { run.CardType, run.CardId });
 		});
 	}
 }

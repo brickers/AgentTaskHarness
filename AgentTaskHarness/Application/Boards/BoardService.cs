@@ -6,18 +6,28 @@ namespace AgentTaskHarness.Application.Boards;
 
 public class BoardService(AppDbContext dbContext)
 {
-	public async Task<Board> CreateAsync(string name, string repoPath, int concurrencyLimit, CancellationToken cancellationToken = default)
+	public async Task<Board> CreateAsync(
+		string name,
+		string repoPath,
+		int concurrencyLimit = 1,
+		bool skipFeatureHumanReview = false,
+		bool skipStepHumanReview = false,
+		int agentReviewFailThreshold = 3,
+		int humanReviewFailThreshold = 3,
+		CancellationToken cancellationToken = default)
 	{
-		Validate(name, repoPath, concurrencyLimit);
+		Validate(name, repoPath, concurrencyLimit, agentReviewFailThreshold, humanReviewFailThreshold);
 
 		var board = new Board
 		{
 			Name = name.Trim(),
 			RepoPath = repoPath.Trim(),
-			ConcurrencyLimit = concurrencyLimit
+			ConcurrencyLimit = concurrencyLimit,
+			SkipFeatureHumanReview = skipFeatureHumanReview,
+			SkipStepHumanReview = skipStepHumanReview,
+			AgentReviewFailThreshold = agentReviewFailThreshold,
+			HumanReviewFailThreshold = humanReviewFailThreshold
 		};
-		board.Columns.Add(new Column { Name = "Backlog", Order = 0, IsBacklog = true });
-		board.Columns.Add(new Column { Name = "Done", Order = 1, IsTerminal = true });
 
 		dbContext.Boards.Add(board);
 		await dbContext.SaveChangesAsync(cancellationToken);
@@ -28,15 +38,28 @@ public class BoardService(AppDbContext dbContext)
 		dbContext.Boards.AsNoTracking().OrderBy(board => board.Name).ToListAsync(cancellationToken);
 
 	public Task<Board?> GetByIdAsync(Guid boardId, CancellationToken cancellationToken = default) =>
-		dbContext.Boards.Include(board => board.Columns.OrderBy(column => column.Order)).SingleOrDefaultAsync(board => board.Id == boardId, cancellationToken);
+		dbContext.Boards.Include(board => board.Features).SingleOrDefaultAsync(board => board.Id == boardId, cancellationToken);
 
-	public async Task<Board> UpdateAsync(Guid boardId, string name, string repoPath, int concurrencyLimit, CancellationToken cancellationToken = default)
+	public async Task<Board> UpdateAsync(
+		Guid boardId,
+		string name,
+		string repoPath,
+		int concurrencyLimit,
+		bool skipFeatureHumanReview = false,
+		bool skipStepHumanReview = false,
+		int agentReviewFailThreshold = 3,
+		int humanReviewFailThreshold = 3,
+		CancellationToken cancellationToken = default)
 	{
-		Validate(name, repoPath, concurrencyLimit);
+		Validate(name, repoPath, concurrencyLimit, agentReviewFailThreshold, humanReviewFailThreshold);
 		var board = await FindBoardAsync(boardId, cancellationToken);
 		board.Name = name.Trim();
 		board.RepoPath = repoPath.Trim();
 		board.ConcurrencyLimit = concurrencyLimit;
+		board.SkipFeatureHumanReview = skipFeatureHumanReview;
+		board.SkipStepHumanReview = skipStepHumanReview;
+		board.AgentReviewFailThreshold = agentReviewFailThreshold;
+		board.HumanReviewFailThreshold = humanReviewFailThreshold;
 		await dbContext.SaveChangesAsync(cancellationToken);
 		return board;
 	}
@@ -52,13 +75,21 @@ public class BoardService(AppDbContext dbContext)
 		await dbContext.Boards.SingleOrDefaultAsync(board => board.Id == boardId, cancellationToken)
 		?? throw new KeyNotFoundException($"Board '{boardId}' was not found.");
 
-	private static void Validate(string name, string repoPath, int concurrencyLimit)
+	private static void Validate(string name, string repoPath, int concurrencyLimit, int agentReviewFailThreshold, int humanReviewFailThreshold)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(name);
 		ArgumentException.ThrowIfNullOrWhiteSpace(repoPath);
 		if (concurrencyLimit < 1)
 		{
 			throw new ArgumentOutOfRangeException(nameof(concurrencyLimit), "Concurrency limit must be at least one.");
+		}
+		if (agentReviewFailThreshold < 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(agentReviewFailThreshold), "Agent review failure threshold cannot be negative.");
+		}
+		if (humanReviewFailThreshold < 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(humanReviewFailThreshold), "Human review failure threshold cannot be negative.");
 		}
 	}
 }

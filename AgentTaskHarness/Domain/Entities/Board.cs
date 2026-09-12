@@ -6,7 +6,11 @@ public class Board
 	public string Name { get; set; } = string.Empty;
 	public string RepoPath { get; set; } = string.Empty;
 	public int ConcurrencyLimit { get; set; } = 1;
-	public ICollection<Column> Columns { get; set; } = new List<Column>();
-	public ICollection<TaskItem> Tasks { get; set; } = new List<TaskItem>();
+	public bool SkipFeatureHumanReview { get; set; }
+	public bool SkipStepHumanReview { get; set; }
+	public int AgentReviewFailThreshold { get; set; } = 3;
+	public int HumanReviewFailThreshold { get; set; } = 3;
+
+	public ICollection<Feature> Features { get; set; } = new List<Feature>();
 	public ICollection<AgentDefinition> AgentDefinitions { get; set; } = new List<AgentDefinition>();
 }

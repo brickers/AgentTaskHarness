@@ -2,8 +2,8 @@ using AgentTaskHarness.Components;
 using AgentTaskHarness.Application.Agents;
 using AgentTaskHarness.Application.Abstractions;
 using AgentTaskHarness.Application.Boards;
-using AgentTaskHarness.Application.Columns;
-using AgentTaskHarness.Application.Tasks;
+using AgentTaskHarness.Application.Features;
+using AgentTaskHarness.Application.Steps;
 using AgentTaskHarness.Infrastructure.Agents;
 using AgentTaskHarness.Infrastructure.Git;
 using AgentTaskHarness.Infrastructure.Persistence;
@@ -18,10 +18,8 @@ builder.Services.AddRazorComponents()
 builder.Services.AddDbContext<AppDbContext>(options =>
 	options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddScoped<BoardService>();
-builder.Services.AddScoped<ColumnService>();
-builder.Services.AddScoped<TaskService>();
-builder.Services.AddScoped<TaskDependencyService>();
-builder.Services.AddScoped<TaskTransitionOrchestrator>();
+builder.Services.AddScoped<FeatureService>();
+builder.Services.AddScoped<StepService>();
 builder.Services.AddScoped<IAgentDefinitionFolderWriter, AgentDefinitionFolderWriter>();
 builder.Services.AddScoped<AgentDefinitionService>();
 builder.Services.AddScoped<IGitWorktreeService, LibGit2WorktreeService>();

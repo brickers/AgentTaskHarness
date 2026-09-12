@@ -1,10 +1,12 @@
 @page "/boards/{BoardId:guid}"
+@using AgentTaskHarness.Application.Boards
+@using AgentTaskHarness.Application.Features
+@using AgentTaskHarness.Application.Steps
+@using AgentTaskHarness.Domain.Entities
+@using AgentTaskHarness.Domain.Enums
 @inject BoardService BoardService
-@inject ColumnService ColumnService
-@inject TaskService TaskService
-@inject TaskDependencyService DependencyService
-@inject TaskTransitionOrchestrator TransitionOrchestrator
-@inject AgentDefinitionService AgentDefinitionService
+@inject FeatureService FeatureService
+@inject StepService StepService
 @inject NavigationManager Navigation
 
 <PageTitle>@(board?.Name ?? "Board")</PageTitle>
@@ -21,10 +23,9 @@ else
             <h1>@board.Name</h1>
         </div>
         <div class="header-actions">
-            <a class="button-quiet" href="@($"/boards/{BoardId}/columns")">Columns</a>
             <a class="button-quiet" href="@($"/boards/{BoardId}/agents")">Agents</a>
             <button class="button-quiet" @onclick="OpenBoardEditor">Board settings</button>
-            <button class="button-primary" @onclick="OpenTaskCreator">New task</button>
+            <button class="button-primary" @onclick="OpenFeatureCreator">New feature</button>
         </div>
     </section>
 
@@ -34,73 +35,28 @@ else
     }
 
     <div class="board-grid">
-        @foreach (var column in columns)
+        @foreach (var column in Enum.GetValues<WorkflowColumn>())
         {
             <section class="column">
-                <div class="column-heading"><h2>@column.Name</h2><button class="column-edit-button" type="button" @onclick="() => StartEditingColumnAsync(column)">Edit</button></div>
-                @foreach (var task in tasks.Where(task => task.ColumnId == column.Id))
+                <div class="column-heading"><h2>@column</h2></div>
+                @foreach (var feature in features.Where(f => f.WorkflowColumn == column))
                 {
-                    <TaskCard TaskItem="task" TargetColumns="GetTargets(task.ColumnId)"
-                              OnMove="targetColumnId => MoveTaskAsync(task.Id, targetColumnId)"
-                              OnMoveAndDiscardWorktree="targetColumnId => MoveTaskAndDiscardWorktreeAsync(task.Id, targetColumnId)"
-                              OnResumeMerge="() => ResumeMergeAsync(task.Id)"
-                              OnDiscardUncommittedChanges="() => DiscardUncommittedChangesAsync(task.Id)"
-                              OnEdit="StartEditingAsync" OnDelete="DeleteTaskAsync" />
+                    <article class="task-card">
+                        <div>
+                            <h3>@feature.Title</h3>
+                            <p>@feature.Requirements</p>
+                            <small class="muted-copy">Steps: @feature.Steps.Count</small>
+                        </div>
+                        <div class="card-actions">
+                            <button class="button-quiet" @onclick="() => StartEditingFeature(feature)">Edit</button>
+                            <button class="button-quiet" @onclick="() => OpenStepCreator(feature.Id)">Add step</button>
+                            <button class="button-danger" @onclick="() => DeleteFeatureAsync(feature.Id)">Delete</button>
+                        </div>
+                    </article>
                 }
             </section>
         }
     </div>
-
-    @if (editingTask is not null)
-    {
-        <div class="modal-backdrop" role="presentation">
-        <section class="modal task-editor" role="dialog" aria-modal="true" aria-labelledby="edit-task-title">
-            <div class="modal-heading">
-                <div>
-                    <p class="eyebrow">Task details</p>
-                    <h2 id="edit-task-title">Edit task</h2>
-                </div>
-                <button class="icon-button" type="button" aria-label="Close" @onclick="CloseEditor">×</button>
-            </div>
-            <form @onsubmit="SaveTaskAsync" @onsubmit:preventDefault>
-                <div class="form-panel">
-                    <label>Title <input @bind="editTaskTitle" /></label>
-                    <label>Description <textarea @bind="editTaskDescription"></textarea></label>
-                </div>
-
-                <h3>Dependencies</h3>
-                @if (editingTask.Status != AgentTaskHarness.Domain.Enums.TaskStatus.Backlog)
-                {
-                    <p>Dependencies are locked until this task returns to the backlog.</p>
-                }
-                else
-                {
-                    <select @bind="dependencyToAdd">
-                        <option value="">Add dependency…</option>
-                        @foreach (var candidate in tasks.Where(task => task.Id != editingTask.Id && !editingDependencies.Any(dependency => dependency.DependsOnTaskId == task.Id)))
-                        {
-                            <option value="@candidate.Id">@candidate.Title</option>
-                        }
-                    </select>
-                    <button class="button-quiet" type="button" @onclick="AddDependencyAsync" disabled="@(dependencyToAdd is null)">Add</button>
-                }
-                <ul>
-                    @foreach (var dependency in editingDependencies)
-                    {
-                        <li>
-                            @(tasks.SingleOrDefault(task => task.Id == dependency.DependsOnTaskId)?.Title ?? "Deleted task")
-                            @if (editingTask.Status == AgentTaskHarness.Domain.Enums.TaskStatus.Backlog)
-                            {
-                                <button class="button-quiet" type="button" @onclick="() => RemoveDependencyAsync(dependency.DependsOnTaskId)">Remove</button>
-                            }
-                        </li>
-                    }
-                </ul>
-                <div class="modal-actions"><button class="button-quiet" type="button" @onclick="CloseEditor">Cancel</button><button class="button-primary" type="submit">Save task</button></div>
-            </form>
-        </section>
-        </div>
-    }
 
     @if (isEditingBoard)
     {
@@ -118,43 +74,84 @@ else
                             <input id="repository-path" @bind="repoPath" placeholder="/path/to/repository" />
                             <FolderPicker OnFolderSelected="path => repoPath = path" />
                         </div>
-                        <small>Choose a folder to fill this field. Browsers hide its full local path, so replace the name with the server-visible path when needed.</small>
                     </div>
                     <label>Agent concurrency <input type="number" min="1" @bind="concurrencyLimit" /></label>
-                    <div class="modal-actions"><button class="button-quiet" type="button" @onclick="CloseBoardEditor">Cancel</button><button class="button-primary" type="submit">Save changes</button></div>
+                    <label><input type="checkbox" @bind="skipFeatureHumanReview" /> Skip Feature Human Review</label>
+                    <label><input type="checkbox" @bind="skipStepHumanReview" /> Skip Step Human Review</label>
+                    <label>Agent Review Fail Threshold <input type="number" min="0" @bind="agentReviewFailThreshold" /></label>
+                    <label>Human Review Fail Threshold <input type="number" min="0" @bind="humanReviewFailThreshold" /></label>
+                    <div class="modal-actions">
+                        <button class="button-quiet" type="button" @onclick="CloseBoardEditor">Cancel</button>
+                        <button class="button-primary" type="submit">Save changes</button>
+                    </div>
                 </form>
             </section>
         </div>
     }
 
-    @if (isCreatingTask)
+    @if (isCreatingFeature)
     {
         <div class="modal-backdrop" role="presentation">
-            <section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-task-title">
+            <section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-feature-title">
                 <div class="modal-heading">
-                    <div><p class="eyebrow">Backlog</p><h2 id="new-task-title">Create task</h2></div>
-                    <button class="icon-button" type="button" aria-label="Close" @onclick="CloseTaskCreator">×</button>
+                    <div><p class="eyebrow">Backlog</p><h2 id="new-feature-title">Create feature</h2></div>
+                    <button class="icon-button" type="button" aria-label="Close" @onclick="CloseFeatureCreator">×</button>
                 </div>
-                <form class="form-panel" @onsubmit="CreateTaskAsync" @onsubmit:preventDefault><label>Title <input @bind="newTaskTitle" placeholder="What needs to be done?" /></label><label>Description <textarea @bind="newTaskDescription" placeholder="Add useful context for the agent."></textarea></label><div class="modal-actions"><button class="button-quiet" type="button" @onclick="CloseTaskCreator">Cancel</button><button class="button-primary" type="submit">Create task</button></div></form>
+                <form class="form-panel" @onsubmit="CreateFeatureAsync" @onsubmit:preventDefault>
+                    <label>Title <input @bind="newFeatureTitle" placeholder="Feature title" /></label>
+                    <label>Requirements <textarea @bind="newFeatureRequirements" placeholder="Requirements"></textarea></label>
+                    <label>Acceptance Criteria <textarea @bind="newFeatureAcceptanceCriteria" placeholder="Acceptance criteria"></textarea></label>
+                    <label>Suggested Solution <textarea @bind="newFeatureSuggestedSolution" placeholder="Suggested solution"></textarea></label>
+                    <label><input type="checkbox" @bind="newFeatureAlwaysHumanReview" /> Always require Human Review</label>
+                    <div class="modal-actions">
+                        <button class="button-quiet" type="button" @onclick="CloseFeatureCreator">Cancel</button>
+                        <button class="button-primary" type="submit">Create feature</button>
+                    </div>
+                </form>
             </section>
         </div>
     }
 
-    @if (editingColumn is not null)
+    @if (editingFeature is not null)
     {
         <div class="modal-backdrop" role="presentation">
-            <section class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-board-column-title">
-                <div class="modal-heading"><div><p class="eyebrow">Workflow column</p><h2 id="edit-board-column-title">Edit @editingColumn.Name</h2></div><button class="icon-button" type="button" aria-label="Close" @onclick="CloseColumnEditor">×</button></div>
-                <form @onsubmit="SaveColumnAsync" @onsubmit:preventDefault>
-                    <div class="form-panel">
-                        <label>Name <input @bind="editingColumn.Name" /></label>
-                        @if (!editingColumn.IsBacklog && !editingColumn.IsTerminal)
-                        {
-                            <label>Agent definition <select @bind="editingColumn.AgentDefinitionId"><option value="">No agent</option>@foreach (var definition in agentDefinitions) { <option value="@definition.Id">@definition.Name</option> }</select></label>
-                        }
+            <section class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-feature-title">
+                <div class="modal-heading">
+                    <div><p class="eyebrow">Feature details</p><h2 id="edit-feature-title">Edit feature</h2></div>
+                    <button class="icon-button" type="button" aria-label="Close" @onclick="CloseFeatureEditor">×</button>
+                </div>
+                <form class="form-panel" @onsubmit="SaveFeatureAsync" @onsubmit:preventDefault>
+                    <label>Title <input @bind="editFeatureTitle" /></label>
+                    <label>Requirements <textarea @bind="editFeatureRequirements"></textarea></label>
+                    <label>Acceptance Criteria <textarea @bind="editFeatureAcceptanceCriteria"></textarea></label>
+                    <label>Suggested Solution <textarea @bind="editFeatureSuggestedSolution"></textarea></label>
+                    <label><input type="checkbox" @bind="editFeatureAlwaysHumanReview" /> Always require Human Review</label>
+                    <div class="modal-actions">
+                        <button class="button-quiet" type="button" @onclick="CloseFeatureEditor">Cancel</button>
+                        <button class="button-primary" type="submit">Save changes</button>
                     </div>
-                    <section class="transition-editor"><h3>Allowed destinations</h3><p>Tasks in this column can move to the selected destinations.</p>@foreach (var target in columns.Where(target => target.Id != editingColumn.Id)) { var targetId = target.Id; <label><input type="checkbox" checked="@GetTargets(editingColumn.Id).Any(allowed => allowed.Id == targetId)" @onchange="args => SetColumnTransitionAsync(editingColumn.Id, targetId, (bool)args.Value!)" /> @target.Name</label> }</section>
-                    <div class="modal-actions"><button class="button-quiet" type="button" @onclick="CloseColumnEditor">Cancel</button><button class="button-primary" type="submit">Save changes</button></div>
+                </form>
+            </section>
+        </div>
+    }
+
+    @if (isCreatingStep)
+    {
+        <div class="modal-backdrop" role="presentation">
+            <section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-step-title">
+                <div class="modal-heading">
+                    <div><p class="eyebrow">Step</p><h2 id="new-step-title">Add dev plan step</h2></div>
+                    <button class="icon-button" type="button" aria-label="Close" @onclick="CloseStepCreator">×</button>
+                </div>
+                <form class="form-panel" @onsubmit="CreateStepAsync" @onsubmit:preventDefault>
+                    <label>Title <input @bind="newStepTitle" placeholder="Step title" /></label>
+                    <label>Description <textarea @bind="newStepDescription" placeholder="Step description"></textarea></label>
+                    <label>Guidance Notes <textarea @bind="newStepGuidanceNotes" placeholder="Guidance notes for agent"></textarea></label>
+                    <label><input type="checkbox" @bind="newStepAlwaysHumanReview" /> Always require Human Review</label>
+                    <div class="modal-actions">
+                        <button class="button-quiet" type="button" @onclick="CloseStepCreator">Cancel</button>
+                        <button class="button-primary" type="submit">Create step</button>
+                    </div>
                 </form>
             </section>
         </div>
@@ -165,25 +162,39 @@ else
     [Parameter] public Guid BoardId { get; set; }
 
     private Board? board;
-    private List<Column> columns = [];
-    private List<TaskItem> tasks = [];
-    private readonly Dictionary<Guid, List<Column>> allowedTargets = [];
+    private List<Feature> features = [];
     private string boardName = string.Empty;
     private string repoPath = string.Empty;
     private int concurrencyLimit;
-    private string newTaskTitle = string.Empty;
-    private string newTaskDescription = string.Empty;
-    private TaskItem? editingTask;
-    private List<TaskDependency> editingDependencies = [];
-    private string editTaskTitle = string.Empty;
-    private string editTaskDescription = string.Empty;
-    private Guid? dependencyToAdd;
+    private bool skipFeatureHumanReview;
+    private bool skipStepHumanReview;
+    private int agentReviewFailThreshold;
+    private int humanReviewFailThreshold;
+
+    private bool isEditingBoard;
+    private bool isCreatingFeature;
+    private string newFeatureTitle = string.Empty;
+    private string newFeatureRequirements = string.Empty;
+    private string newFeatureAcceptanceCriteria = string.Empty;
+    private string newFeatureSuggestedSolution = string.Empty;
+    private bool newFeatureAlwaysHumanReview;
+
+    private Feature? editingFeature;
+    private string editFeatureTitle = string.Empty;
+    private string editFeatureRequirements = string.Empty;
+    private string editFeatureAcceptanceCriteria = string.Empty;
+    private string editFeatureSuggestedSolution = string.Empty;
+    private bool editFeatureAlwaysHumanReview;
+
+    private bool isCreatingStep;
+    private Guid stepTargetFeatureId;
+    private string newStepTitle = string.Empty;
+    private string newStepDescription = string.Empty;
+    private string newStepGuidanceNotes = string.Empty;
+    private bool newStepAlwaysHumanReview;
+
     private string? message;
     private int messageVersion;
-    private bool isEditingBoard;
-    private bool isCreatingTask;
-    private Column? editingColumn;
-    private List<AgentDefinition> agentDefinitions = [];
 
     protected override async Task OnParametersSetAsync() => await LoadAsync();
 
@@ -199,184 +210,106 @@ else
         boardName = board.Name;
         repoPath = board.RepoPath;
         concurrencyLimit = board.ConcurrencyLimit;
-        columns = await ColumnService.GetForBoardAsync(BoardId);
-        tasks = await TaskService.GetForBoardAsync(BoardId);
-        allowedTargets.Clear();
-        foreach (var column in columns)
+        skipFeatureHumanReview = board.SkipFeatureHumanReview;
+        skipStepHumanReview = board.SkipStepHumanReview;
+        agentReviewFailThreshold = board.AgentReviewFailThreshold;
+        humanReviewFailThreshold = board.HumanReviewFailThreshold;
+
+        features = await FeatureService.GetForBoardAsync(BoardId);
+        foreach (var f in features)
         {
-            allowedTargets[column.Id] = await ColumnService.GetAllowedTargetsAsync(column.Id);
+            var fullFeature = await FeatureService.GetByIdAsync(f.Id);
+            if (fullFeature is not null)
+            {
+                f.Steps = fullFeature.Steps;
+            }
         }
     }
 
-    private IReadOnlyList<Column> GetTargets(Guid columnId) => allowedTargets.GetValueOrDefault(columnId, []);
+    private void OpenBoardEditor() => isEditingBoard = true;
+    private void CloseBoardEditor() => isEditingBoard = false;
 
     private async Task SaveBoardAsync()
     {
         try
         {
-            await BoardService.UpdateAsync(BoardId, boardName, repoPath, concurrencyLimit);
+            await BoardService.UpdateAsync(BoardId, boardName, repoPath, concurrencyLimit, skipFeatureHumanReview, skipStepHumanReview, agentReviewFailThreshold, humanReviewFailThreshold);
             CloseBoardEditor();
             await LoadAsync();
         }
         catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
-    private async Task CreateTaskAsync()
+    private void OpenFeatureCreator() => isCreatingFeature = true;
+    private void CloseFeatureCreator() => isCreatingFeature = false;
+
+    private async Task CreateFeatureAsync()
     {
         try
         {
-            var backlog = columns.Single(column => column.IsBacklog);
-            await TaskService.CreateAsync(BoardId, backlog.Id, newTaskTitle, newTaskDescription);
-            newTaskTitle = newTaskDescription = string.Empty;
-            CloseTaskCreator();
+            await FeatureService.CreateAsync(BoardId, newFeatureTitle, newFeatureRequirements, newFeatureAcceptanceCriteria, newFeatureSuggestedSolution, newFeatureAlwaysHumanReview);
+            newFeatureTitle = newFeatureRequirements = newFeatureAcceptanceCriteria = newFeatureSuggestedSolution = string.Empty;
+            newFeatureAlwaysHumanReview = false;
+            CloseFeatureCreator();
             await LoadAsync();
         }
         catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
-    private async Task MoveTaskAsync(Guid taskId, Guid targetColumnId)
+    private void StartEditingFeature(Feature feature)
     {
+        editingFeature = feature;
+        editFeatureTitle = feature.Title;
+        editFeatureRequirements = feature.Requirements;
+        editFeatureAcceptanceCriteria = feature.AcceptanceCriteria;
+        editFeatureSuggestedSolution = feature.SuggestedSolution;
+        editFeatureAlwaysHumanReview = feature.AlwaysRequireHumanReview;
+    }
+
+    private void CloseFeatureEditor() => editingFeature = null;
+
+    private async Task SaveFeatureAsync()
+    {
+        if (editingFeature is null) return;
         try
         {
-            await TransitionOrchestrator.MoveTaskAsync(taskId, targetColumnId);
-            DismissMessage();
+            await FeatureService.UpdateAsync(editingFeature.Id, editFeatureTitle, editFeatureRequirements, editFeatureAcceptanceCriteria, editFeatureSuggestedSolution, editFeatureAlwaysHumanReview);
+            CloseFeatureEditor();
             await LoadAsync();
         }
         catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
-    private async Task MoveTaskAndDiscardWorktreeAsync(Guid taskId, Guid targetColumnId)
+    private async Task DeleteFeatureAsync(Guid featureId)
     {
         try
         {
-            await TransitionOrchestrator.MoveTaskAndDiscardWorktreeAsync(taskId, targetColumnId);
-            DismissMessage();
+            await FeatureService.DeleteAsync(featureId);
             await LoadAsync();
         }
         catch (Exception exception) { ShowMessage(exception.Message); }
     }
 
-    private async Task ResumeMergeAsync(Guid taskId)
+    private void OpenStepCreator(Guid featureId)
+    {
+        stepTargetFeatureId = featureId;
+        isCreatingStep = true;
+    }
+
+    private void CloseStepCreator() => isCreatingStep = false;
+
+    private async Task CreateStepAsync()
     {
         try
         {
-            await TransitionOrchestrator.ResumeMergeAsync(taskId);
-            DismissMessage();
+            await StepService.CreateAsync(stepTargetFeatureId, newStepTitle, newStepDescription, newStepGuidanceNotes, newStepAlwaysHumanReview);
+            newStepTitle = newStepDescription = newStepGuidanceNotes = string.Empty;
+            newStepAlwaysHumanReview = false;
+            CloseStepCreator();
             await LoadAsync();
         }
         catch (Exception exception) { ShowMessage(exception.Message); }
     }
-
-    private async Task DiscardUncommittedChangesAsync(Guid taskId)
-    {
-        try
-        {
-            await TransitionOrchestrator.DiscardUncommittedChangesAsync(taskId);
-            ShowMessage("Uncommitted changes were discarded.");
-            await LoadAsync();
-        }
-        catch (Exception exception) { ShowMessage(exception.Message); }
-    }
-
-    private async Task DeleteTaskAsync(Guid taskId)
-    {
-        try
-        {
-            await TaskService.DeleteAsync(taskId);
-            if (editingTask?.Id == taskId) CloseEditor();
-            await LoadAsync();
-        }
-        catch (Exception exception) { ShowMessage(exception.Message); }
-    }
-
-    private async Task StartEditingAsync(Guid taskId)
-    {
-        editingTask = await TaskService.GetByIdAsync(taskId);
-        if (editingTask is null) return;
-        editTaskTitle = editingTask.Title;
-        editTaskDescription = editingTask.Description;
-        editingDependencies = await DependencyService.GetForTaskAsync(taskId);
-        dependencyToAdd = null;
-    }
-
-    private async Task SaveTaskAsync()
-    {
-        if (editingTask is null) return;
-        try
-        {
-            await TaskService.UpdateAsync(editingTask.Id, editTaskTitle, editTaskDescription);
-            CloseEditor();
-            await LoadAsync();
-        }
-        catch (Exception exception) { ShowMessage(exception.Message); }
-    }
-
-    private async Task AddDependencyAsync()
-    {
-        if (editingTask is null || dependencyToAdd is not Guid dependencyId) return;
-        try
-        {
-            await DependencyService.AddAsync(editingTask.Id, dependencyId);
-            await StartEditingAsync(editingTask.Id);
-        }
-        catch (Exception exception) { ShowMessage(exception.Message); }
-    }
-
-    private async Task RemoveDependencyAsync(Guid dependencyId)
-    {
-        if (editingTask is null) return;
-        try
-        {
-            await DependencyService.RemoveAsync(editingTask.Id, dependencyId);
-            await StartEditingAsync(editingTask.Id);
-        }
-        catch (Exception exception) { ShowMessage(exception.Message); }
-    }
-
-    private void CloseEditor()
-    {
-        editingTask = null;
-        editingDependencies = [];
-    }
-
-    private void OpenBoardEditor() => isEditingBoard = true;
-
-    private void CloseBoardEditor() => isEditingBoard = false;
-
-    private void OpenTaskCreator() => isCreatingTask = true;
-
-    private void CloseTaskCreator() => isCreatingTask = false;
-
-    private async Task StartEditingColumnAsync(Column column)
-    {
-        editingColumn = column;
-        agentDefinitions = await AgentDefinitionService.GetForBoardAsync(BoardId);
-    }
-
-    private async Task SaveColumnAsync()
-    {
-        if (editingColumn is null) return;
-        try
-        {
-            await ColumnService.UpdateAsync(editingColumn.Id, editingColumn.Name, editingColumn.Order, editingColumn.IsBacklog, editingColumn.IsTerminal, editingColumn.AgentDefinitionId);
-            CloseColumnEditor();
-            await LoadAsync();
-        }
-        catch (Exception exception) { ShowMessage(exception.Message); }
-    }
-
-    private async Task SetColumnTransitionAsync(Guid fromColumnId, Guid toColumnId, bool allowed)
-    {
-        try
-        {
-            if (allowed) await ColumnService.AddAllowedTransitionAsync(fromColumnId, toColumnId);
-            else await ColumnService.RemoveAllowedTransitionAsync(fromColumnId, toColumnId);
-            await LoadAsync();
-        }
-        catch (Exception exception) { ShowMessage(exception.Message); }
-    }
-
-    private void CloseColumnEditor() => editingColumn = null;
 
     private void ShowMessage(string text)
     {
