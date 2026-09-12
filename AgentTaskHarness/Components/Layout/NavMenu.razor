@@ -1,5 +1,3 @@
-@using AgentTaskHarness.Application.Boards
-@using AgentTaskHarness.Domain.Entities
 @inject NavigationManager Navigation
 @inject BoardService BoardService
 @implements IDisposable
@@ -13,24 +11,28 @@
     </div>
 
     <nav class="nav-menu-links">
-        <a href="/boards" class="nav-link @(isAllBoards ? "active" : "")">
+        <a href="/boards" class="nav-link @(IsAllBoards ? "active" : "")">
             <span class="nav-icon">📋</span>
             <span>All Boards</span>
         </a>
 
-        @if (currentBoardId.HasValue)
+        @if (_currentBoardId.HasValue)
         {
             <span class="nav-divider" aria-hidden="true">/</span>
             <div class="board-nav-group">
-                <a href="@($"/boards/{currentBoardId}")" class="nav-link @(currentSection == "board" ? "active" : "")" title="Kanban Board">
+                <a href="@($"/boards/{_currentBoardId}")" class="nav-link @(_currentSection == "board" ? "active" : "")"
+                   title="Kanban Board">
                     <span class="nav-icon">📊</span>
                     <span>Board</span>
                 </a>
-                <a href="@($"/boards/{currentBoardId}/roadmap")" class="nav-link @(currentSection == "roadmap" ? "active" : "")" title="Roadmap & Dependencies">
+                <a href="@($"/boards/{_currentBoardId}/roadmap")"
+                   class="nav-link @(_currentSection == "roadmap" ? "active" : "")" title="Roadmap & Dependencies">
                     <span class="nav-icon">🗺️</span>
                     <span>Roadmap</span>
                 </a>
-                <a href="@($"/boards/{currentBoardId}/agents")" class="nav-link @(currentSection == "agents" ? "active" : "")" title="Agent Definitions & Column Assignments">
+                <a href="@($"/boards/{_currentBoardId}/agents")"
+                   class="nav-link @(_currentSection == "agents" ? "active" : "")"
+                   title="Agent Definitions & Column Assignments">
                     <span class="nav-icon">🤖</span>
                     <span>Agents</span>
                 </a>
@@ -39,9 +41,9 @@
     </nav>
 
     <div class="nav-context-section">
-        @if (!string.IsNullOrWhiteSpace(currentBoardName))
+        @if (!string.IsNullOrWhiteSpace(_currentBoardName))
         {
-            <span class="board-name-badge" title="@currentBoardName">@currentBoardName</span>
+            <span class="board-name-badge" title="@_currentBoardName">@_currentBoardName</span>
         }
         else
         {
@@ -180,10 +182,10 @@
 </style>
 
 @code {
-    private Guid? currentBoardId;
-    private string? currentBoardName;
-    private string currentSection = "boards";
-    private bool isAllBoards => !currentBoardId.HasValue || currentSection == "boards";
+    private Guid? _currentBoardId;
+    private string? _currentBoardName;
+    private string _currentSection = "boards";
+    private bool IsAllBoards => !_currentBoardId.HasValue || _currentSection == "boards";
 
     protected override async Task OnInitializedAsync()
     {
@@ -204,24 +206,24 @@
 
         if (parts.Length >= 2 && parts[0].Equals("boards", StringComparison.OrdinalIgnoreCase) && Guid.TryParse(parts[1], out var parsedId))
         {
-            currentBoardId = parsedId;
-            currentSection = parts.Length > 2 ? parts[2].ToLowerInvariant() : "board";
+            _currentBoardId = parsedId;
+            _currentSection = parts.Length > 2 ? parts[2].ToLowerInvariant() : "board";
 
             try
             {
                 var board = await BoardService.GetByIdAsync(parsedId);
-                currentBoardName = board?.Name;
+                _currentBoardName = board?.Name;
             }
             catch
             {
-                currentBoardName = null;
+                _currentBoardName = null;
             }
         }
         else
         {
-            currentBoardId = null;
-            currentBoardName = null;
-            currentSection = "boards";
+            _currentBoardId = null;
+            _currentBoardName = null;
+            _currentSection = "boards";
         }
     }
 
@@ -229,4 +231,5 @@
     {
         Navigation.LocationChanged -= OnLocationChanged;
     }
+
 }

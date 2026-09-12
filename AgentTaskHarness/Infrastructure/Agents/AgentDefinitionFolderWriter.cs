@@ -20,25 +20,25 @@ public class AgentDefinitionFolderWriter : IAgentDefinitionFolderWriter
 			definition.Name,
 			definition.Components
 				.OrderBy(component => component.Order)
-				.Select(component => new AgentComponentConfiguration(component.Component.Name, component.Component.ConfigContent))
+				.Select(component =>
+					new AgentComponentConfiguration(component.Component.Name, component.Component.ConfigContent))
 				.ToList());
 		var destinationPath = Path.Combine(definition.FolderPath, "agent-definition.json");
 		var temporaryPath = Path.Combine(definition.FolderPath, $".agent-definition-{Guid.NewGuid():N}.tmp");
 
 		try
 		{
-			await File.WriteAllTextAsync(temporaryPath, JsonSerializer.Serialize(configuration, SerializerOptions), cancellationToken);
+			await File.WriteAllTextAsync(temporaryPath, JsonSerializer.Serialize(configuration, SerializerOptions),
+				cancellationToken);
 			File.Move(temporaryPath, destinationPath, true);
 		}
 		finally
 		{
-			if (File.Exists(temporaryPath))
-			{
-				File.Delete(temporaryPath);
-			}
+			if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
 		}
 	}
 
 	private sealed record AgentDefinitionConfiguration(string Name, List<AgentComponentConfiguration> Components);
+
 	private sealed record AgentComponentConfiguration(string Name, string ConfigContent);
 }

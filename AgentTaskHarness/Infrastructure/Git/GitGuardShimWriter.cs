@@ -3,30 +3,31 @@ using System.Runtime.InteropServices;
 namespace AgentTaskHarness.Infrastructure.Git;
 
 /// <summary>
-/// Generates a per-OS "git guard" directory and shim script allow-listing only read-only
-/// git subcommands for agent processes executing inside card worktrees.
+///     Generates a per-OS "git guard" directory and shim script allow-listing only read-only
+///     git subcommands for agent processes executing inside card worktrees.
 /// </summary>
 public class GitGuardShimWriter
 {
-	public static readonly IReadOnlySet<string> AllowedReadOnlyCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-	{
-		"diff",
-		"log",
-		"status",
-		"show",
-		"branch",
-		"rev-parse",
-		"cat-file",
-		"ls-files",
-		"version",
-		"help",
-		"--version",
-		"--help"
-	};
+	public static readonly IReadOnlySet<string> AllowedReadOnlyCommands =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+		{
+			"diff",
+			"log",
+			"status",
+			"show",
+			"branch",
+			"rev-parse",
+			"cat-file",
+			"ls-files",
+			"version",
+			"help",
+			"--version",
+			"--help"
+		};
 
 	/// <summary>
-	/// Creates a temporary directory containing a guarded 'git' executable shim allow-listing only read-only commands.
-	/// Returns the directory path to prepend to PATH.
+	///     Creates a temporary directory containing a guarded 'git' executable shim allow-listing only read-only commands.
+	///     Returns the directory path to prepend to PATH.
 	/// </summary>
 	public string CreateGitGuardShimDirectory(string? baseTempDir = null)
 	{
@@ -84,7 +85,8 @@ esac
 			File.WriteAllText(scriptPath, scriptContent);
 			try
 			{
-				File.SetUnixFileMode(scriptPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+				File.SetUnixFileMode(scriptPath, UnixFileMode.UserRead | UnixFileMode.UserWrite |
+				                                 UnixFileMode.UserExecute |
 				                                 UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
 				                                 UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
 			}
@@ -98,16 +100,13 @@ esac
 	}
 
 	/// <summary>
-	/// Cleans up a generated shim directory.
+	///     Cleans up a generated shim directory.
 	/// </summary>
 	public void CleanupShimDirectory(string shimDir)
 	{
 		try
 		{
-			if (Directory.Exists(shimDir))
-			{
-				Directory.Delete(shimDir, recursive: true);
-			}
+			if (Directory.Exists(shimDir)) Directory.Delete(shimDir, true);
 		}
 		catch
 		{

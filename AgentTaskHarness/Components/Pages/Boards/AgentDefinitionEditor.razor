@@ -1,8 +1,4 @@
 @page "/boards/{BoardId:guid}/agents"
-@using AgentTaskHarness.Application.Agents
-@using AgentTaskHarness.Application.Boards
-@using AgentTaskHarness.Domain.Entities
-@using AgentTaskHarness.Domain.Enums
 @inject BoardService BoardService
 @inject AgentDefinitionService AgentDefinitionService
 @inject AgentMatchingService AgentMatchingService
@@ -11,21 +7,31 @@
 <PageTitle>Agent definitions</PageTitle>
 
 <section class="page-intro compact-intro">
-    <div><p class="breadcrumb"><a href="@($"/boards/{BoardId}")">Board</a> <span>/</span> Settings</p><h1>Agent definitions</h1><p>Compose reusable instructions and assign them to the workflow.</p></div>
-    <div class="header-actions"><button class="button-quiet" @onclick="OpenComponentCreator">New component</button><button class="button-primary" @onclick="OpenDefinitionCreator">New definition</button></div>
+    <div><p class="breadcrumb"><a href="@($"/boards/{BoardId}")">Board</a> <span>/</span> Settings</p>
+        <h1>Agent definitions</h1>
+        <p>Compose reusable instructions and assign them to the workflow.</p></div>
+    <div class="header-actions">
+        <button class="button-quiet" @onclick="OpenComponentCreator">New component</button>
+        <button class="button-primary" @onclick="OpenDefinitionCreator">New definition</button>
+    </div>
 </section>
 
-@if (!string.IsNullOrWhiteSpace(message))
+@if (!string.IsNullOrWhiteSpace(_message))
 {
-    <div class="toast" role="alert" @key="messageVersion"><span>@message</span><button class="icon-button" type="button" aria-label="Dismiss notification" @onclick="DismissMessage">×</button></div>
+    <div class="toast" role="alert" @key="_messageVersion"><span>@_message</span>
+        <button class="icon-button" type="button" aria-label="Dismiss notification" @onclick="DismissMessage">×</button>
+    </div>
 }
 
 <section class="definition-panel">
-    <div class="section-heading"><div><p class="eyebrow">Building blocks</p><h2>Reusable components</h2></div><span class="tag">@availableComponents.Count total</span></div>
-    @if (availableComponents.Count > 0)
+    <div class="section-heading">
+        <div><p class="eyebrow">Building blocks</p>
+            <h2>Reusable components</h2></div>
+        <span class="tag">@_availableComponents.Count total</span></div>
+    @if (_availableComponents.Count > 0)
     {
         <ul class="component-list">
-            @foreach (var component in availableComponents)
+            @foreach (var component in _availableComponents)
             {
                 <li><strong>@component.Name</strong><span>@component.ConfigContent</span></li>
             }
@@ -37,18 +43,29 @@
     }
 </section>
 
-@if (definitions.Count == 0)
+@if (_definitions.Count == 0)
 {
-    <section class="empty-state"><p class="eyebrow">No definitions yet</p><h2>Build an agent</h2><p>Combine reusable components into a definition that can be assigned to a column.</p><button class="button-primary" @onclick="OpenDefinitionCreator">Create definition</button></section>
+    <section class="empty-state"><p class="eyebrow">No definitions yet</p>
+        <h2>Build an agent</h2>
+        <p>Combine reusable components into a definition that can be assigned to a column.</p>
+        <button class="button-primary" @onclick="OpenDefinitionCreator">Create definition</button>
+    </section>
 }
 else
 {
     <section class="definition-panel definition-list-panel">
-        <div class="section-heading"><div><p class="eyebrow">Compositions</p><h2>Definitions</h2></div></div>
+        <div class="section-heading">
+            <div><p class="eyebrow">Compositions</p>
+                <h2>Definitions</h2></div>
+        </div>
         <div class="definition-list">
-            @foreach (var definition in definitions)
+            @foreach (var definition in _definitions)
             {
-                <article><div><h3>@definition.Name</h3><p>@definition.FolderPath</p></div><button class="button-quiet" @onclick="() => SelectDefinitionAsync(definition.Id)">Edit</button></article>
+                <article>
+                    <div><h3>@definition.Name</h3>
+                        <p>@definition.FolderPath</p></div>
+                    <button class="button-quiet" @onclick="() => SelectDefinitionAsync(definition.Id)">Edit</button>
+                </article>
             }
         </div>
     </section>
@@ -61,19 +78,22 @@ else
             </div>
             <button class="button-primary" @onclick="() => OpenAssignmentCreator()">Assign agent</button>
         </div>
-        <p class="muted-copy">Assign agent definitions to eligible column scopes with optional matching criteria (e.g. <code>rework=true</code>, <code>rework=false</code>, or keywords). Feature Build is never assignable.</p>
+        <p class="muted-copy">Assign agent definitions to eligible column scopes with optional matching criteria (e.g.
+            <code>rework=true</code>, <code>rework=false</code>, or keywords). Feature Build is never assignable.</p>
 
         <div class="scope-grid">
             @foreach (var scope in EligibleScopes)
             {
-                var scopeAssignments = assignments.Where(a => a.ColumnScope == scope).ToList();
+                var scopeAssignments = _assignments.Where(a => a.ColumnScope == scope).ToList();
                 <div class="scope-card">
                     <div class="scope-card-header">
                         <div>
                             <h3>@GetScopeDisplayName(scope)</h3>
                             <p class="muted-copy"><small>@GetScopeDescription(scope)</small></p>
                         </div>
-                        <button class="button-quiet button-small" @onclick="() => OpenAssignmentCreator(scope)">+ Assign</button>
+                        <button class="button-quiet button-small" @onclick="() => OpenAssignmentCreator(scope)">+
+                            Assign
+                        </button>
                     </div>
                     @if (scopeAssignments.Count > 0)
                     {
@@ -85,16 +105,22 @@ else
                                         <strong>@(assignment.AgentDefinition?.Name ?? "Agent")</strong>
                                         @if (!string.IsNullOrWhiteSpace(assignment.MatchCriteria))
                                         {
-                                            <span class="criteria-badge" title="Match criteria">@assignment.MatchCriteria</span>
+                                            <span class="criteria-badge"
+                                                  title="Match criteria">@assignment.MatchCriteria</span>
                                         }
                                         else
                                         {
-                                            <span class="criteria-badge default-criteria" title="Default catch-all for any card">Default (all cards)</span>
+                                            <span class="criteria-badge default-criteria"
+                                                  title="Default catch-all for any card">Default (all cards)</span>
                                         }
                                     </div>
                                     <div class="assignment-item-actions">
-                                        <button class="button-quiet button-small" @onclick="() => OpenAssignmentEditor(assignment)">Edit</button>
-                                        <button class="button-danger button-small" @onclick="() => DeleteAssignmentAsync(assignment.Id)">Remove</button>
+                                        <button class="button-quiet button-small"
+                                                @onclick="() => OpenAssignmentEditor(assignment)">Edit
+                                        </button>
+                                        <button class="button-danger button-small"
+                                                @onclick="() => DeleteAssignmentAsync(assignment.Id)">Remove
+                                        </button>
                                     </div>
                                 </li>
                             }
@@ -110,69 +136,141 @@ else
     </section>
 }
 
-@if (isCreatingComponent)
+@if (_isCreatingComponent)
 {
-    <div class="modal-backdrop" role="presentation"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-component-title"><div class="modal-heading"><div><p class="eyebrow">Building block</p><h2 id="new-component-title">New component</h2></div><button class="icon-button" type="button" aria-label="Close" @onclick="CloseComponentCreator">×</button></div><form class="form-panel" @onsubmit="CreateComponentAsync" @onsubmit:preventDefault><label>Name <input @bind="newComponentName" placeholder="Repository conventions" /></label><label>Configuration <textarea @bind="newComponentConfig" placeholder="Add the component content."></textarea></label><div class="modal-actions"><button class="button-quiet" type="button" @onclick="CloseComponentCreator">Cancel</button><button class="button-primary" type="submit">Create component</button></div></form></section></div>
+    <div class="modal-backdrop" role="presentation">
+        <section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-component-title">
+            <div class="modal-heading">
+                <div><p class="eyebrow">Building block</p>
+                    <h2 id="new-component-title">New component</h2></div>
+                <button class="icon-button" type="button" aria-label="Close" @onclick="CloseComponentCreator">×</button>
+            </div>
+            <form class="form-panel" @onsubmit="CreateComponentAsync" @onsubmit:preventDefault><label>Name <input
+                        @bind="_newComponentName" placeholder="Repository conventions"/></label><label>Configuration
+                    <textarea @bind="_newComponentConfig" placeholder="Add the component content."></textarea></label>
+                <div class="modal-actions">
+                    <button class="button-quiet" type="button" @onclick="CloseComponentCreator">Cancel</button>
+                    <button class="button-primary" type="submit">Create component</button>
+                </div>
+            </form>
+        </section>
+    </div>
 }
 
-@if (isCreatingDefinition)
+@if (_isCreatingDefinition)
 {
-    <div class="modal-backdrop" role="presentation"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-definition-title"><div class="modal-heading"><div><p class="eyebrow">Agent composition</p><h2 id="new-definition-title">New definition</h2></div><button class="icon-button" type="button" aria-label="Close" @onclick="CloseDefinitionCreator">×</button></div><form class="form-panel" @onsubmit="CreateDefinitionAsync" @onsubmit:preventDefault><label>Name <input @bind="newDefinitionName" placeholder="Implementation agent" /></label><div class="field-group"><label for="new-definition-folder">Definition folder</label><div class="path-input"><input id="new-definition-folder" @bind="newDefinitionFolderPath" placeholder="/path/to/definition" /><FolderPicker OnFolderSelected="path => newDefinitionFolderPath = path" /></div><small>Choose a folder to fill this field. Browsers hide its full local path, so replace the name with the server-visible path when needed.</small></div><div class="modal-actions"><button class="button-quiet" type="button" @onclick="CloseDefinitionCreator">Cancel</button><button class="button-primary" type="submit">Create definition</button></div></form></section></div>
+    <div class="modal-backdrop" role="presentation">
+        <section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-definition-title">
+            <div class="modal-heading">
+                <div><p class="eyebrow">Agent composition</p>
+                    <h2 id="new-definition-title">New definition</h2></div>
+                <button class="icon-button" type="button" aria-label="Close" @onclick="CloseDefinitionCreator">×
+                </button>
+            </div>
+            <form class="form-panel" @onsubmit="CreateDefinitionAsync" @onsubmit:preventDefault><label>Name <input
+                        @bind="_newDefinitionName" placeholder="Implementation agent"/></label>
+                <div class="field-group"><label for="new-definition-folder">Definition folder</label>
+                    <div class="path-input"><input id="new-definition-folder" @bind="_newDefinitionFolderPath"
+                                                   placeholder="/path/to/definition"/>
+                        <FolderPicker OnFolderSelected="path => _newDefinitionFolderPath = path"/>
+                    </div>
+                    <small>Choose a folder to fill this field. Browsers hide its full local path, so replace the name
+                        with the server-visible path when needed.</small></div>
+                <div class="modal-actions">
+                    <button class="button-quiet" type="button" @onclick="CloseDefinitionCreator">Cancel</button>
+                    <button class="button-primary" type="submit">Create definition</button>
+                </div>
+            </form>
+        </section>
+    </div>
 }
 
-@if (selectedDefinition is not null && isEditingDefinition)
+@if (_selectedDefinition is not null && _isEditingDefinition)
 {
-    <div class="modal-backdrop" role="presentation"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-definition-title"><div class="modal-heading"><div><p class="eyebrow">Agent composition</p><h2 id="edit-definition-title">Edit @selectedDefinition.Name</h2></div><button class="icon-button" type="button" aria-label="Close" @onclick="CloseDefinitionEditor">×</button></div><form @onsubmit="SaveAsync" @onsubmit:preventDefault><div class="form-panel"><label>Name <input @bind="definitionName" /></label><div class="field-group"><label for="definition-folder">Definition folder</label><div class="path-input"><input id="definition-folder" @bind="definitionFolderPath" placeholder="/path/to/definition" /><FolderPicker OnFolderSelected="path => definitionFolderPath = path" /></div><small>Choose a folder to fill this field. Browsers hide its full local path, so replace the name with the server-visible path when needed.</small></div><label>Component
-            <select @bind="componentToAdd">
-                <option value="">Select a component…</option>
-                @foreach (var component in availableComponents.Where(component => selectedComponents.All(selected => selected.Id != component.Id)))
-                {
-                    <option value="@component.Id">@component.Name</option>
-                }
-            </select>
-        </label>
-        <button class="button-quiet" type="button" @onclick="AddComponent">Add component</button></div>
+    <div class="modal-backdrop" role="presentation">
+        <section class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-definition-title">
+            <div class="modal-heading">
+                <div><p class="eyebrow">Agent composition</p>
+                    <h2 id="edit-definition-title">Edit @_selectedDefinition.Name</h2></div>
+                <button class="icon-button" type="button" aria-label="Close" @onclick="CloseDefinitionEditor">×</button>
+            </div>
+            <form @onsubmit="SaveAsync" @onsubmit:preventDefault>
+                <div class="form-panel"><label>Name <input @bind="_definitionName"/></label>
+                    <div class="field-group"><label for="definition-folder">Definition folder</label>
+                        <div class="path-input"><input id="definition-folder" @bind="_definitionFolderPath"
+                                                       placeholder="/path/to/definition"/>
+                            <FolderPicker OnFolderSelected="path => _definitionFolderPath = path"/>
+                        </div>
+                        <small>Choose a folder to fill this field. Browsers hide its full local path, so replace the
+                            name with the server-visible path when needed.</small></div>
+                    <label>Component
+                        <select @bind="_componentToAdd">
+                            <option value="">Select a component…</option>
+                            @foreach (var component in _availableComponents.Where(component => _selectedComponents.All(selected => selected.Id != component.Id)))
+                            {
+                                <option value="@component.Id">@component.Name</option>
+                            }
+                        </select>
+                    </label>
+                    <button class="button-quiet" type="button" @onclick="AddComponent">Add component</button>
+                </div>
 
-        <section class="composition-editor"><h3>Composition order</h3>
-        @if (selectedComponents.Count == 0)
-        {
-            <p class="muted-copy">No components selected.</p>
-        }
-        else
-        {
-            <ol class="composition-list">
-                @for (var index = 0; index < selectedComponents.Count; index++)
-                {
-                    var component = selectedComponents[index];
-                    <li>
-                        <strong>@component.Name</strong>
-                        <button class="button-quiet" type="button" @onclick="() => MoveComponent(index, -1)" disabled="@(index == 0)">Earlier</button>
-                        <button class="button-quiet" type="button" @onclick="() => MoveComponent(index, 1)" disabled="@(index == selectedComponents.Count - 1)">Later</button>
-                        <button class="button-danger" type="button" @onclick="() => RemoveComponent(component.Id)">Remove</button>
-                    </li>
-                }
-            </ol>
-        }
-        </section><div class="modal-actions"><button class="button-danger" type="button" @onclick="DeleteDefinitionAsync">Delete definition</button><span class="modal-action-spacer"></span><button class="button-quiet" type="button" @onclick="CloseDefinitionEditor">Cancel</button><button class="button-primary" type="submit">Save definition</button></div></form></section></div>
+                <section class="composition-editor"><h3>Composition order</h3>
+                    @if (_selectedComponents.Count == 0)
+                    {
+                        <p class="muted-copy">No components selected.</p>
+                    }
+                    else
+                    {
+                        <ol class="composition-list">
+                            @for (var index = 0; index < _selectedComponents.Count; index++)
+                            {
+                                var component = _selectedComponents[index];
+                                <li>
+                                    <strong>@component.Name</strong>
+                                    <button class="button-quiet" type="button" @onclick="() => MoveComponent(index, -1)"
+                                            disabled="@(index == 0)">Earlier
+                                    </button>
+                                    <button class="button-quiet" type="button" @onclick="() => MoveComponent(index, 1)"
+                                            disabled="@(index == _selectedComponents.Count - 1)">Later
+                                    </button>
+                                    <button class="button-danger" type="button"
+                                            @onclick="() => RemoveComponent(component.Id)">Remove
+                                    </button>
+                                </li>
+                            }
+                        </ol>
+                    }
+                </section>
+                <div class="modal-actions">
+                    <button class="button-danger" type="button" @onclick="DeleteDefinitionAsync">Delete definition
+                    </button>
+                    <span class="modal-action-spacer"></span>
+                    <button class="button-quiet" type="button" @onclick="CloseDefinitionEditor">Cancel</button>
+                    <button class="button-primary" type="submit">Save definition</button>
+                </div>
+            </form>
+        </section>
+    </div>
 }
 
-@if (isManagingAssignment)
+@if (_isManagingAssignment)
 {
     <div class="modal-backdrop" role="presentation">
         <section class="modal" role="dialog" aria-modal="true" aria-labelledby="assignment-modal-title">
             <div class="modal-heading">
                 <div>
                     <p class="eyebrow">Workflow Assignment</p>
-                    <h2 id="assignment-modal-title">@(editingAssignment is null ? "Assign agent to column" : "Edit column assignment")</h2>
+                    <h2 id="assignment-modal-title">@(_editingAssignment is null ? "Assign agent to column" : "Edit column assignment")</h2>
                 </div>
                 <button class="icon-button" type="button" aria-label="Close" @onclick="CloseAssignmentModal">×</button>
             </div>
             <form class="form-panel" @onsubmit="SaveAssignmentAsync" @onsubmit:preventDefault>
-                @if (editingAssignment is null)
+                @if (_editingAssignment is null)
                 {
                     <label>
                         Column Scope
-                        <select @bind="selectedScope">
+                        <select @bind="_selectedScope">
                             @foreach (var scope in EligibleScopes)
                             {
                                 <option value="@scope">@GetScopeDisplayName(scope)</option>
@@ -184,15 +282,15 @@ else
                 {
                     <div>
                         <span class="eyebrow">Column Scope</span>
-                        <p><strong>@GetScopeDisplayName(selectedScope)</strong></p>
+                        <p><strong>@GetScopeDisplayName(_selectedScope)</strong></p>
                     </div>
                 }
 
                 <label>
                     Agent Definition
-                    <select @bind="selectedAgentDefinitionId">
+                    <select @bind="_selectedAgentDefinitionId">
                         <option value="@Guid.Empty">Select a definition…</option>
-                        @foreach (var definition in definitions)
+                        @foreach (var definition in _definitions)
                         {
                             <option value="@definition.Id">@definition.Name</option>
                         }
@@ -201,21 +299,25 @@ else
 
                 <label>
                     Match Criteria
-                    <input @bind="matchCriteriaInput" placeholder="e.g. rework=true, rework=false, or leave blank for default" />
+                    <input @bind="_matchCriteriaInput"
+                           placeholder="e.g. rework=true, rework=false, or leave blank for default"/>
                     <small class="muted-copy">
-                        Optional. Leave blank to match all cards unconditionally. Specify rules like <code>rework=true</code>, <code>rework=false</code>, or keywords to target specific cards.
+                        Optional. Leave blank to match all cards unconditionally. Specify rules like
+                        <code>rework=true</code>, <code>rework=false</code>, or keywords to target specific cards.
                     </small>
                 </label>
 
                 <div class="modal-actions">
-                    @if (editingAssignment is not null)
+                    @if (_editingAssignment is not null)
                     {
-                        <button class="button-danger" type="button" @onclick="() => DeleteAssignmentAsync(editingAssignment.Id)">Delete assignment</button>
+                        <button class="button-danger" type="button"
+                                @onclick="() => DeleteAssignmentAsync(_editingAssignment.Id)">Delete assignment
+                        </button>
                         <span class="modal-action-spacer"></span>
                     }
                     <button class="button-quiet" type="button" @onclick="CloseAssignmentModal">Cancel</button>
-                    <button class="button-primary" type="submit" disabled="@(selectedAgentDefinitionId == Guid.Empty)">
-                        @(editingAssignment is null ? "Assign" : "Save changes")
+                    <button class="button-primary" type="submit" disabled="@(_selectedAgentDefinitionId == Guid.Empty)">
+                        @(_editingAssignment is null ? "Assign" : "Save changes")
                     </button>
                 </div>
             </form>
@@ -226,35 +328,36 @@ else
 @code {
     [Parameter] public Guid BoardId { get; set; }
 
-    private static readonly ColumnScope[] EligibleScopes = [
+    private static readonly ColumnScope[] EligibleScopes =
+    [
         ColumnScope.StepBuild,
         ColumnScope.StepAgentReview,
         ColumnScope.FeatureAgentReview
     ];
 
-    private List<AgentDefinition> definitions = [];
-    private List<AgentComponent> availableComponents = [];
-    private List<AgentColumnAssignment> assignments = [];
-    private AgentDefinition? selectedDefinition;
-    private List<AgentComponent> selectedComponents = [];
-    private string newComponentName = string.Empty;
-    private string newComponentConfig = string.Empty;
-    private string newDefinitionName = string.Empty;
-    private string newDefinitionFolderPath = string.Empty;
-    private string definitionName = string.Empty;
-    private string definitionFolderPath = string.Empty;
-    private Guid? componentToAdd;
-    private string? message;
-    private int messageVersion;
-    private bool isCreatingComponent;
-    private bool isCreatingDefinition;
-    private bool isEditingDefinition;
+    private List<AgentDefinition> _definitions = [];
+    private List<AgentComponent> _availableComponents = [];
+    private List<AgentColumnAssignment> _assignments = [];
+    private AgentDefinition? _selectedDefinition;
+    private List<AgentComponent> _selectedComponents = [];
+    private string _newComponentName = string.Empty;
+    private string _newComponentConfig = string.Empty;
+    private string _newDefinitionName = string.Empty;
+    private string _newDefinitionFolderPath = string.Empty;
+    private string _definitionName = string.Empty;
+    private string _definitionFolderPath = string.Empty;
+    private Guid? _componentToAdd;
+    private string? _message;
+    private int _messageVersion;
+    private bool _isCreatingComponent;
+    private bool _isCreatingDefinition;
+    private bool _isEditingDefinition;
 
-    private bool isManagingAssignment;
-    private AgentColumnAssignment? editingAssignment;
-    private ColumnScope selectedScope = ColumnScope.StepBuild;
-    private Guid selectedAgentDefinitionId;
-    private string matchCriteriaInput = string.Empty;
+    private bool _isManagingAssignment;
+    private AgentColumnAssignment? _editingAssignment;
+    private ColumnScope _selectedScope = ColumnScope.StepBuild;
+    private Guid _selectedAgentDefinitionId;
+    private string _matchCriteriaInput = string.Empty;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -263,63 +366,70 @@ else
             Navigation.NavigateTo("/boards");
             return;
         }
+
         await LoadAsync();
     }
 
     private async Task LoadAsync()
     {
-        definitions = await AgentDefinitionService.GetForBoardAsync(BoardId);
-        availableComponents = await AgentDefinitionService.GetComponentsAsync();
-        assignments = await AgentMatchingService.GetAssignmentsAsync(BoardId);
-        if (selectedDefinition is not null)
+        _definitions = await AgentDefinitionService.GetForBoardAsync(BoardId);
+        _availableComponents = await AgentDefinitionService.GetComponentsAsync();
+        _assignments = await AgentMatchingService.GetAssignmentsAsync(BoardId);
+        if (_selectedDefinition is not null)
         {
-            await SelectDefinitionAsync(selectedDefinition.Id);
+            await SelectDefinitionAsync(_selectedDefinition.Id);
         }
     }
 
-    private static string GetScopeDisplayName(ColumnScope scope) => scope switch
+    private static string GetScopeDisplayName(ColumnScope scope)
     {
-        ColumnScope.StepBuild => "Step: Build",
-        ColumnScope.StepAgentReview => "Step: Agent Review",
-        ColumnScope.FeatureAgentReview => "Feature: Agent Review",
-        _ => scope.ToString()
-    };
+        return scope switch
+        {
+            ColumnScope.StepBuild => "Step: Build",
+            ColumnScope.StepAgentReview => "Step: Agent Review",
+            ColumnScope.FeatureAgentReview => "Feature: Agent Review",
+            _ => scope.ToString()
+        };
+    }
 
-    private static string GetScopeDescription(ColumnScope scope) => scope switch
+    private static string GetScopeDescription(ColumnScope scope)
     {
-        ColumnScope.StepBuild => "Runs when a dev plan step begins active implementation.",
-        ColumnScope.StepAgentReview => "Runs when a step is submitted for automated review.",
-        ColumnScope.FeatureAgentReview => "Runs when all steps complete and the feature enters review.",
-        _ => string.Empty
-    };
+        return scope switch
+        {
+            ColumnScope.StepBuild => "Runs when a dev plan step begins active implementation.",
+            ColumnScope.StepAgentReview => "Runs when a step is submitted for automated review.",
+            ColumnScope.FeatureAgentReview => "Runs when all steps complete and the feature enters review.",
+            _ => string.Empty
+        };
+    }
 
     private void OpenAssignmentCreator(ColumnScope? scope = null)
     {
-        editingAssignment = null;
-        selectedScope = scope ?? ColumnScope.StepBuild;
-        selectedAgentDefinitionId = definitions.FirstOrDefault()?.Id ?? Guid.Empty;
-        matchCriteriaInput = string.Empty;
-        isManagingAssignment = true;
+        _editingAssignment = null;
+        _selectedScope = scope ?? ColumnScope.StepBuild;
+        _selectedAgentDefinitionId = _definitions.FirstOrDefault()?.Id ?? Guid.Empty;
+        _matchCriteriaInput = string.Empty;
+        _isManagingAssignment = true;
     }
 
     private void OpenAssignmentEditor(AgentColumnAssignment assignment)
     {
-        editingAssignment = assignment;
-        selectedScope = assignment.ColumnScope;
-        selectedAgentDefinitionId = assignment.AgentDefinitionId;
-        matchCriteriaInput = assignment.MatchCriteria;
-        isManagingAssignment = true;
+        _editingAssignment = assignment;
+        _selectedScope = assignment.ColumnScope;
+        _selectedAgentDefinitionId = assignment.AgentDefinitionId;
+        _matchCriteriaInput = assignment.MatchCriteria;
+        _isManagingAssignment = true;
     }
 
     private void CloseAssignmentModal()
     {
-        isManagingAssignment = false;
-        editingAssignment = null;
+        _isManagingAssignment = false;
+        _editingAssignment = null;
     }
 
     private async Task SaveAssignmentAsync()
     {
-        if (selectedAgentDefinitionId == Guid.Empty)
+        if (_selectedAgentDefinitionId == Guid.Empty)
         {
             ShowMessage("Please select an agent definition.");
             return;
@@ -327,14 +437,15 @@ else
 
         try
         {
-            if (editingAssignment is null)
+            if (_editingAssignment is null)
             {
-                await AgentMatchingService.AssignAgentAsync(BoardId, selectedScope, selectedAgentDefinitionId, matchCriteriaInput);
+                await AgentMatchingService.AssignAgentAsync(BoardId, _selectedScope, _selectedAgentDefinitionId, _matchCriteriaInput);
             }
             else
             {
-                await AgentMatchingService.UpdateAssignmentAsync(editingAssignment.Id, selectedAgentDefinitionId, matchCriteriaInput);
+                await AgentMatchingService.UpdateAssignmentAsync(_editingAssignment.Id, _selectedAgentDefinitionId, _matchCriteriaInput);
             }
+
             CloseAssignmentModal();
             await LoadAsync();
         }
@@ -349,10 +460,11 @@ else
         try
         {
             await AgentMatchingService.DeleteAssignmentAsync(assignmentId);
-            if (editingAssignment?.Id == assignmentId)
+            if (_editingAssignment?.Id == assignmentId)
             {
                 CloseAssignmentModal();
             }
+
             await LoadAsync();
         }
         catch (Exception exception)
@@ -365,111 +477,150 @@ else
     {
         try
         {
-            await AgentDefinitionService.CreateComponentAsync(newComponentName, newComponentConfig);
-            newComponentName = string.Empty;
-            newComponentConfig = string.Empty;
+            await AgentDefinitionService.CreateComponentAsync(_newComponentName, _newComponentConfig);
+            _newComponentName = string.Empty;
+            _newComponentConfig = string.Empty;
             CloseComponentCreator();
-            availableComponents = await AgentDefinitionService.GetComponentsAsync();
+            _availableComponents = await AgentDefinitionService.GetComponentsAsync();
         }
-        catch (Exception exception) { ShowMessage(exception.Message); }
+        catch (Exception exception)
+        {
+            ShowMessage(exception.Message);
+        }
     }
 
     private async Task CreateDefinitionAsync()
     {
         try
         {
-            await AgentDefinitionService.CreateAsync(BoardId, newDefinitionName, newDefinitionFolderPath);
-            newDefinitionName = string.Empty;
-            newDefinitionFolderPath = string.Empty;
+            await AgentDefinitionService.CreateAsync(BoardId, _newDefinitionName, _newDefinitionFolderPath);
+            _newDefinitionName = string.Empty;
+            _newDefinitionFolderPath = string.Empty;
             CloseDefinitionCreator();
             await LoadAsync();
         }
-        catch (Exception exception) { ShowMessage(exception.Message); }
+        catch (Exception exception)
+        {
+            ShowMessage(exception.Message);
+        }
     }
 
     private async Task SelectDefinitionAsync(Guid definitionId)
     {
-        selectedDefinition = await AgentDefinitionService.GetByIdAsync(definitionId);
-        if (selectedDefinition is null)
+        _selectedDefinition = await AgentDefinitionService.GetByIdAsync(definitionId);
+        if (_selectedDefinition is null)
         {
             return;
         }
-        definitionName = selectedDefinition.Name;
-        definitionFolderPath = selectedDefinition.FolderPath;
-        selectedComponents = selectedDefinition.Components.OrderBy(component => component.Order).Select(component => component.Component).ToList();
-        componentToAdd = null;
-        isEditingDefinition = true;
+
+        _definitionName = _selectedDefinition.Name;
+        _definitionFolderPath = _selectedDefinition.FolderPath;
+        _selectedComponents = _selectedDefinition.Components.OrderBy(component => component.Order).Select(component => component.Component).ToList();
+        _componentToAdd = null;
+        _isEditingDefinition = true;
     }
 
     private void AddComponent()
     {
-        if (componentToAdd is not Guid componentId)
+        if (_componentToAdd is not Guid componentId)
         {
             return;
         }
-        var component = availableComponents.Single(component => component.Id == componentId);
-        selectedComponents.Add(component);
-        componentToAdd = null;
+
+        var component = _availableComponents.Single(component => component.Id == componentId);
+        _selectedComponents.Add(component);
+        _componentToAdd = null;
     }
 
     private void MoveComponent(int index, int direction)
     {
-        if (index + direction < 0 || index + direction >= selectedComponents.Count)
+        if (index + direction < 0 || index + direction >= _selectedComponents.Count)
         {
             return;
         }
-        (selectedComponents[index], selectedComponents[index + direction]) = (selectedComponents[index + direction], selectedComponents[index]);
+
+        (_selectedComponents[index], _selectedComponents[index + direction]) = (_selectedComponents[index + direction], _selectedComponents[index]);
     }
 
-    private void RemoveComponent(Guid componentId) => selectedComponents.RemoveAll(component => component.Id == componentId);
+    private void RemoveComponent(Guid componentId)
+    {
+        _selectedComponents.RemoveAll(component => component.Id == componentId);
+    }
 
     private async Task SaveAsync()
     {
-        if (selectedDefinition is null)
+        if (_selectedDefinition is null)
         {
             return;
         }
+
         try
         {
-            await AgentDefinitionService.SaveAsync(selectedDefinition.Id, definitionName, definitionFolderPath, selectedComponents.Select(component => component.Id).ToList());
+            await AgentDefinitionService.SaveAsync(_selectedDefinition.Id, _definitionName, _definitionFolderPath, _selectedComponents.Select(component => component.Id).ToList());
             await LoadAsync();
             CloseDefinitionEditor();
         }
-        catch (Exception exception) { ShowMessage(exception.Message); }
+        catch (Exception exception)
+        {
+            ShowMessage(exception.Message);
+        }
     }
 
     private async Task DeleteDefinitionAsync()
     {
-        if (selectedDefinition is null)
+        if (_selectedDefinition is null)
         {
             return;
         }
+
         try
         {
-            await AgentDefinitionService.DeleteAsync(selectedDefinition.Id);
-            selectedDefinition = null;
-            selectedComponents = [];
+            await AgentDefinitionService.DeleteAsync(_selectedDefinition.Id);
+            _selectedDefinition = null;
+            _selectedComponents = [];
             CloseDefinitionEditor();
             await LoadAsync();
         }
-        catch (Exception exception) { ShowMessage(exception.Message); }
+        catch (Exception exception)
+        {
+            ShowMessage(exception.Message);
+        }
     }
 
-    private void OpenComponentCreator() => isCreatingComponent = true;
+    private void OpenComponentCreator()
+    {
+        _isCreatingComponent = true;
+    }
 
-    private void CloseComponentCreator() => isCreatingComponent = false;
+    private void CloseComponentCreator()
+    {
+        _isCreatingComponent = false;
+    }
 
-    private void OpenDefinitionCreator() => isCreatingDefinition = true;
+    private void OpenDefinitionCreator()
+    {
+        _isCreatingDefinition = true;
+    }
 
-    private void CloseDefinitionCreator() => isCreatingDefinition = false;
+    private void CloseDefinitionCreator()
+    {
+        _isCreatingDefinition = false;
+    }
 
-    private void CloseDefinitionEditor() => isEditingDefinition = false;
+    private void CloseDefinitionEditor()
+    {
+        _isEditingDefinition = false;
+    }
 
     private void ShowMessage(string text)
     {
-        message = text;
-        messageVersion++;
+        _message = text;
+        _messageVersion++;
     }
 
-    private void DismissMessage() => message = null;
+    private void DismissMessage()
+    {
+        _message = null;
+    }
+
 }

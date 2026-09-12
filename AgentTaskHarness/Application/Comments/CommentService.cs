@@ -14,36 +14,22 @@ public class CommentService(AppDbContext dbContext)
 		string body,
 		CancellationToken cancellationToken = default)
 	{
-		if (string.IsNullOrWhiteSpace(author))
-		{
-			throw new ArgumentException("Author is required.", nameof(author));
-		}
+		if (string.IsNullOrWhiteSpace(author)) throw new ArgumentException("Author is required.", nameof(author));
 
 		if (author.Trim().Length > 200)
-		{
 			throw new ArgumentException("Author must not exceed 200 characters.", nameof(author));
-		}
 
-		if (string.IsNullOrWhiteSpace(body))
-		{
-			throw new ArgumentException("Comment body is required.", nameof(body));
-		}
+		if (string.IsNullOrWhiteSpace(body)) throw new ArgumentException("Comment body is required.", nameof(body));
 
 		if (cardType == CardType.Feature)
 		{
 			var exists = await dbContext.Features.AnyAsync(f => f.Id == cardId, cancellationToken);
-			if (!exists)
-			{
-				throw new KeyNotFoundException($"Feature '{cardId}' was not found.");
-			}
+			if (!exists) throw new KeyNotFoundException($"Feature '{cardId}' was not found.");
 		}
 		else if (cardType == CardType.Step)
 		{
 			var exists = await dbContext.Steps.AnyAsync(s => s.Id == cardId, cancellationToken);
-			if (!exists)
-			{
-				throw new KeyNotFoundException($"Step '{cardId}' was not found.");
-			}
+			if (!exists) throw new KeyNotFoundException($"Step '{cardId}' was not found.");
 		}
 		else
 		{
@@ -116,15 +102,9 @@ public class CommentService(AppDbContext dbContext)
 
 		var result = new Dictionary<(CardType CardType, Guid CardId), int>();
 
-		foreach (var fc in featureCounts)
-		{
-			result[(CardType.Feature, fc.Key)] = fc.Count;
-		}
+		foreach (var fc in featureCounts) result[(CardType.Feature, fc.Key)] = fc.Count;
 
-		foreach (var sc in stepCounts)
-		{
-			result[(CardType.Step, sc.Key)] = sc.Count;
-		}
+		foreach (var sc in stepCounts) result[(CardType.Step, sc.Key)] = sc.Count;
 
 		return result;
 	}
@@ -132,8 +112,8 @@ public class CommentService(AppDbContext dbContext)
 	public async Task DeleteCommentAsync(Guid commentId, CancellationToken cancellationToken = default)
 	{
 		var comment = await dbContext.Comments
-			.SingleOrDefaultAsync(c => c.Id == commentId, cancellationToken)
-			?? throw new KeyNotFoundException($"Comment '{commentId}' was not found.");
+			              .SingleOrDefaultAsync(c => c.Id == commentId, cancellationToken)
+		              ?? throw new KeyNotFoundException($"Comment '{commentId}' was not found.");
 
 		dbContext.Comments.Remove(comment);
 		await dbContext.SaveChangesAsync(cancellationToken);

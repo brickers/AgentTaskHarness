@@ -34,11 +34,16 @@ public class BoardService(AppDbContext dbContext)
 		return board;
 	}
 
-	public Task<List<Board>> GetAllAsync(CancellationToken cancellationToken = default) =>
-		dbContext.Boards.AsNoTracking().OrderBy(board => board.Name).ToListAsync(cancellationToken);
+	public Task<List<Board>> GetAllAsync(CancellationToken cancellationToken = default)
+	{
+		return dbContext.Boards.AsNoTracking().OrderBy(board => board.Name).ToListAsync(cancellationToken);
+	}
 
-	public Task<Board?> GetByIdAsync(Guid boardId, CancellationToken cancellationToken = default) =>
-		dbContext.Boards.Include(board => board.Features).SingleOrDefaultAsync(board => board.Id == boardId, cancellationToken);
+	public Task<Board?> GetByIdAsync(Guid boardId, CancellationToken cancellationToken = default)
+	{
+		return dbContext.Boards.Include(board => board.Features)
+			.SingleOrDefaultAsync(board => board.Id == boardId, cancellationToken);
+	}
 
 	public async Task<Board> UpdateAsync(
 		Guid boardId,
@@ -71,25 +76,24 @@ public class BoardService(AppDbContext dbContext)
 		await dbContext.SaveChangesAsync(cancellationToken);
 	}
 
-	private async Task<Board> FindBoardAsync(Guid boardId, CancellationToken cancellationToken) =>
-		await dbContext.Boards.SingleOrDefaultAsync(board => board.Id == boardId, cancellationToken)
-		?? throw new KeyNotFoundException($"Board '{boardId}' was not found.");
+	private async Task<Board> FindBoardAsync(Guid boardId, CancellationToken cancellationToken)
+	{
+		return await dbContext.Boards.SingleOrDefaultAsync(board => board.Id == boardId, cancellationToken)
+		       ?? throw new KeyNotFoundException($"Board '{boardId}' was not found.");
+	}
 
-	private static void Validate(string name, string repoPath, int concurrencyLimit, int agentReviewFailThreshold, int humanReviewFailThreshold)
+	private static void Validate(string name, string repoPath, int concurrencyLimit, int agentReviewFailThreshold,
+		int humanReviewFailThreshold)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(name);
 		ArgumentException.ThrowIfNullOrWhiteSpace(repoPath);
 		if (concurrencyLimit < 1)
-		{
 			throw new ArgumentOutOfRangeException(nameof(concurrencyLimit), "Concurrency limit must be at least one.");
-		}
 		if (agentReviewFailThreshold < 0)
-		{
-			throw new ArgumentOutOfRangeException(nameof(agentReviewFailThreshold), "Agent review failure threshold cannot be negative.");
-		}
+			throw new ArgumentOutOfRangeException(nameof(agentReviewFailThreshold),
+				"Agent review failure threshold cannot be negative.");
 		if (humanReviewFailThreshold < 0)
-		{
-			throw new ArgumentOutOfRangeException(nameof(humanReviewFailThreshold), "Human review failure threshold cannot be negative.");
-		}
+			throw new ArgumentOutOfRangeException(nameof(humanReviewFailThreshold),
+				"Human review failure threshold cannot be negative.");
 	}
 }

@@ -1,4 +1,3 @@
-using AgentTaskHarness.Domain.Entities;
 using AgentTaskHarness.Domain.Enums;
 using AgentTaskHarness.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -6,8 +5,8 @@ using Microsoft.EntityFrameworkCore;
 namespace AgentTaskHarness.Application.Usage;
 
 /// <summary>
-/// Aggregated usage statistics for a Feature, rolling up token usage and time spent across all its Steps,
-/// as well as any agent runs executed directly on the Feature itself.
+///     Aggregated usage statistics for a Feature, rolling up token usage and time spent across all its Steps,
+///     as well as any agent runs executed directly on the Feature itself.
 /// </summary>
 public record FeatureUsageSummary(
 	Guid FeatureId,
@@ -23,7 +22,7 @@ public record FeatureUsageSummary(
 );
 
 /// <summary>
-/// Usage metrics for an individual Step within a Feature.
+///     Usage metrics for an individual Step within a Feature.
 /// </summary>
 public record StepUsageSummary(
 	Guid StepId,
@@ -36,7 +35,7 @@ public record StepUsageSummary(
 );
 
 /// <summary>
-/// Board-level usage rollup across all Features and Steps on the board.
+///     Board-level usage rollup across all Features and Steps on the board.
 /// </summary>
 public record BoardUsageSummary(
 	Guid BoardId,
@@ -49,20 +48,18 @@ public record BoardUsageSummary(
 );
 
 /// <summary>
-/// Quality-signal metrics beyond cost and time tracking.
-///
-/// SOLUTION DESIGN NOTE (Cost &amp; Quality Tracking - Open Extension Point):
-/// "Additional signals to help judge whether a Feature/Step was well-formed (e.g. whether its
-/// original content was sufficient to reach the finished result without much back-and-forth)
-/// are wanted; the concrete metrics (e.g. rework/return-to-backlog counts, agent-reported
-/// missing-information events) are not yet decided — open question for a future iteration."
-///
-/// This record and extension point provide hooks for future quality metrics such as:
-/// - Agent and Human review failure counts and churn ratios.
-/// - Rework indicators (card returned from review to Build).
-/// - Return-to-backlog count for dependency or requirement alterations.
-/// - Agent clarification / missing-context requests during execution.
-/// - First-pass completion rate.
+///     Quality-signal metrics beyond cost and time tracking.
+///     SOLUTION DESIGN NOTE (Cost &amp; Quality Tracking - Open Extension Point):
+///     "Additional signals to help judge whether a Feature/Step was well-formed (e.g. whether its
+///     original content was sufficient to reach the finished result without much back-and-forth)
+///     are wanted; the concrete metrics (e.g. rework/return-to-backlog counts, agent-reported
+///     missing-information events) are not yet decided — open question for a future iteration."
+///     This record and extension point provide hooks for future quality metrics such as:
+///     - Agent and Human review failure counts and churn ratios.
+///     - Rework indicators (card returned from review to Build).
+///     - Return-to-backlog count for dependency or requirement alterations.
+///     - Agent clarification / missing-context requests during execution.
+///     - First-pass completion rate.
 /// </summary>
 public record QualitySignals(
 	Guid CardId,
@@ -79,14 +76,15 @@ public record QualitySignals(
 public class UsageTrackingService(AppDbContext dbContext)
 {
 	/// <summary>
-	/// Aggregates token and time usage across a Feature's Steps and any Feature-level agent runs.
+	///     Aggregates token and time usage across a Feature's Steps and any Feature-level agent runs.
 	/// </summary>
-	public async Task<FeatureUsageSummary> GetFeatureSummaryAsync(Guid featureId, CancellationToken cancellationToken = default)
+	public async Task<FeatureUsageSummary> GetFeatureSummaryAsync(Guid featureId,
+		CancellationToken cancellationToken = default)
 	{
 		var feature = await dbContext.Features
-			.Include(f => f.Steps)
-			.SingleOrDefaultAsync(f => f.Id == featureId, cancellationToken)
-			?? throw new KeyNotFoundException($"Feature '{featureId}' was not found.");
+			              .Include(f => f.Steps)
+			              .SingleOrDefaultAsync(f => f.Id == featureId, cancellationToken)
+		              ?? throw new KeyNotFoundException($"Feature '{featureId}' was not found.");
 
 		var steps = feature.Steps.OrderBy(s => s.CreatedAt).ToList();
 		var stepIds = steps.Select(s => s.Id).ToList();
@@ -122,34 +120,36 @@ public class UsageTrackingService(AppDbContext dbContext)
 		var featureTime = featureRuns.Aggregate(TimeSpan.Zero, (acc, r) => acc + r.TimeSpent);
 
 		return new FeatureUsageSummary(
-			FeatureId: feature.Id,
-			Title: feature.Title,
-			TotalTokensUsed: stepTokens + featureTokens,
-			TotalTimeSpent: stepTime + featureTime,
-			StepTokensUsed: stepTokens,
-			StepTimeSpent: stepTime,
-			FeatureTokensUsed: featureTokens,
-			FeatureTimeSpent: featureTime,
-			StepCount: stepSummaries.Count,
-			StepSummaries: stepSummaries
+			feature.Id,
+			feature.Title,
+			stepTokens + featureTokens,
+			stepTime + featureTime,
+			stepTokens,
+			stepTime,
+			featureTokens,
+			featureTime,
+			stepSummaries.Count,
+			stepSummaries
 		);
 	}
 
 	/// <summary>
-	/// Alias for <see cref="GetFeatureSummaryAsync"/> matching the implementation plan specification:
-	/// UsageTrackingService.GetFeatureSummary(featureId)
+	///     Alias for <see cref="GetFeatureSummaryAsync" /> matching the implementation plan specification:
+	///     UsageTrackingService.GetFeatureSummary(featureId)
 	/// </summary>
-	public Task<FeatureUsageSummary> GetFeatureSummary(Guid featureId) =>
-		GetFeatureSummaryAsync(featureId);
+	public Task<FeatureUsageSummary> GetFeatureSummary(Guid featureId)
+	{
+		return GetFeatureSummaryAsync(featureId);
+	}
 
 	/// <summary>
-	/// Returns usage summary for a single Step.
+	///     Returns usage summary for a single Step.
 	/// </summary>
 	public async Task<StepUsageSummary> GetStepSummaryAsync(Guid stepId, CancellationToken cancellationToken = default)
 	{
 		var step = await dbContext.Steps
-			.SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken)
-			?? throw new KeyNotFoundException($"Step '{stepId}' was not found.");
+			           .SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken)
+		           ?? throw new KeyNotFoundException($"Step '{stepId}' was not found.");
 
 		var runCount = await dbContext.AgentRuns
 			.AsNoTracking()
@@ -167,9 +167,10 @@ public class UsageTrackingService(AppDbContext dbContext)
 	}
 
 	/// <summary>
-	/// Returns a dictionary of FeatureUsageSummary for all features on a board, optimized for board-level UI rendering.
+	///     Returns a dictionary of FeatureUsageSummary for all features on a board, optimized for board-level UI rendering.
 	/// </summary>
-	public async Task<Dictionary<Guid, FeatureUsageSummary>> GetFeatureSummariesForBoardAsync(Guid boardId, CancellationToken cancellationToken = default)
+	public async Task<Dictionary<Guid, FeatureUsageSummary>> GetFeatureSummariesForBoardAsync(Guid boardId,
+		CancellationToken cancellationToken = default)
 	{
 		var features = await dbContext.Features
 			.Include(f => f.Steps)
@@ -187,13 +188,14 @@ public class UsageTrackingService(AppDbContext dbContext)
 	}
 
 	/// <summary>
-	/// Returns aggregated board-level usage across all features and steps.
+	///     Returns aggregated board-level usage across all features and steps.
 	/// </summary>
-	public async Task<BoardUsageSummary> GetBoardSummaryAsync(Guid boardId, CancellationToken cancellationToken = default)
+	public async Task<BoardUsageSummary> GetBoardSummaryAsync(Guid boardId,
+		CancellationToken cancellationToken = default)
 	{
 		var board = await dbContext.Boards
-			.SingleOrDefaultAsync(b => b.Id == boardId, cancellationToken)
-			?? throw new KeyNotFoundException($"Board '{boardId}' was not found.");
+			            .SingleOrDefaultAsync(b => b.Id == boardId, cancellationToken)
+		            ?? throw new KeyNotFoundException($"Board '{boardId}' was not found.");
 
 		var featureSummariesMap = await GetFeatureSummariesForBoardAsync(boardId, cancellationToken);
 		var summariesList = featureSummariesMap.Values.ToList();
@@ -203,18 +205,18 @@ public class UsageTrackingService(AppDbContext dbContext)
 		var totalSteps = summariesList.Sum(s => s.StepCount);
 
 		return new BoardUsageSummary(
-			BoardId: board.Id,
-			BoardName: board.Name,
-			TotalTokensUsed: totalTokens,
-			TotalTimeSpent: totalTime,
-			FeatureCount: summariesList.Count,
-			StepCount: totalSteps,
-			FeatureSummaries: summariesList
+			board.Id,
+			board.Name,
+			totalTokens,
+			totalTime,
+			summariesList.Count,
+			totalSteps,
+			summariesList
 		);
 	}
 
 	/// <summary>
-	/// Directly records incremental token and time usage on a step.
+	///     Directly records incremental token and time usage on a step.
 	/// </summary>
 	public async Task RecordStepUsageAsync(
 		Guid stepId,
@@ -223,8 +225,8 @@ public class UsageTrackingService(AppDbContext dbContext)
 		CancellationToken cancellationToken = default)
 	{
 		var step = await dbContext.Steps
-			.SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken)
-			?? throw new KeyNotFoundException($"Step '{stepId}' was not found.");
+			           .SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken)
+		           ?? throw new KeyNotFoundException($"Step '{stepId}' was not found.");
 
 		step.TokensUsed += tokensUsed;
 		step.TimeSpent += timeSpent;
@@ -233,7 +235,7 @@ public class UsageTrackingService(AppDbContext dbContext)
 	}
 
 	/// <summary>
-	/// Directly records usage onto an AgentRun and rolls it up to the associated step if applicable.
+	///     Directly records usage onto an AgentRun and rolls it up to the associated step if applicable.
 	/// </summary>
 	public async Task RecordRunUsageAsync(
 		Guid runId,
@@ -242,8 +244,8 @@ public class UsageTrackingService(AppDbContext dbContext)
 		CancellationToken cancellationToken = default)
 	{
 		var run = await dbContext.AgentRuns
-			.SingleOrDefaultAsync(r => r.Id == runId, cancellationToken)
-			?? throw new KeyNotFoundException($"Agent run '{runId}' was not found.");
+			          .SingleOrDefaultAsync(r => r.Id == runId, cancellationToken)
+		          ?? throw new KeyNotFoundException($"Agent run '{runId}' was not found.");
 
 		var tokenDelta = tokensUsed - run.TokensUsed;
 		var timeDelta = timeSpent - run.TimeSpent;
@@ -259,7 +261,7 @@ public class UsageTrackingService(AppDbContext dbContext)
 			if (step != null)
 			{
 				step.TokensUsed += Math.Max(0, tokenDelta);
-				step.TimeSpent += (timeDelta > TimeSpan.Zero ? timeDelta : TimeSpan.Zero);
+				step.TimeSpent += timeDelta > TimeSpan.Zero ? timeDelta : TimeSpan.Zero;
 			}
 		}
 
@@ -267,14 +269,15 @@ public class UsageTrackingService(AppDbContext dbContext)
 	}
 
 	/// <summary>
-	/// Computes quality signals for a feature as an open extension point for future quality metrics.
+	///     Computes quality signals for a feature as an open extension point for future quality metrics.
 	/// </summary>
-	public async Task<QualitySignals> GetQualitySignalsAsync(Guid featureId, CancellationToken cancellationToken = default)
+	public async Task<QualitySignals> GetQualitySignalsAsync(Guid featureId,
+		CancellationToken cancellationToken = default)
 	{
 		var feature = await dbContext.Features
-			.Include(f => f.Steps)
-			.SingleOrDefaultAsync(f => f.Id == featureId, cancellationToken)
-			?? throw new KeyNotFoundException($"Feature '{featureId}' was not found.");
+			              .Include(f => f.Steps)
+			              .SingleOrDefaultAsync(f => f.Id == featureId, cancellationToken)
+		              ?? throw new KeyNotFoundException($"Feature '{featureId}' was not found.");
 
 		var stepAgentFails = feature.Steps.Sum(s => s.AgentReviewFailCount);
 		var stepHumanFails = feature.Steps.Sum(s => s.HumanReviewFailCount);
@@ -290,13 +293,13 @@ public class UsageTrackingService(AppDbContext dbContext)
 		var churnRatio = totalSteps > 0 ? (double)totalFails / totalSteps : totalFails;
 
 		return new QualitySignals(
-			CardId: feature.Id,
-			CardType: CardType.Feature,
-			AgentReviewFailCount: totalAgentFails,
-			HumanReviewFailCount: totalHumanFails,
-			TotalReviewFailures: totalFails,
-			IsRework: isRework,
-			ChurnRatio: churnRatio
+			feature.Id,
+			CardType.Feature,
+			totalAgentFails,
+			totalHumanFails,
+			totalFails,
+			isRework,
+			churnRatio
 		);
 	}
 }

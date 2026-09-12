@@ -15,12 +15,14 @@
     <button class="button-primary" @onclick="OpenCreateDialog">New board</button>
 </section>
 
-@if (!string.IsNullOrWhiteSpace(message))
+@if (!string.IsNullOrWhiteSpace(_message))
 {
-    <div class="toast" role="alert" @key="messageVersion"><span>@message</span><button class="icon-button" type="button" aria-label="Dismiss notification" @onclick="DismissMessage">×</button></div>
+    <div class="toast" role="alert" @key="_messageVersion"><span>@_message</span>
+        <button class="icon-button" type="button" aria-label="Dismiss notification" @onclick="DismissMessage">×</button>
+    </div>
 }
 
-@if (isCreating)
+@if (_isCreating)
 {
     <div class="modal-backdrop" role="presentation">
         <section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-board-title">
@@ -32,18 +34,21 @@
                 <button class="icon-button" type="button" aria-label="Close" @onclick="CloseCreateDialog">×</button>
             </div>
             <form class="form-panel" @onsubmit="CreateAsync" @onsubmit:preventDefault>
-                <label>Name <input @bind="newName" placeholder="Product workspace" /></label>
+                <label>Name <input @bind="_newName" placeholder="Product workspace"/></label>
                 <div class="field-group">
                     <label for="new-repository-path">Repository path</label>
                     <div class="path-input">
-                        <input id="new-repository-path" @bind="newRepoPath" placeholder="/path/to/repository" />
-                        <FolderPicker OnFolderSelected="path => newRepoPath = path" />
+                        <input id="new-repository-path" @bind="_newRepoPath" placeholder="/path/to/repository"/>
+                        <FolderPicker OnFolderSelected="path => _newRepoPath = path"/>
                     </div>
-                    <small>Choose a folder to fill this field. Browsers hide its full local path, so replace the name with the server-visible path when needed.</small>
+                    <small>Choose a folder to fill this field. Browsers hide its full local path, so replace the name
+                        with the server-visible path when needed.</small>
                 </div>
-                <label>Agent concurrency <input type="number" min="1" @bind="newConcurrencyLimit" /></label>
-                <label class="checkbox-label"><input type="checkbox" @bind="newSkipFeatureHumanReview" /> Skip Feature Human Review</label>
-                <label class="checkbox-label"><input type="checkbox" @bind="newSkipStepHumanReview" /> Skip Step Human Review</label>
+                <label>Agent concurrency <input type="number" min="1" @bind="_newConcurrencyLimit"/></label>
+                <label class="checkbox-label"><input type="checkbox" @bind="_newSkipFeatureHumanReview"/> Skip Feature
+                    Human Review</label>
+                <label class="checkbox-label"><input type="checkbox" @bind="_newSkipStepHumanReview"/> Skip Step Human
+                    Review</label>
                 <div class="modal-actions">
                     <button class="button-quiet" type="button" @onclick="CloseCreateDialog">Cancel</button>
                     <button class="button-primary" type="submit">Create board</button>
@@ -53,7 +58,7 @@
     </div>
 }
 
-@if (boards.Count == 0)
+@if (_boards.Count == 0)
 {
     <section class="empty-state">
         <p class="eyebrow">No boards yet</p>
@@ -65,7 +70,7 @@
 else
 {
     <ul class="board-list">
-        @foreach (var board in boards)
+        @foreach (var board in _boards)
         {
             <li>
                 <div>
@@ -84,35 +89,41 @@ else
 }
 
 @code {
-    private List<BoardEntity> boards = [];
-    private string newName = string.Empty;
-    private string newRepoPath = string.Empty;
-    private int newConcurrencyLimit = 1;
-    private bool newSkipFeatureHumanReview;
-    private bool newSkipStepHumanReview;
-    private bool isCreating;
-    private string? message;
-    private int messageVersion;
+    private List<BoardEntity> _boards = [];
+    private string _newName = string.Empty;
+    private string _newRepoPath = string.Empty;
+    private int _newConcurrencyLimit = 1;
+    private bool _newSkipFeatureHumanReview;
+    private bool _newSkipStepHumanReview;
+    private bool _isCreating;
+    private string? _message;
+    private int _messageVersion;
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
 
     private void OpenCreateDialog()
     {
-        newName = string.Empty;
-        newRepoPath = string.Empty;
-        newConcurrencyLimit = 1;
-        newSkipFeatureHumanReview = false;
-        newSkipStepHumanReview = false;
-        isCreating = true;
+        _newName = string.Empty;
+        _newRepoPath = string.Empty;
+        _newConcurrencyLimit = 1;
+        _newSkipFeatureHumanReview = false;
+        _newSkipStepHumanReview = false;
+        _isCreating = true;
     }
 
-    private void CloseCreateDialog() => isCreating = false;
+    private void CloseCreateDialog()
+    {
+        _isCreating = false;
+    }
 
     private async Task CreateAsync()
     {
         try
         {
-            var board = await BoardService.CreateAsync(newName, newRepoPath, newConcurrencyLimit, newSkipFeatureHumanReview, newSkipStepHumanReview);
+            var board = await BoardService.CreateAsync(_newName, _newRepoPath, _newConcurrencyLimit, _newSkipFeatureHumanReview, _newSkipStepHumanReview);
             CloseCreateDialog();
             Navigation.NavigateTo($"/boards/{board.Id}");
         }
@@ -135,13 +146,20 @@ else
         }
     }
 
-    private async Task LoadAsync() => boards = await BoardService.GetAllAsync();
+    private async Task LoadAsync()
+    {
+        _boards = await BoardService.GetAllAsync();
+    }
 
     private void ShowMessage(string text)
     {
-        message = text;
-        messageVersion++;
+        _message = text;
+        _messageVersion++;
     }
 
-    private void DismissMessage() => message = null;
+    private void DismissMessage()
+    {
+        _message = null;
+    }
+
 }

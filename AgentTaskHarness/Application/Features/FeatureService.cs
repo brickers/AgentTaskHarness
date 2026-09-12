@@ -19,10 +19,7 @@ public class FeatureService(AppDbContext dbContext)
 		ArgumentException.ThrowIfNullOrWhiteSpace(title);
 
 		var boardExists = await dbContext.Boards.AnyAsync(b => b.Id == boardId, cancellationToken);
-		if (!boardExists)
-		{
-			throw new KeyNotFoundException($"Board '{boardId}' was not found.");
-		}
+		if (!boardExists) throw new KeyNotFoundException($"Board '{boardId}' was not found.");
 
 		var feature = new Feature
 		{
@@ -50,10 +47,7 @@ public class FeatureService(AppDbContext dbContext)
 			.Include(f => f.DependedOnBy).ThenInclude(d => d.Feature)
 			.SingleOrDefaultAsync(f => f.Id == featureId, cancellationToken);
 
-		if (feature is not null)
-		{
-			feature.Steps = feature.Steps.OrderBy(s => s.CreatedAt).ToList();
-		}
+		if (feature is not null) feature.Steps = feature.Steps.OrderBy(s => s.CreatedAt).ToList();
 
 		return feature;
 	}
@@ -100,21 +94,20 @@ public class FeatureService(AppDbContext dbContext)
 			.ToListAsync(cancellationToken);
 
 		var hasActiveAgent = await dbContext.AgentRuns.AnyAsync(r =>
-			((r.CardType == CardType.Feature && r.CardId == featureId) ||
-			 (r.CardType == CardType.Step && stepIds.Contains(r.CardId))) &&
-			(r.Status == AgentRunStatus.Working || r.Status == AgentRunStatus.WaitingForInput),
+				((r.CardType == CardType.Feature && r.CardId == featureId) ||
+				 (r.CardType == CardType.Step && stepIds.Contains(r.CardId))) &&
+				(r.Status == AgentRunStatus.Working || r.Status == AgentRunStatus.WaitingForInput),
 			cancellationToken);
 
-		if (hasActiveAgent)
-		{
-			throw new InvalidOperationException("Cannot delete a feature while an agent is running.");
-		}
+		if (hasActiveAgent) throw new InvalidOperationException("Cannot delete a feature while an agent is running.");
 
 		dbContext.Features.Remove(feature);
 		await dbContext.SaveChangesAsync(cancellationToken);
 	}
 
-	private async Task<Feature> FindFeatureAsync(Guid featureId, CancellationToken cancellationToken) =>
-		await dbContext.Features.SingleOrDefaultAsync(f => f.Id == featureId, cancellationToken)
-		?? throw new KeyNotFoundException($"Feature '{featureId}' was not found.");
+	private async Task<Feature> FindFeatureAsync(Guid featureId, CancellationToken cancellationToken)
+	{
+		return await dbContext.Features.SingleOrDefaultAsync(f => f.Id == featureId, cancellationToken)
+		       ?? throw new KeyNotFoundException($"Feature '{featureId}' was not found.");
+	}
 }

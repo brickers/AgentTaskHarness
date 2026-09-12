@@ -5,8 +5,12 @@ namespace AgentTaskHarness.Application.Abstractions;
 
 public interface IGitWorktreeService
 {
-	Task HandleFeatureTransitionAsync(Feature feature, WorkflowColumn sourceColumn, WorkflowColumn targetColumn, CancellationToken cancellationToken = default);
-	Task HandleStepTransitionAsync(Step step, WorkflowColumn sourceColumn, WorkflowColumn targetColumn, CancellationToken cancellationToken = default);
+	Task HandleFeatureTransitionAsync(Feature feature, WorkflowColumn sourceColumn, WorkflowColumn targetColumn,
+		CancellationToken cancellationToken = default);
+
+	Task HandleStepTransitionAsync(Step step, WorkflowColumn sourceColumn, WorkflowColumn targetColumn,
+		CancellationToken cancellationToken = default);
+
 	Task DiscardFeatureWorktreeAsync(Feature feature, CancellationToken cancellationToken = default);
 	Task DiscardStepWorktreeAsync(Step step, CancellationToken cancellationToken = default);
 	Task DiscardFeatureUncommittedChangesAsync(Feature feature, CancellationToken cancellationToken = default);
@@ -17,7 +21,8 @@ public interface IGitWorktreeService
 
 public class GitMergeConflictException : InvalidOperationException
 {
-	public GitMergeConflictException() : base("Merge conflict detected. Resolve the conflict in the repository, then resume.")
+	public GitMergeConflictException() : base(
+		"Merge conflict detected. Resolve the conflict in the repository, then resume.")
 	{
 	}
 }

@@ -1,16 +1,17 @@
-@inject IJSRuntime JS
+@inject IJSRuntime Js
 
 <button class="folder-picker" type="button" @onclick="ChooseAsync">Choose folder</button>
 
 @code {
-    [Parameter, EditorRequired] public EventCallback<string> OnFolderSelected { get; set; }
+    [Parameter][EditorRequired] public EventCallback<string> OnFolderSelected { get; set; }
 
     private async Task ChooseAsync()
     {
-        var folderName = await JS.InvokeAsync<string?>("directoryPicker.choose");
+        var folderName = await Js.InvokeAsync<string?>("directoryPicker.choose");
         if (!string.IsNullOrWhiteSpace(folderName))
         {
             await OnFolderSelected.InvokeAsync(folderName);
         }
     }
+
 }

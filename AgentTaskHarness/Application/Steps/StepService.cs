@@ -18,10 +18,7 @@ public class StepService(AppDbContext dbContext)
 		ArgumentException.ThrowIfNullOrWhiteSpace(title);
 
 		var featureExists = await dbContext.Features.AnyAsync(f => f.Id == featureId, cancellationToken);
-		if (!featureExists)
-		{
-			throw new KeyNotFoundException($"Feature '{featureId}' was not found.");
-		}
+		if (!featureExists) throw new KeyNotFoundException($"Feature '{featureId}' was not found.");
 
 		var step = new Step
 		{
@@ -42,12 +39,14 @@ public class StepService(AppDbContext dbContext)
 		return step;
 	}
 
-	public Task<Step?> GetByIdAsync(Guid stepId, CancellationToken cancellationToken = default) =>
-		dbContext.Steps
+	public Task<Step?> GetByIdAsync(Guid stepId, CancellationToken cancellationToken = default)
+	{
+		return dbContext.Steps
 			.Include(s => s.Feature)
 			.Include(s => s.Dependencies).ThenInclude(d => d.DependsOnStep)
 			.Include(s => s.DependedOnBy).ThenInclude(d => d.Step)
 			.SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken);
+	}
 
 	public async Task<List<Step>> GetForFeatureAsync(Guid featureId, CancellationToken cancellationToken = default)
 	{
@@ -84,20 +83,19 @@ public class StepService(AppDbContext dbContext)
 		var step = await FindStepAsync(stepId, cancellationToken);
 
 		var hasActiveAgent = await dbContext.AgentRuns.AnyAsync(r =>
-			r.CardType == CardType.Step && r.CardId == stepId &&
-			(r.Status == AgentRunStatus.Working || r.Status == AgentRunStatus.WaitingForInput),
+				r.CardType == CardType.Step && r.CardId == stepId &&
+				(r.Status == AgentRunStatus.Working || r.Status == AgentRunStatus.WaitingForInput),
 			cancellationToken);
 
-		if (hasActiveAgent)
-		{
-			throw new InvalidOperationException("Cannot delete a step while an agent is running.");
-		}
+		if (hasActiveAgent) throw new InvalidOperationException("Cannot delete a step while an agent is running.");
 
 		dbContext.Steps.Remove(step);
 		await dbContext.SaveChangesAsync(cancellationToken);
 	}
 
-	private async Task<Step> FindStepAsync(Guid stepId, CancellationToken cancellationToken) =>
-		await dbContext.Steps.SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken)
-		?? throw new KeyNotFoundException($"Step '{stepId}' was not found.");
+	private async Task<Step> FindStepAsync(Guid stepId, CancellationToken cancellationToken)
+	{
+		return await dbContext.Steps.SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken)
+		       ?? throw new KeyNotFoundException($"Step '{stepId}' was not found.");
+	}
 }

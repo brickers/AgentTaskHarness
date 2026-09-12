@@ -1,4 +1,3 @@
-using AgentTaskHarness.Application.Abstractions;
 using AgentTaskHarness.Application.Agents;
 using AgentTaskHarness.Application.Boards;
 using AgentTaskHarness.Application.Features;
@@ -16,59 +15,60 @@ namespace AgentTaskHarness.Tests;
 
 public class SchedulerRetryAndCardTypeTests : IAsyncLifetime
 {
-	private readonly SqliteConnection connection = new("Data Source=:memory:");
-	private AppDbContext dbContext = null!;
-	private BoardService boards = null!;
-	private FeatureService features = null!;
-	private StepService steps = null!;
-	private WorkflowTransitionRules rules = null!;
-	private FeatureDependencyService featureDeps = null!;
-	private StepDependencyService stepDeps = null!;
-	private ReviewOutcomeService reviewOutcomeService = null!;
-	private AgentMatchingService agentMatchingService = null!;
-	private TestAgentProcessRunner testProcessRunner = null!;
-	private AgentSchedulerService scheduler = null!;
-	private FeatureTransitionOrchestrator featureOrchestrator = null!;
-	private StepTransitionOrchestrator stepOrchestrator = null!;
+	private readonly SqliteConnection _connection = new("Data Source=:memory:");
+	private AgentMatchingService _agentMatchingService = null!;
+	private BoardService _boards = null!;
+	private AppDbContext _dbContext = null!;
+	private FeatureDependencyService _featureDeps = null!;
+	private FeatureTransitionOrchestrator _featureOrchestrator = null!;
+	private FeatureService _features = null!;
+	private ReviewOutcomeService _reviewOutcomeService = null!;
+	private WorkflowTransitionRules _rules = null!;
+	private AgentSchedulerService _scheduler = null!;
+	private StepDependencyService _stepDeps = null!;
+	private StepTransitionOrchestrator _stepOrchestrator = null!;
+	private StepService _steps = null!;
+	private TestAgentProcessRunner _testProcessRunner = null!;
 
 	public async Task InitializeAsync()
 	{
-		await connection.OpenAsync();
-		dbContext = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
-		await dbContext.Database.MigrateAsync();
+		await _connection.OpenAsync();
+		_dbContext = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
+		await _dbContext.Database.MigrateAsync();
 
-		boards = new BoardService(dbContext);
-		features = new FeatureService(dbContext);
-		steps = new StepService(dbContext);
-		rules = new WorkflowTransitionRules();
-		featureDeps = new FeatureDependencyService(dbContext);
-		stepDeps = new StepDependencyService(dbContext);
-		reviewOutcomeService = new ReviewOutcomeService(dbContext);
-		agentMatchingService = new AgentMatchingService(dbContext);
-		testProcessRunner = new TestAgentProcessRunner();
+		_boards = new BoardService(_dbContext);
+		_features = new FeatureService(_dbContext);
+		_steps = new StepService(_dbContext);
+		_rules = new WorkflowTransitionRules();
+		_featureDeps = new FeatureDependencyService(_dbContext);
+		_stepDeps = new StepDependencyService(_dbContext);
+		_reviewOutcomeService = new ReviewOutcomeService(_dbContext);
+		_agentMatchingService = new AgentMatchingService(_dbContext);
+		_testProcessRunner = new TestAgentProcessRunner();
 
-		scheduler = new AgentSchedulerService(
-			dbContext,
-			agentMatchingService,
-			reviewOutcomeService,
-			stepDeps,
-			testProcessRunner);
+		_scheduler = new AgentSchedulerService(
+			_dbContext,
+			_agentMatchingService,
+			_reviewOutcomeService,
+			_stepDeps,
+			_testProcessRunner);
 
-		featureOrchestrator = new FeatureTransitionOrchestrator(dbContext, rules, featureDeps, reviewOutcomeService);
-		stepOrchestrator = new StepTransitionOrchestrator(
-			dbContext,
-			rules,
-			stepDeps,
-			featureOrchestrator,
-			reviewOutcomeService,
-			gitWorktrees: null,
-			agentScheduler: scheduler);
+		_featureOrchestrator =
+			new FeatureTransitionOrchestrator(_dbContext, _rules, _featureDeps, _reviewOutcomeService);
+		_stepOrchestrator = new StepTransitionOrchestrator(
+			_dbContext,
+			_rules,
+			_stepDeps,
+			_featureOrchestrator,
+			_reviewOutcomeService,
+			null,
+			_scheduler);
 	}
 
 	public async Task DisposeAsync()
 	{
-		await dbContext.DisposeAsync();
-		await connection.DisposeAsync();
+		await _dbContext.DisposeAsync();
+		await _connection.DisposeAsync();
 	}
 
 	private async Task<AgentDefinition> CreateAndAssignAgentAsync(Guid boardId, ColumnScope scope, string? name = null)
@@ -80,36 +80,36 @@ public class SchedulerRetryAndCardTypeTests : IAsyncLifetime
 			Name = agentName,
 			FolderPath = $"/agents/{agentName}"
 		};
-		dbContext.AgentDefinitions.Add(def);
-		await dbContext.SaveChangesAsync();
+		_dbContext.AgentDefinitions.Add(def);
+		await _dbContext.SaveChangesAsync();
 
-		await agentMatchingService.AssignAgentAsync(boardId, scope, def.Id, matchCriteria: null);
+		await _agentMatchingService.AssignAgentAsync(boardId, scope, def.Id);
 		return def;
 	}
 
 	[Fact]
 	public async Task RetryAgentAsync_ResetsFailedRun_AndStartsAgent()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
 		await CreateAndAssignAgentAsync(board.Id, ColumnScope.StepBuild);
 
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
 
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
 
 		// Mark run as Failed
-		var run = await scheduler.GetCurrentRunAsync(step.Id);
+		var run = await _scheduler.GetCurrentRunAsync(step.Id);
 		Assert.NotNull(run);
 		run.Status = AgentRunStatus.Failed;
 		run.EndedAt = DateTimeOffset.UtcNow;
-		await dbContext.SaveChangesAsync();
+		await _dbContext.SaveChangesAsync();
 
 		// Retry
-		await scheduler.RetryAgentAsync(step.Id);
+		await _scheduler.RetryAgentAsync(step.Id);
 
-		var retriedRun = await scheduler.GetCurrentRunAsync(step.Id);
+		var retriedRun = await _scheduler.GetCurrentRunAsync(step.Id);
 		Assert.NotNull(retriedRun);
 		Assert.Equal(AgentRunStatus.Working, retriedRun.Status);
 	}
@@ -117,11 +117,11 @@ public class SchedulerRetryAndCardTypeTests : IAsyncLifetime
 	[Fact]
 	public async Task CardType_Overloads_WorkForFeatureAndStep()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
 
 		// Add a mock Feature run
-		dbContext.AgentRuns.Add(new AgentRun
+		_dbContext.AgentRuns.Add(new AgentRun
 		{
 			CardType = CardType.Feature,
 			CardId = feat.Id,
@@ -129,17 +129,17 @@ public class SchedulerRetryAndCardTypeTests : IAsyncLifetime
 			StartedAt = DateTimeOffset.UtcNow,
 			ProcessId = 999
 		});
-		await dbContext.SaveChangesAsync();
+		await _dbContext.SaveChangesAsync();
 
-		Assert.True(await scheduler.IsAgentRunningAsync(CardType.Feature, feat.Id));
-		var currentRun = await scheduler.GetCurrentRunAsync(CardType.Feature, feat.Id);
+		Assert.True(await _scheduler.IsAgentRunningAsync(CardType.Feature, feat.Id));
+		var currentRun = await _scheduler.GetCurrentRunAsync(CardType.Feature, feat.Id);
 		Assert.NotNull(currentRun);
 		Assert.Equal(AgentRunStatus.Working, currentRun.Status);
 
-		await scheduler.StopAgentAsync(CardType.Feature, feat.Id, tokensUsed: 100, timeSpent: TimeSpan.FromSeconds(10));
-		Assert.False(await scheduler.IsAgentRunningAsync(CardType.Feature, feat.Id));
+		await _scheduler.StopAgentAsync(CardType.Feature, feat.Id, 100, TimeSpan.FromSeconds(10));
+		Assert.False(await _scheduler.IsAgentRunningAsync(CardType.Feature, feat.Id));
 
-		var stoppedRun = await scheduler.GetCurrentRunAsync(CardType.Feature, feat.Id);
+		var stoppedRun = await _scheduler.GetCurrentRunAsync(CardType.Feature, feat.Id);
 		Assert.NotNull(stoppedRun);
 		Assert.Equal(AgentRunStatus.Stopped, stoppedRun.Status);
 	}

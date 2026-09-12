@@ -5,9 +5,10 @@ namespace AgentTaskHarness.Infrastructure.Agents;
 
 public class NoOpAgentProcessRunner : IAgentProcessRunner
 {
-	public Task<AgentProcessResult> StartAsync(Step step, AgentDefinition definition, CancellationToken cancellationToken = default)
+	public Task<AgentProcessResult> StartAsync(Step step, AgentDefinition definition,
+		CancellationToken cancellationToken = default)
 	{
-		return Task.FromResult(new AgentProcessResult(ProcessId: null, SessionLink: null));
+		return Task.FromResult(new AgentProcessResult(null, null));
 	}
 
 	public Task StopAsync(int processId, CancellationToken cancellationToken = default)

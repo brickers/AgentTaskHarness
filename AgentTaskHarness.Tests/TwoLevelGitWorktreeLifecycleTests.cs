@@ -5,7 +5,6 @@ using AgentTaskHarness.Application.Features;
 using AgentTaskHarness.Application.Reviews;
 using AgentTaskHarness.Application.Steps;
 using AgentTaskHarness.Application.Workflow;
-using AgentTaskHarness.Domain.Entities;
 using AgentTaskHarness.Domain.Enums;
 using AgentTaskHarness.Infrastructure.Git;
 using AgentTaskHarness.Infrastructure.Persistence;
@@ -18,78 +17,93 @@ namespace AgentTaskHarness.Tests;
 
 public class TwoLevelGitWorktreeLifecycleTests : IAsyncLifetime
 {
-	private readonly SqliteConnection connection = new("Data Source=:memory:");
-	private readonly string workspacePath = Path.Combine(Path.GetTempPath(), $"agent-task-harness-tests-{Guid.NewGuid():N}");
-	private AppDbContext dbContext = null!;
-	private BoardService boards = null!;
-	private FeatureService features = null!;
-	private StepService steps = null!;
-	private WorkflowTransitionRules rules = null!;
-	private FeatureDependencyService featureDeps = null!;
-	private StepDependencyService stepDeps = null!;
-	private ReviewOutcomeService reviewOutcomeService = null!;
-	private LibGit2WorktreeService gitWorktrees = null!;
-	private FeatureTransitionOrchestrator featureOrchestrator = null!;
-	private StepTransitionOrchestrator stepOrchestrator = null!;
+	private readonly SqliteConnection _connection = new("Data Source=:memory:");
+
+	private readonly string _workspacePath =
+		Path.Combine(Path.GetTempPath(), $"agent-task-harness-tests-{Guid.NewGuid():N}");
+
+	private BoardService _boards = null!;
+	private AppDbContext _dbContext = null!;
+	private FeatureDependencyService _featureDeps = null!;
+	private FeatureTransitionOrchestrator _featureOrchestrator = null!;
+	private FeatureService _features = null!;
+	private LibGit2WorktreeService _gitWorktrees = null!;
+	private ReviewOutcomeService _reviewOutcomeService = null!;
+	private WorkflowTransitionRules _rules = null!;
+	private StepDependencyService _stepDeps = null!;
+	private StepTransitionOrchestrator _stepOrchestrator = null!;
+	private StepService _steps = null!;
 
 	public async Task InitializeAsync()
 	{
-		await connection.OpenAsync();
-		dbContext = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
-		await dbContext.Database.MigrateAsync();
+		await _connection.OpenAsync();
+		_dbContext = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
+		await _dbContext.Database.MigrateAsync();
 
-		boards = new BoardService(dbContext);
-		features = new FeatureService(dbContext);
-		steps = new StepService(dbContext);
-		rules = new WorkflowTransitionRules();
-		featureDeps = new FeatureDependencyService(dbContext);
-		stepDeps = new StepDependencyService(dbContext);
-		reviewOutcomeService = new ReviewOutcomeService(dbContext);
-		gitWorktrees = new LibGit2WorktreeService(dbContext);
-		featureOrchestrator = new FeatureTransitionOrchestrator(dbContext, rules, featureDeps, reviewOutcomeService, gitWorktrees);
-		stepOrchestrator = new StepTransitionOrchestrator(dbContext, rules, stepDeps, featureOrchestrator, reviewOutcomeService, gitWorktrees);
+		_boards = new BoardService(_dbContext);
+		_features = new FeatureService(_dbContext);
+		_steps = new StepService(_dbContext);
+		_rules = new WorkflowTransitionRules();
+		_featureDeps = new FeatureDependencyService(_dbContext);
+		_stepDeps = new StepDependencyService(_dbContext);
+		_reviewOutcomeService = new ReviewOutcomeService(_dbContext);
+		_gitWorktrees = new LibGit2WorktreeService(_dbContext);
+		_featureOrchestrator =
+			new FeatureTransitionOrchestrator(_dbContext, _rules, _featureDeps, _reviewOutcomeService, _gitWorktrees);
+		_stepOrchestrator = new StepTransitionOrchestrator(_dbContext, _rules, _stepDeps, _featureOrchestrator,
+			_reviewOutcomeService, _gitWorktrees);
 
-		Directory.CreateDirectory(workspacePath);
-		await InitializeGitRepositoryAsync(workspacePath);
-		File.WriteAllText(Path.Combine(workspacePath, "README.md"), "initial");
-		File.WriteAllText(Path.Combine(workspacePath, "shared.txt"), "initial");
-		using var repository = new Repository(workspacePath);
+		Directory.CreateDirectory(_workspacePath);
+		await InitializeGitRepositoryAsync(_workspacePath);
+		File.WriteAllText(Path.Combine(_workspacePath, "README.md"), "initial");
+		File.WriteAllText(Path.Combine(_workspacePath, "shared.txt"), "initial");
+		using var repository = new Repository(_workspacePath);
 		Commands.Stage(repository, "*");
 		repository.Commit("Initial commit", Signature(), Signature());
 	}
 
 	public async Task DisposeAsync()
 	{
-		await dbContext.DisposeAsync();
-		await connection.DisposeAsync();
+		await _dbContext.DisposeAsync();
+		await _connection.DisposeAsync();
 
-		var worktreesParent = $"{workspacePath}.worktrees";
+		var worktreesParent = $"{_workspacePath}.worktrees";
 		if (Directory.Exists(worktreesParent))
-		{
-			try { Directory.Delete(worktreesParent, true); } catch { /* ignore */ }
-		}
+			try
+			{
+				Directory.Delete(worktreesParent, true);
+			}
+			catch
+			{
+				/* ignore */
+			}
 
-		if (Directory.Exists(workspacePath))
-		{
-			try { Directory.Delete(workspacePath, true); } catch { /* ignore */ }
-		}
+		if (Directory.Exists(_workspacePath))
+			try
+			{
+				Directory.Delete(_workspacePath, true);
+			}
+			catch
+			{
+				/* ignore */
+			}
 	}
 
 	[Fact]
 	public async Task TwoLevelWorktree_CreationCommitsAndMergeOnDone()
 	{
-		var board = await boards.CreateAsync("Harness", workspacePath, 1);
-		var feat = await features.CreateAsync(board.Id, "Feature 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
+		var board = await _boards.CreateAsync("Harness", _workspacePath);
+		var feat = await _features.CreateAsync(board.Id, "Feature 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
 
 		// Move feature to Ready (batch-moves step to Ready)
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
 
 		// Step moves to Build -> Trigger 1 automatically moves Feature to Build first!
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
 
-		var refreshedFeat = (await features.GetByIdAsync(feat.Id))!;
-		var refreshedStep = (await steps.GetByIdAsync(step.Id))!;
+		var refreshedFeat = (await _features.GetByIdAsync(feat.Id))!;
+		var refreshedStep = (await _steps.GetByIdAsync(step.Id))!;
 
 		Assert.Equal(WorkflowColumn.Build, refreshedFeat.WorkflowColumn);
 		Assert.Equal(WorkflowColumn.Build, refreshedStep.WorkflowColumn);
@@ -108,12 +122,12 @@ public class TwoLevelGitWorktreeLifecycleTests : IAsyncLifetime
 		File.WriteAllText(Path.Combine(refreshedStep.WorktreePath!, "step_output.txt"), "step content");
 
 		// Step advances Build -> AgentReview -> HumanReview -> Done
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.HumanReview);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Done);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.HumanReview);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Done);
 
 		// Step is Done: merged into Feature branch, Step worktree and branch deleted
-		var doneStep = (await steps.GetByIdAsync(step.Id))!;
+		var doneStep = (await _steps.GetByIdAsync(step.Id))!;
 		Assert.Equal(WorkflowColumn.Done, doneStep.WorkflowColumn);
 		Assert.Null(doneStep.BranchName);
 		Assert.Null(doneStep.WorktreePath);
@@ -123,40 +137,40 @@ public class TwoLevelGitWorktreeLifecycleTests : IAsyncLifetime
 		Assert.True(File.Exists(Path.Combine(refreshedFeat.WorktreePath!, "step_output.txt")));
 
 		// Trigger 2: all steps Done -> Feature automatically advanced to AgentReview
-		refreshedFeat = (await features.GetByIdAsync(feat.Id))!;
+		refreshedFeat = (await _features.GetByIdAsync(feat.Id))!;
 		Assert.Equal(WorkflowColumn.AgentReview, refreshedFeat.WorkflowColumn);
 
 		// In Feature worktree, add another file
 		File.WriteAllText(Path.Combine(refreshedFeat.WorktreePath!, "feature_output.txt"), "feature content");
 
 		// Feature advances AgentReview -> HumanReview -> Done
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.HumanReview);
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Done);
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.HumanReview);
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Done);
 
 		// Feature is Done: merged into main, Feature worktree and branch deleted
-		var doneFeat = (await features.GetByIdAsync(feat.Id))!;
+		var doneFeat = (await _features.GetByIdAsync(feat.Id))!;
 		Assert.Equal(WorkflowColumn.Done, doneFeat.WorkflowColumn);
 		Assert.Null(doneFeat.BranchName);
 		Assert.Null(doneFeat.WorktreePath);
 		Assert.False(Directory.Exists(refreshedFeat.WorktreePath!));
 
 		// Check that both files now exist in the main repository!
-		Assert.True(File.Exists(Path.Combine(workspacePath, "step_output.txt")));
-		Assert.True(File.Exists(Path.Combine(workspacePath, "feature_output.txt")));
+		Assert.True(File.Exists(Path.Combine(_workspacePath, "step_output.txt")));
+		Assert.True(File.Exists(Path.Combine(_workspacePath, "feature_output.txt")));
 	}
 
 	[Fact]
 	public async Task Transitions_PauseOrDiscardWorktreeWhenReturningToBacklog()
 	{
-		var board = await boards.CreateAsync("Harness", workspacePath, 1);
-		var feat = await features.CreateAsync(board.Id, "Feature 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
+		var board = await _boards.CreateAsync("Harness", _workspacePath);
+		var feat = await _features.CreateAsync(board.Id, "Feature 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
 
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
 
-		var initialStep = (await steps.GetByIdAsync(step.Id))!;
-		var initialFeature = (await features.GetByIdAsync(feat.Id))!;
+		var initialStep = (await _steps.GetByIdAsync(step.Id))!;
+		var initialFeature = (await _features.GetByIdAsync(feat.Id))!;
 		var stepWorktree = initialStep.WorktreePath!;
 		var featWorktree = initialFeature.WorktreePath!;
 
@@ -164,28 +178,28 @@ public class TwoLevelGitWorktreeLifecycleTests : IAsyncLifetime
 		Assert.True(Directory.Exists(featWorktree));
 
 		// Move Step to Backlog (pause): worktree & branch preserved
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Backlog);
-		var pausedStep = (await steps.GetByIdAsync(step.Id))!;
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Backlog);
+		var pausedStep = (await _steps.GetByIdAsync(step.Id))!;
 		Assert.Equal(initialStep.BranchName, pausedStep.BranchName);
 		Assert.Equal(stepWorktree, pausedStep.WorktreePath);
 		Assert.True(Directory.Exists(stepWorktree));
 
 		// Move Step Backlog -> Ready -> Build: worktree reused
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Ready);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
-		var resumedStep = (await steps.GetByIdAsync(step.Id))!;
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Ready);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		var resumedStep = (await _steps.GetByIdAsync(step.Id))!;
 		Assert.Equal(stepWorktree, resumedStep.WorktreePath);
 
 		// Move Step to Backlog (discard): worktree & branch removed
-		await stepOrchestrator.MoveAndDiscardWorktreeAsync(step.Id, WorkflowColumn.Backlog);
-		var discardedStep = (await steps.GetByIdAsync(step.Id))!;
+		await _stepOrchestrator.MoveAndDiscardWorktreeAsync(step.Id, WorkflowColumn.Backlog);
+		var discardedStep = (await _steps.GetByIdAsync(step.Id))!;
 		Assert.Null(discardedStep.BranchName);
 		Assert.Null(discardedStep.WorktreePath);
 		Assert.False(Directory.Exists(stepWorktree));
 
 		// Move Feature to Backlog (discard): worktree & branch removed
-		await featureOrchestrator.MoveAndDiscardWorktreeAsync(feat.Id, WorkflowColumn.Backlog);
-		var discardedFeature = (await features.GetByIdAsync(feat.Id))!;
+		await _featureOrchestrator.MoveAndDiscardWorktreeAsync(feat.Id, WorkflowColumn.Backlog);
+		var discardedFeature = (await _features.GetByIdAsync(feat.Id))!;
 		Assert.Null(discardedFeature.BranchName);
 		Assert.Null(discardedFeature.WorktreePath);
 		Assert.False(Directory.Exists(featWorktree));
@@ -194,22 +208,22 @@ public class TwoLevelGitWorktreeLifecycleTests : IAsyncLifetime
 	[Fact]
 	public async Task DiscardUncommittedChanges_ResetsTrackedAndCleansUntracked()
 	{
-		var board = await boards.CreateAsync("Harness", workspacePath, 1);
-		var feat = await features.CreateAsync(board.Id, "Feature 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
+		var board = await _boards.CreateAsync("Harness", _workspacePath);
+		var feat = await _features.CreateAsync(board.Id, "Feature 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
 
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
 
-		var currentStep = (await steps.GetByIdAsync(step.Id))!;
-		var currentFeat = (await features.GetByIdAsync(feat.Id))!;
+		var currentStep = (await _steps.GetByIdAsync(step.Id))!;
+		var currentFeat = (await _features.GetByIdAsync(feat.Id))!;
 
 		// Dirty changes in step worktree
 		File.WriteAllText(Path.Combine(currentStep.WorktreePath!, "shared.txt"), "dirty step");
 		File.WriteAllText(Path.Combine(currentStep.WorktreePath!, "untracked.txt"), "untracked step");
 
 		// Discard uncommitted changes in step
-		await stepOrchestrator.DiscardUncommittedChangesAsync(step.Id);
+		await _stepOrchestrator.DiscardUncommittedChangesAsync(step.Id);
 		Assert.Equal("initial", File.ReadAllText(Path.Combine(currentStep.WorktreePath!, "shared.txt")));
 		Assert.False(File.Exists(Path.Combine(currentStep.WorktreePath!, "untracked.txt")));
 
@@ -218,7 +232,7 @@ public class TwoLevelGitWorktreeLifecycleTests : IAsyncLifetime
 		File.WriteAllText(Path.Combine(currentFeat.WorktreePath!, "untracked_feat.txt"), "untracked feat");
 
 		// Discard uncommitted changes in feature
-		await featureOrchestrator.DiscardUncommittedChangesAsync(feat.Id);
+		await _featureOrchestrator.DiscardUncommittedChangesAsync(feat.Id);
 		Assert.Equal("initial", File.ReadAllText(Path.Combine(currentFeat.WorktreePath!, "shared.txt")));
 		Assert.False(File.Exists(Path.Combine(currentFeat.WorktreePath!, "untracked_feat.txt")));
 	}
@@ -226,15 +240,15 @@ public class TwoLevelGitWorktreeLifecycleTests : IAsyncLifetime
 	[Fact]
 	public async Task StepMergeConflict_SetsConflictPendingAndResumesIndependently()
 	{
-		var board = await boards.CreateAsync("Harness", workspacePath, 1);
-		var feat = await features.CreateAsync(board.Id, "Feature 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
+		var board = await _boards.CreateAsync("Harness", _workspacePath);
+		var feat = await _features.CreateAsync(board.Id, "Feature 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
 
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
 
-		var currentStep = (await steps.GetByIdAsync(step.Id))!;
-		var currentFeat = (await features.GetByIdAsync(feat.Id))!;
+		var currentStep = (await _steps.GetByIdAsync(step.Id))!;
+		var currentFeat = (await _features.GetByIdAsync(feat.Id))!;
 
 		// Edit shared.txt in step worktree
 		File.WriteAllText(Path.Combine(currentStep.WorktreePath!, "shared.txt"), "step conflicting line");
@@ -247,14 +261,15 @@ public class TwoLevelGitWorktreeLifecycleTests : IAsyncLifetime
 			featRepo.Commit("Feature conflict line commit", Signature(), Signature());
 		}
 
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.HumanReview);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.HumanReview);
 
 		// Moving step to Done triggers merge into Feature branch -> throws GitMergeConflictException
-		await Assert.ThrowsAsync<GitMergeConflictException>(() => stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Done));
+		await Assert.ThrowsAsync<GitMergeConflictException>(() =>
+			_stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Done));
 
-		var conflictedStep = (await steps.GetByIdAsync(step.Id))!;
-		var unconflictedFeat = (await features.GetByIdAsync(feat.Id))!;
+		var conflictedStep = (await _steps.GetByIdAsync(step.Id))!;
+		var unconflictedFeat = (await _features.GetByIdAsync(feat.Id))!;
 
 		Assert.True(conflictedStep.MergeConflictPending);
 		Assert.False(unconflictedFeat.MergeConflictPending);
@@ -269,67 +284,68 @@ public class TwoLevelGitWorktreeLifecycleTests : IAsyncLifetime
 		}
 
 		// Resume merge
-		await stepOrchestrator.ResumeMergeAsync(step.Id);
+		await _stepOrchestrator.ResumeMergeAsync(step.Id);
 
-		var completedStep = (await steps.GetByIdAsync(step.Id))!;
+		var completedStep = (await _steps.GetByIdAsync(step.Id))!;
 		Assert.Equal(WorkflowColumn.Done, completedStep.WorkflowColumn);
 		Assert.False(completedStep.MergeConflictPending);
 		Assert.Null(completedStep.BranchName);
 		Assert.Null(completedStep.WorktreePath);
 
 		// Trigger 2 also advanced Feature to AgentReview
-		var updatedFeat = (await features.GetByIdAsync(feat.Id))!;
+		var updatedFeat = (await _features.GetByIdAsync(feat.Id))!;
 		Assert.Equal(WorkflowColumn.AgentReview, updatedFeat.WorkflowColumn);
 	}
 
 	[Fact]
 	public async Task FeatureMergeConflict_SetsConflictPendingAndResumesIndependently()
 	{
-		var board = await boards.CreateAsync("Harness", workspacePath, 1);
-		var feat = await features.CreateAsync(board.Id, "Feature 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
+		var board = await _boards.CreateAsync("Harness", _workspacePath);
+		var feat = await _features.CreateAsync(board.Id, "Feature 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
 
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.HumanReview);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Done);
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.HumanReview);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Done);
 
-		var currentFeat = (await features.GetByIdAsync(feat.Id))!;
+		var currentFeat = (await _features.GetByIdAsync(feat.Id))!;
 		Assert.Equal(WorkflowColumn.AgentReview, currentFeat.WorkflowColumn);
 
 		// In Feature worktree: edit shared.txt
 		File.WriteAllText(Path.Combine(currentFeat.WorktreePath!, "shared.txt"), "feature conflicting commit");
 
 		// In Main repo: edit shared.txt and commit
-		using (var mainRepo = new Repository(workspacePath))
+		using (var mainRepo = new Repository(_workspacePath))
 		{
-			File.WriteAllText(Path.Combine(workspacePath, "shared.txt"), "main conflicting commit");
+			File.WriteAllText(Path.Combine(_workspacePath, "shared.txt"), "main conflicting commit");
 			Commands.Stage(mainRepo, "shared.txt");
 			mainRepo.Commit("Main conflicting commit", Signature(), Signature());
 		}
 
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.HumanReview);
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.HumanReview);
 
 		// Moving feature to Done triggers merge into main -> throws GitMergeConflictException
-		await Assert.ThrowsAsync<GitMergeConflictException>(() => featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Done));
+		await Assert.ThrowsAsync<GitMergeConflictException>(() =>
+			_featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Done));
 
-		var conflictedFeat = (await features.GetByIdAsync(feat.Id))!;
+		var conflictedFeat = (await _features.GetByIdAsync(feat.Id))!;
 		Assert.True(conflictedFeat.MergeConflictPending);
 		Assert.Equal(WorkflowColumn.HumanReview, conflictedFeat.WorkflowColumn);
 
 		// Resolve conflict in main repo
-		using (var mainRepo = new Repository(workspacePath))
+		using (var mainRepo = new Repository(_workspacePath))
 		{
-			File.WriteAllText(Path.Combine(workspacePath, "shared.txt"), "resolved feature-main line");
+			File.WriteAllText(Path.Combine(_workspacePath, "shared.txt"), "resolved feature-main line");
 			Commands.Stage(mainRepo, "shared.txt");
 			mainRepo.Commit("Resolved merge conflict between feature and main", Signature(), Signature());
 		}
 
 		// Resume merge
-		await featureOrchestrator.ResumeMergeAsync(feat.Id);
+		await _featureOrchestrator.ResumeMergeAsync(feat.Id);
 
-		var completedFeat = (await features.GetByIdAsync(feat.Id))!;
+		var completedFeat = (await _features.GetByIdAsync(feat.Id))!;
 		Assert.Equal(WorkflowColumn.Done, completedFeat.WorkflowColumn);
 		Assert.False(completedFeat.MergeConflictPending);
 		Assert.Null(completedFeat.BranchName);
@@ -337,7 +353,10 @@ public class TwoLevelGitWorktreeLifecycleTests : IAsyncLifetime
 		Assert.False(Directory.Exists(currentFeat.WorktreePath!));
 	}
 
-	private static Signature Signature() => new("Test User", "test@example.com", DateTimeOffset.UtcNow);
+	private static Signature Signature()
+	{
+		return new Signature("Test User", "test@example.com", DateTimeOffset.UtcNow);
+	}
 
 	private static async Task InitializeGitRepositoryAsync(string path)
 	{

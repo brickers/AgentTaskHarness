@@ -12,37 +12,38 @@ namespace AgentTaskHarness.Tests;
 
 public class CommentServiceTests : IAsyncLifetime
 {
-	private readonly SqliteConnection connection = new("Data Source=:memory:");
-	private AppDbContext dbContext = null!;
-	private BoardService boards = null!;
-	private FeatureService features = null!;
-	private StepService steps = null!;
-	private CommentService commentService = null!;
+	private readonly SqliteConnection _connection = new("Data Source=:memory:");
+	private BoardService _boards = null!;
+	private CommentService _commentService = null!;
+	private AppDbContext _dbContext = null!;
+	private FeatureService _features = null!;
+	private StepService _steps = null!;
 
 	public async Task InitializeAsync()
 	{
-		await connection.OpenAsync();
-		dbContext = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
-		await dbContext.Database.MigrateAsync();
-		boards = new BoardService(dbContext);
-		features = new FeatureService(dbContext);
-		steps = new StepService(dbContext);
-		commentService = new CommentService(dbContext);
+		await _connection.OpenAsync();
+		_dbContext = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
+		await _dbContext.Database.MigrateAsync();
+		_boards = new BoardService(_dbContext);
+		_features = new FeatureService(_dbContext);
+		_steps = new StepService(_dbContext);
+		_commentService = new CommentService(_dbContext);
 	}
 
 	public async Task DisposeAsync()
 	{
-		await dbContext.DisposeAsync();
-		await connection.DisposeAsync();
+		await _dbContext.DisposeAsync();
+		await _connection.DisposeAsync();
 	}
 
 	[Fact]
 	public async Task AddCommentAsync_CreatesCommentForFeature()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
 
-		var comment = await commentService.AddCommentAsync(CardType.Feature, feat.Id, "Agent Smith", "Initial inspection completed.");
+		var comment = await _commentService.AddCommentAsync(CardType.Feature, feat.Id, "Agent Smith",
+			"Initial inspection completed.");
 
 		Assert.NotEqual(Guid.Empty, comment.Id);
 		Assert.Equal(CardType.Feature, comment.CardType);
@@ -54,11 +55,12 @@ public class CommentServiceTests : IAsyncLifetime
 	[Fact]
 	public async Task AddCommentAsync_CreatesCommentForStep()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
 
-		var comment = await commentService.AddCommentAsync(CardType.Step, step.Id, "Human Reviewer", "Needs better error handling.");
+		var comment = await _commentService.AddCommentAsync(CardType.Step, step.Id, "Human Reviewer",
+			"Needs better error handling.");
 
 		Assert.NotEqual(Guid.Empty, comment.Id);
 		Assert.Equal(CardType.Step, comment.CardType);
@@ -70,49 +72,49 @@ public class CommentServiceTests : IAsyncLifetime
 	[Fact]
 	public async Task AddCommentAsync_RejectsInvalidInput()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
 
 		await Assert.ThrowsAsync<ArgumentException>(() =>
-			commentService.AddCommentAsync(CardType.Feature, feat.Id, "", "Some body"));
+			_commentService.AddCommentAsync(CardType.Feature, feat.Id, "", "Some body"));
 
 		await Assert.ThrowsAsync<ArgumentException>(() =>
-			commentService.AddCommentAsync(CardType.Feature, feat.Id, "   ", "Some body"));
+			_commentService.AddCommentAsync(CardType.Feature, feat.Id, "   ", "Some body"));
 
 		await Assert.ThrowsAsync<ArgumentException>(() =>
-			commentService.AddCommentAsync(CardType.Feature, feat.Id, new string('a', 201), "Some body"));
+			_commentService.AddCommentAsync(CardType.Feature, feat.Id, new string('a', 201), "Some body"));
 
 		await Assert.ThrowsAsync<ArgumentException>(() =>
-			commentService.AddCommentAsync(CardType.Feature, feat.Id, "Author", ""));
+			_commentService.AddCommentAsync(CardType.Feature, feat.Id, "Author", ""));
 
 		await Assert.ThrowsAsync<ArgumentException>(() =>
-			commentService.AddCommentAsync(CardType.Feature, feat.Id, "Author", "   "));
+			_commentService.AddCommentAsync(CardType.Feature, feat.Id, "Author", "   "));
 
 		await Assert.ThrowsAsync<KeyNotFoundException>(() =>
-			commentService.AddCommentAsync(CardType.Feature, Guid.NewGuid(), "Author", "Body"));
+			_commentService.AddCommentAsync(CardType.Feature, Guid.NewGuid(), "Author", "Body"));
 
 		await Assert.ThrowsAsync<KeyNotFoundException>(() =>
-			commentService.AddCommentAsync(CardType.Step, Guid.NewGuid(), "Author", "Body"));
+			_commentService.AddCommentAsync(CardType.Step, Guid.NewGuid(), "Author", "Body"));
 	}
 
 	[Fact]
 	public async Task GetCommentsAsync_ReturnsCommentsOrderedByCreatedAt()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
 
-		var comment1 = await commentService.AddCommentAsync(CardType.Feature, feat.Id, "Author 1", "First comment");
+		var comment1 = await _commentService.AddCommentAsync(CardType.Feature, feat.Id, "Author 1", "First comment");
 		comment1.CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-10);
 
-		var comment2 = await commentService.AddCommentAsync(CardType.Feature, feat.Id, "Author 2", "Second comment");
+		var comment2 = await _commentService.AddCommentAsync(CardType.Feature, feat.Id, "Author 2", "Second comment");
 		comment2.CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
 
-		var comment3 = await commentService.AddCommentAsync(CardType.Feature, feat.Id, "Author 3", "Third comment");
+		var comment3 = await _commentService.AddCommentAsync(CardType.Feature, feat.Id, "Author 3", "Third comment");
 		comment3.CreatedAt = DateTimeOffset.UtcNow;
 
-		await dbContext.SaveChangesAsync();
+		await _dbContext.SaveChangesAsync();
 
-		var comments = await commentService.GetCommentsAsync(CardType.Feature, feat.Id);
+		var comments = await _commentService.GetCommentsAsync(CardType.Feature, feat.Id);
 
 		Assert.Equal(3, comments.Count);
 		Assert.Equal("First comment", comments[0].Body);
@@ -123,16 +125,16 @@ public class CommentServiceTests : IAsyncLifetime
 	[Fact]
 	public async Task GetCommentCountsForBoardAsync_ReturnsCounts()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat1 = await features.CreateAsync(board.Id, "Feat 1");
-		var feat2 = await features.CreateAsync(board.Id, "Feat 2");
-		var step1 = await steps.CreateAsync(feat1.Id, "Step 1");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat1 = await _features.CreateAsync(board.Id, "Feat 1");
+		var feat2 = await _features.CreateAsync(board.Id, "Feat 2");
+		var step1 = await _steps.CreateAsync(feat1.Id, "Step 1");
 
-		await commentService.AddCommentAsync(CardType.Feature, feat1.Id, "Author", "C1");
-		await commentService.AddCommentAsync(CardType.Feature, feat1.Id, "Author", "C2");
-		await commentService.AddCommentAsync(CardType.Step, step1.Id, "Author", "C3");
+		await _commentService.AddCommentAsync(CardType.Feature, feat1.Id, "Author", "C1");
+		await _commentService.AddCommentAsync(CardType.Feature, feat1.Id, "Author", "C2");
+		await _commentService.AddCommentAsync(CardType.Step, step1.Id, "Author", "C3");
 
-		var counts = await commentService.GetCommentCountsForBoardAsync(board.Id);
+		var counts = await _commentService.GetCommentCountsForBoardAsync(board.Id);
 
 		Assert.Equal(2, counts[(CardType.Feature, feat1.Id)]);
 		Assert.False(counts.ContainsKey((CardType.Feature, feat2.Id)));
@@ -142,13 +144,13 @@ public class CommentServiceTests : IAsyncLifetime
 	[Fact]
 	public async Task DeleteCommentAsync_RemovesComment()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
 
-		var comment = await commentService.AddCommentAsync(CardType.Feature, feat.Id, "Author", "To delete");
-		Assert.Equal(1, await commentService.GetCommentCountAsync(CardType.Feature, feat.Id));
+		var comment = await _commentService.AddCommentAsync(CardType.Feature, feat.Id, "Author", "To delete");
+		Assert.Equal(1, await _commentService.GetCommentCountAsync(CardType.Feature, feat.Id));
 
-		await commentService.DeleteCommentAsync(comment.Id);
-		Assert.Equal(0, await commentService.GetCommentCountAsync(CardType.Feature, feat.Id));
+		await _commentService.DeleteCommentAsync(comment.Id);
+		Assert.Equal(0, await _commentService.GetCommentCountAsync(CardType.Feature, feat.Id));
 	}
 }

@@ -34,17 +34,13 @@ public class ReviewOutcomeService(AppDbContext dbContext)
 		ArgumentNullException.ThrowIfNull(feature);
 
 		if (reviewColumn == WorkflowColumn.AgentReview)
-		{
 			feature.AgentReviewFailCount++;
-		}
 		else if (reviewColumn == WorkflowColumn.HumanReview)
-		{
 			feature.HumanReviewFailCount++;
-		}
 		else
-		{
-			throw new ArgumentException($"Only AgentReview and HumanReview failures can be recorded. Given: '{reviewColumn}'.", nameof(reviewColumn));
-		}
+			throw new ArgumentException(
+				$"Only AgentReview and HumanReview failures can be recorded. Given: '{reviewColumn}'.",
+				nameof(reviewColumn));
 	}
 
 	public void RecordReviewFailure(Step step, WorkflowColumn reviewColumn)
@@ -52,34 +48,31 @@ public class ReviewOutcomeService(AppDbContext dbContext)
 		ArgumentNullException.ThrowIfNull(step);
 
 		if (reviewColumn == WorkflowColumn.AgentReview)
-		{
 			step.AgentReviewFailCount++;
-		}
 		else if (reviewColumn == WorkflowColumn.HumanReview)
-		{
 			step.HumanReviewFailCount++;
-		}
 		else
-		{
-			throw new ArgumentException($"Only AgentReview and HumanReview failures can be recorded. Given: '{reviewColumn}'.", nameof(reviewColumn));
-		}
+			throw new ArgumentException(
+				$"Only AgentReview and HumanReview failures can be recorded. Given: '{reviewColumn}'.",
+				nameof(reviewColumn));
 	}
 
-	public async Task RecordReviewFailureAsync(CardType cardType, Guid cardId, WorkflowColumn reviewColumn, CancellationToken cancellationToken = default)
+	public async Task RecordReviewFailureAsync(CardType cardType, Guid cardId, WorkflowColumn reviewColumn,
+		CancellationToken cancellationToken = default)
 	{
 		if (cardType == CardType.Feature)
 		{
 			var feature = await dbContext.Features
-				.SingleOrDefaultAsync(f => f.Id == cardId, cancellationToken)
-				?? throw new KeyNotFoundException($"Feature '{cardId}' was not found.");
+				              .SingleOrDefaultAsync(f => f.Id == cardId, cancellationToken)
+			              ?? throw new KeyNotFoundException($"Feature '{cardId}' was not found.");
 
 			RecordReviewFailure(feature, reviewColumn);
 		}
 		else if (cardType == CardType.Step)
 		{
 			var step = await dbContext.Steps
-				.SingleOrDefaultAsync(s => s.Id == cardId, cancellationToken)
-				?? throw new KeyNotFoundException($"Step '{cardId}' was not found.");
+				           .SingleOrDefaultAsync(s => s.Id == cardId, cancellationToken)
+			           ?? throw new KeyNotFoundException($"Step '{cardId}' was not found.");
 
 			RecordReviewFailure(step, reviewColumn);
 		}
@@ -92,7 +85,9 @@ public class ReviewOutcomeService(AppDbContext dbContext)
 	}
 
 	public bool IsRework(WorkflowColumn column, int agentFailCount, int humanFailCount)
-		=> column == WorkflowColumn.Build && (agentFailCount > 0 || humanFailCount > 0);
+	{
+		return column == WorkflowColumn.Build && (agentFailCount > 0 || humanFailCount > 0);
+	}
 
 	public bool IsRework(Feature feature)
 	{
@@ -107,26 +102,34 @@ public class ReviewOutcomeService(AppDbContext dbContext)
 	}
 
 	public bool HasExceededThreshold(int count, int threshold)
-		=> threshold > 0 && count >= threshold;
+	{
+		return threshold > 0 && count >= threshold;
+	}
 
 	public bool HasIssue(int agentFailCount, int humanFailCount, int agentThreshold, int humanThreshold)
-		=> HasExceededThreshold(agentFailCount, agentThreshold) || HasExceededThreshold(humanFailCount, humanThreshold);
+	{
+		return HasExceededThreshold(agentFailCount, agentThreshold) ||
+		       HasExceededThreshold(humanFailCount, humanThreshold);
+	}
 
 	public bool HasIssue(Feature feature, Board board)
 	{
 		ArgumentNullException.ThrowIfNull(feature);
 		ArgumentNullException.ThrowIfNull(board);
-		return HasIssue(feature.AgentReviewFailCount, feature.HumanReviewFailCount, board.AgentReviewFailThreshold, board.HumanReviewFailThreshold);
+		return HasIssue(feature.AgentReviewFailCount, feature.HumanReviewFailCount, board.AgentReviewFailThreshold,
+			board.HumanReviewFailThreshold);
 	}
 
 	public bool HasIssue(Step step, Board board)
 	{
 		ArgumentNullException.ThrowIfNull(step);
 		ArgumentNullException.ThrowIfNull(board);
-		return HasIssue(step.AgentReviewFailCount, step.HumanReviewFailCount, board.AgentReviewFailThreshold, board.HumanReviewFailThreshold);
+		return HasIssue(step.AgentReviewFailCount, step.HumanReviewFailCount, board.AgentReviewFailThreshold,
+			board.HumanReviewFailThreshold);
 	}
 
-	public ReviewOutcomeStatus GetStatus(WorkflowColumn column, int agentFailCount, int humanFailCount, int agentThreshold, int humanThreshold)
+	public ReviewOutcomeStatus GetStatus(WorkflowColumn column, int agentFailCount, int humanFailCount,
+		int agentThreshold, int humanThreshold)
 	{
 		var agentThresholdCrossed = HasExceededThreshold(agentFailCount, agentThreshold);
 		var humanThresholdCrossed = HasExceededThreshold(humanFailCount, humanThreshold);
@@ -134,49 +137,53 @@ public class ReviewOutcomeService(AppDbContext dbContext)
 		var isRework = IsRework(column, agentFailCount, humanFailCount);
 
 		return new ReviewOutcomeStatus(
-			IsRework: isRework,
-			HasIssue: hasIssue,
-			AgentReviewFailCount: agentFailCount,
-			HumanReviewFailCount: humanFailCount,
-			AgentReviewFailThreshold: agentThreshold,
-			HumanReviewFailThreshold: humanThreshold,
-			AgentReviewThresholdCrossed: agentThresholdCrossed,
-			HumanReviewThresholdCrossed: humanThresholdCrossed);
+			isRework,
+			hasIssue,
+			agentFailCount,
+			humanFailCount,
+			agentThreshold,
+			humanThreshold,
+			agentThresholdCrossed,
+			humanThresholdCrossed);
 	}
 
 	public ReviewOutcomeStatus GetStatus(Feature feature, Board board)
 	{
 		ArgumentNullException.ThrowIfNull(feature);
 		ArgumentNullException.ThrowIfNull(board);
-		return GetStatus(feature.WorkflowColumn, feature.AgentReviewFailCount, feature.HumanReviewFailCount, board.AgentReviewFailThreshold, board.HumanReviewFailThreshold);
+		return GetStatus(feature.WorkflowColumn, feature.AgentReviewFailCount, feature.HumanReviewFailCount,
+			board.AgentReviewFailThreshold, board.HumanReviewFailThreshold);
 	}
 
 	public ReviewOutcomeStatus GetStatus(Step step, Board board)
 	{
 		ArgumentNullException.ThrowIfNull(step);
 		ArgumentNullException.ThrowIfNull(board);
-		return GetStatus(step.WorkflowColumn, step.AgentReviewFailCount, step.HumanReviewFailCount, board.AgentReviewFailThreshold, board.HumanReviewFailThreshold);
+		return GetStatus(step.WorkflowColumn, step.AgentReviewFailCount, step.HumanReviewFailCount,
+			board.AgentReviewFailThreshold, board.HumanReviewFailThreshold);
 	}
 
-	public async Task<ReviewOutcomeStatus> GetStatusForFeatureAsync(Guid featureId, CancellationToken cancellationToken = default)
+	public async Task<ReviewOutcomeStatus> GetStatusForFeatureAsync(Guid featureId,
+		CancellationToken cancellationToken = default)
 	{
 		var feature = await dbContext.Features
-			.Include(f => f.Board)
-			.AsNoTracking()
-			.SingleOrDefaultAsync(f => f.Id == featureId, cancellationToken)
-			?? throw new KeyNotFoundException($"Feature '{featureId}' was not found.");
+			              .Include(f => f.Board)
+			              .AsNoTracking()
+			              .SingleOrDefaultAsync(f => f.Id == featureId, cancellationToken)
+		              ?? throw new KeyNotFoundException($"Feature '{featureId}' was not found.");
 
 		return GetStatus(feature, feature.Board);
 	}
 
-	public async Task<ReviewOutcomeStatus> GetStatusForStepAsync(Guid stepId, CancellationToken cancellationToken = default)
+	public async Task<ReviewOutcomeStatus> GetStatusForStepAsync(Guid stepId,
+		CancellationToken cancellationToken = default)
 	{
 		var step = await dbContext.Steps
-			.Include(s => s.Feature)
-				.ThenInclude(f => f.Board)
-			.AsNoTracking()
-			.SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken)
-			?? throw new KeyNotFoundException($"Step '{stepId}' was not found.");
+			           .Include(s => s.Feature)
+			           .ThenInclude(f => f.Board)
+			           .AsNoTracking()
+			           .SingleOrDefaultAsync(s => s.Id == stepId, cancellationToken)
+		           ?? throw new KeyNotFoundException($"Step '{stepId}' was not found.");
 
 		return GetStatus(step, step.Feature.Board);
 	}

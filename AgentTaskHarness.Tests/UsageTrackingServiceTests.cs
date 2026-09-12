@@ -15,48 +15,48 @@ namespace AgentTaskHarness.Tests;
 
 public class UsageTrackingServiceTests : IAsyncLifetime
 {
-	private readonly SqliteConnection connection = new("Data Source=:memory:");
-	private AppDbContext dbContext = null!;
-	private BoardService boardService = null!;
-	private FeatureService featureService = null!;
-	private StepService stepService = null!;
-	private UsageTrackingService usageService = null!;
+	private readonly SqliteConnection _connection = new("Data Source=:memory:");
+	private BoardService _boardService = null!;
+	private AppDbContext _dbContext = null!;
+	private FeatureService _featureService = null!;
+	private StepService _stepService = null!;
+	private UsageTrackingService _usageService = null!;
 
 	public async Task InitializeAsync()
 	{
-		await connection.OpenAsync();
-		dbContext = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
-		await dbContext.Database.MigrateAsync();
+		await _connection.OpenAsync();
+		_dbContext = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
+		await _dbContext.Database.MigrateAsync();
 
-		boardService = new BoardService(dbContext);
-		featureService = new FeatureService(dbContext);
-		stepService = new StepService(dbContext);
-		usageService = new UsageTrackingService(dbContext);
+		_boardService = new BoardService(_dbContext);
+		_featureService = new FeatureService(_dbContext);
+		_stepService = new StepService(_dbContext);
+		_usageService = new UsageTrackingService(_dbContext);
 	}
 
 	public async Task DisposeAsync()
 	{
-		await dbContext.DisposeAsync();
-		await connection.DisposeAsync();
+		await _dbContext.DisposeAsync();
+		await _connection.DisposeAsync();
 	}
 
 	[Fact]
 	public async Task GetFeatureSummaryAsync_AggregatesTokensAndTime_AcrossMultipleSteps()
 	{
-		var board = await boardService.CreateAsync("Test Board", "/repos/test", 2);
-		var feat = await featureService.CreateAsync(board.Id, "Feat 1");
+		var board = await _boardService.CreateAsync("Test Board", "/repos/test", 2);
+		var feat = await _featureService.CreateAsync(board.Id, "Feat 1");
 
-		var step1 = await stepService.CreateAsync(feat.Id, "Step 1");
+		var step1 = await _stepService.CreateAsync(feat.Id, "Step 1");
 		step1.TokensUsed = 1200;
 		step1.TimeSpent = TimeSpan.FromMinutes(5);
 
-		var step2 = await stepService.CreateAsync(feat.Id, "Step 2");
+		var step2 = await _stepService.CreateAsync(feat.Id, "Step 2");
 		step2.TokensUsed = 2300;
 		step2.TimeSpent = TimeSpan.FromMinutes(10);
 
-		await dbContext.SaveChangesAsync();
+		await _dbContext.SaveChangesAsync();
 
-		var summary = await usageService.GetFeatureSummaryAsync(feat.Id);
+		var summary = await _usageService.GetFeatureSummaryAsync(feat.Id);
 
 		Assert.Equal(feat.Id, summary.FeatureId);
 		Assert.Equal("Feat 1", summary.Title);
@@ -81,14 +81,14 @@ public class UsageTrackingServiceTests : IAsyncLifetime
 	[Fact]
 	public async Task GetFeatureSummary_Alias_ReturnsSameResultAsAsync()
 	{
-		var board = await boardService.CreateAsync("Test Board", "/repos/test", 2);
-		var feat = await featureService.CreateAsync(board.Id, "Feat 1");
-		var step = await stepService.CreateAsync(feat.Id, "Step 1");
+		var board = await _boardService.CreateAsync("Test Board", "/repos/test", 2);
+		var feat = await _featureService.CreateAsync(board.Id, "Feat 1");
+		var step = await _stepService.CreateAsync(feat.Id, "Step 1");
 		step.TokensUsed = 500;
 		step.TimeSpent = TimeSpan.FromSeconds(30);
-		await dbContext.SaveChangesAsync();
+		await _dbContext.SaveChangesAsync();
 
-		var summary = await usageService.GetFeatureSummary(feat.Id);
+		var summary = await _usageService.GetFeatureSummary(feat.Id);
 
 		Assert.Equal(500, summary.TotalTokensUsed);
 		Assert.Equal(TimeSpan.FromSeconds(30), summary.TotalTimeSpent);
@@ -97,15 +97,15 @@ public class UsageTrackingServiceTests : IAsyncLifetime
 	[Fact]
 	public async Task GetFeatureSummaryAsync_IncludesFeatureLevelAgentRuns()
 	{
-		var board = await boardService.CreateAsync("Test Board", "/repos/test", 2);
-		var feat = await featureService.CreateAsync(board.Id, "Feat 1");
+		var board = await _boardService.CreateAsync("Test Board", "/repos/test", 2);
+		var feat = await _featureService.CreateAsync(board.Id, "Feat 1");
 
-		var step = await stepService.CreateAsync(feat.Id, "Step 1");
+		var step = await _stepService.CreateAsync(feat.Id, "Step 1");
 		step.TokensUsed = 1000;
 		step.TimeSpent = TimeSpan.FromMinutes(2);
 
 		// Feature-level AgentRun (e.g. Feature Agent Review run)
-		dbContext.AgentRuns.Add(new AgentRun
+		_dbContext.AgentRuns.Add(new AgentRun
 		{
 			CardType = CardType.Feature,
 			CardId = feat.Id,
@@ -116,9 +116,9 @@ public class UsageTrackingServiceTests : IAsyncLifetime
 			EndedAt = DateTimeOffset.UtcNow.AddMinutes(-1)
 		});
 
-		await dbContext.SaveChangesAsync();
+		await _dbContext.SaveChangesAsync();
 
-		var summary = await usageService.GetFeatureSummaryAsync(feat.Id);
+		var summary = await _usageService.GetFeatureSummaryAsync(feat.Id);
 
 		Assert.Equal(1800, summary.TotalTokensUsed);
 		Assert.Equal(TimeSpan.FromMinutes(3), summary.TotalTimeSpent);
@@ -133,19 +133,19 @@ public class UsageTrackingServiceTests : IAsyncLifetime
 	{
 		var missingId = Guid.NewGuid();
 		await Assert.ThrowsAsync<KeyNotFoundException>(() =>
-			usageService.GetFeatureSummaryAsync(missingId));
+			_usageService.GetFeatureSummaryAsync(missingId));
 	}
 
 	[Fact]
 	public async Task GetStepSummaryAsync_ReturnsStepUsageAndRunCount()
 	{
-		var board = await boardService.CreateAsync("Test Board", "/repos/test", 2);
-		var feat = await featureService.CreateAsync(board.Id, "Feat 1");
-		var step = await stepService.CreateAsync(feat.Id, "Step 1");
+		var board = await _boardService.CreateAsync("Test Board", "/repos/test", 2);
+		var feat = await _featureService.CreateAsync(board.Id, "Feat 1");
+		var step = await _stepService.CreateAsync(feat.Id, "Step 1");
 		step.TokensUsed = 750;
 		step.TimeSpent = TimeSpan.FromSeconds(45);
 
-		dbContext.AgentRuns.Add(new AgentRun
+		_dbContext.AgentRuns.Add(new AgentRun
 		{
 			CardType = CardType.Step,
 			CardId = step.Id,
@@ -156,7 +156,7 @@ public class UsageTrackingServiceTests : IAsyncLifetime
 			EndedAt = DateTimeOffset.UtcNow.AddMinutes(-4)
 		});
 
-		dbContext.AgentRuns.Add(new AgentRun
+		_dbContext.AgentRuns.Add(new AgentRun
 		{
 			CardType = CardType.Step,
 			CardId = step.Id,
@@ -167,9 +167,9 @@ public class UsageTrackingServiceTests : IAsyncLifetime
 			EndedAt = DateTimeOffset.UtcNow.AddMinutes(-2)
 		});
 
-		await dbContext.SaveChangesAsync();
+		await _dbContext.SaveChangesAsync();
 
-		var stepSummary = await usageService.GetStepSummaryAsync(step.Id);
+		var stepSummary = await _usageService.GetStepSummaryAsync(step.Id);
 
 		Assert.Equal(step.Id, stepSummary.StepId);
 		Assert.Equal(feat.Id, stepSummary.FeatureId);
@@ -182,21 +182,21 @@ public class UsageTrackingServiceTests : IAsyncLifetime
 	[Fact]
 	public async Task GetBoardSummaryAsync_AggregatesAcrossAllFeaturesAndSteps()
 	{
-		var board = await boardService.CreateAsync("Main Board", "/repos/main", 2);
-		var feat1 = await featureService.CreateAsync(board.Id, "Feat 1");
-		var feat2 = await featureService.CreateAsync(board.Id, "Feat 2");
+		var board = await _boardService.CreateAsync("Main Board", "/repos/main", 2);
+		var feat1 = await _featureService.CreateAsync(board.Id, "Feat 1");
+		var feat2 = await _featureService.CreateAsync(board.Id, "Feat 2");
 
-		var step1 = await stepService.CreateAsync(feat1.Id, "Step 1");
+		var step1 = await _stepService.CreateAsync(feat1.Id, "Step 1");
 		step1.TokensUsed = 1000;
 		step1.TimeSpent = TimeSpan.FromMinutes(2);
 
-		var step2 = await stepService.CreateAsync(feat2.Id, "Step 2");
+		var step2 = await _stepService.CreateAsync(feat2.Id, "Step 2");
 		step2.TokensUsed = 2500;
 		step2.TimeSpent = TimeSpan.FromMinutes(4);
 
-		await dbContext.SaveChangesAsync();
+		await _dbContext.SaveChangesAsync();
 
-		var boardSummary = await usageService.GetBoardSummaryAsync(board.Id);
+		var boardSummary = await _usageService.GetBoardSummaryAsync(board.Id);
 
 		Assert.Equal(board.Id, boardSummary.BoardId);
 		Assert.Equal("Main Board", boardSummary.BoardName);
@@ -210,11 +210,11 @@ public class UsageTrackingServiceTests : IAsyncLifetime
 	[Fact]
 	public async Task GetFeatureSummariesForBoardAsync_ReturnsMapForBoard()
 	{
-		var board = await boardService.CreateAsync("Test Board", "/repos/test", 2);
-		var feat1 = await featureService.CreateAsync(board.Id, "Feat 1");
-		var feat2 = await featureService.CreateAsync(board.Id, "Feat 2");
+		var board = await _boardService.CreateAsync("Test Board", "/repos/test", 2);
+		var feat1 = await _featureService.CreateAsync(board.Id, "Feat 1");
+		var feat2 = await _featureService.CreateAsync(board.Id, "Feat 2");
 
-		var map = await usageService.GetFeatureSummariesForBoardAsync(board.Id);
+		var map = await _usageService.GetFeatureSummariesForBoardAsync(board.Id);
 
 		Assert.Equal(2, map.Count);
 		Assert.True(map.ContainsKey(feat1.Id));
@@ -224,18 +224,18 @@ public class UsageTrackingServiceTests : IAsyncLifetime
 	[Fact]
 	public async Task RecordStepUsageAsync_IncrementsStepTotals()
 	{
-		var board = await boardService.CreateAsync("Test Board", "/repos/test", 2);
-		var feat = await featureService.CreateAsync(board.Id, "Feat 1");
-		var step = await stepService.CreateAsync(feat.Id, "Step 1");
+		var board = await _boardService.CreateAsync("Test Board", "/repos/test", 2);
+		var feat = await _featureService.CreateAsync(board.Id, "Feat 1");
+		var step = await _stepService.CreateAsync(feat.Id, "Step 1");
 
-		await usageService.RecordStepUsageAsync(step.Id, 500, TimeSpan.FromSeconds(30));
+		await _usageService.RecordStepUsageAsync(step.Id, 500, TimeSpan.FromSeconds(30));
 
-		var refreshed = await dbContext.Steps.FindAsync(step.Id);
+		var refreshed = await _dbContext.Steps.FindAsync(step.Id);
 		Assert.Equal(500, refreshed!.TokensUsed);
 		Assert.Equal(TimeSpan.FromSeconds(30), refreshed.TimeSpent);
 
-		await usageService.RecordStepUsageAsync(step.Id, 250, TimeSpan.FromSeconds(15));
-		refreshed = await dbContext.Steps.FindAsync(step.Id);
+		await _usageService.RecordStepUsageAsync(step.Id, 250, TimeSpan.FromSeconds(15));
+		refreshed = await _dbContext.Steps.FindAsync(step.Id);
 		Assert.Equal(750, refreshed!.TokensUsed);
 		Assert.Equal(TimeSpan.FromSeconds(45), refreshed.TimeSpent);
 	}
@@ -243,9 +243,9 @@ public class UsageTrackingServiceTests : IAsyncLifetime
 	[Fact]
 	public async Task RecordRunUsageAsync_UpdatesRunAndRollsUpToStep()
 	{
-		var board = await boardService.CreateAsync("Test Board", "/repos/test", 2);
-		var feat = await featureService.CreateAsync(board.Id, "Feat 1");
-		var step = await stepService.CreateAsync(feat.Id, "Step 1");
+		var board = await _boardService.CreateAsync("Test Board", "/repos/test", 2);
+		var feat = await _featureService.CreateAsync(board.Id, "Feat 1");
+		var step = await _stepService.CreateAsync(feat.Id, "Step 1");
 
 		var run = new AgentRun
 		{
@@ -256,16 +256,16 @@ public class UsageTrackingServiceTests : IAsyncLifetime
 			TokensUsed = 0,
 			TimeSpent = TimeSpan.Zero
 		};
-		dbContext.AgentRuns.Add(run);
-		await dbContext.SaveChangesAsync();
+		_dbContext.AgentRuns.Add(run);
+		await _dbContext.SaveChangesAsync();
 
-		await usageService.RecordRunUsageAsync(run.Id, 1200, TimeSpan.FromMinutes(2));
+		await _usageService.RecordRunUsageAsync(run.Id, 1200, TimeSpan.FromMinutes(2));
 
-		var refreshedRun = await dbContext.AgentRuns.FindAsync(run.Id);
+		var refreshedRun = await _dbContext.AgentRuns.FindAsync(run.Id);
 		Assert.Equal(1200, refreshedRun!.TokensUsed);
 		Assert.Equal(TimeSpan.FromMinutes(2), refreshedRun.TimeSpent);
 
-		var refreshedStep = await dbContext.Steps.FindAsync(step.Id);
+		var refreshedStep = await _dbContext.Steps.FindAsync(step.Id);
 		Assert.Equal(1200, refreshedStep!.TokensUsed);
 		Assert.Equal(TimeSpan.FromMinutes(2), refreshedStep.TimeSpent);
 	}
@@ -273,20 +273,20 @@ public class UsageTrackingServiceTests : IAsyncLifetime
 	[Fact]
 	public async Task GetQualitySignalsAsync_ComputesReviewFailuresAndReworkIndicators()
 	{
-		var board = await boardService.CreateAsync("Quality Board", "/repos/quality", 2);
-		var feat = await featureService.CreateAsync(board.Id, "Feat 1");
+		var board = await _boardService.CreateAsync("Quality Board", "/repos/quality", 2);
+		var feat = await _featureService.CreateAsync(board.Id, "Feat 1");
 		feat.AgentReviewFailCount = 1;
 
-		var step1 = await stepService.CreateAsync(feat.Id, "Step 1");
+		var step1 = await _stepService.CreateAsync(feat.Id, "Step 1");
 		step1.AgentReviewFailCount = 2;
 		step1.HumanReviewFailCount = 1;
 
-		var step2 = await stepService.CreateAsync(feat.Id, "Step 2");
+		var step2 = await _stepService.CreateAsync(feat.Id, "Step 2");
 		step2.HumanReviewFailCount = 1;
 
-		await dbContext.SaveChangesAsync();
+		await _dbContext.SaveChangesAsync();
 
-		var signals = await usageService.GetQualitySignalsAsync(feat.Id);
+		var signals = await _usageService.GetQualitySignalsAsync(feat.Id);
 
 		Assert.Equal(feat.Id, signals.CardId);
 		Assert.Equal(CardType.Feature, signals.CardType);
@@ -301,7 +301,8 @@ public class UsageTrackingServiceTests : IAsyncLifetime
 	[InlineData("tokens_used: 1500, time_spent: 45s", 1500, 45)]
 	[InlineData("Total tokens: 3200, duration: 2m", 3200, 120)]
 	[InlineData("{\"total_tokens\": 4500, \"duration_seconds\": 60}", 4500, 60)]
-	public void CopilotCliProcessRunner_TryParseUsage_ParsesExpectedValues(string text, long expectedTokens, int expectedSeconds)
+	public void CopilotCliProcessRunner_TryParseUsage_ParsesExpectedValues(string text, long expectedTokens,
+		int expectedSeconds)
 	{
 		var parsed = CopilotCliProcessRunner.TryParseUsage(text, out var tokens, out var duration);
 		Assert.True(parsed);

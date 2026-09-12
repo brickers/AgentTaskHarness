@@ -6,7 +6,7 @@ window.directoryPicker = {
         }
 
         try {
-            const directory = await window.showDirectoryPicker({ mode: "read" });
+            const directory = await window.showDirectoryPicker({mode: "read"});
             return directory.name;
         } catch (error) {
             if (error.name !== "AbortError") {

@@ -1,6 +1,5 @@
-using AgentTaskHarness.Components;
-using AgentTaskHarness.Application.Agents;
 using AgentTaskHarness.Application.Abstractions;
+using AgentTaskHarness.Application.Agents;
 using AgentTaskHarness.Application.Boards;
 using AgentTaskHarness.Application.Comments;
 using AgentTaskHarness.Application.Features;
@@ -8,13 +7,12 @@ using AgentTaskHarness.Application.Reviews;
 using AgentTaskHarness.Application.Steps;
 using AgentTaskHarness.Application.Usage;
 using AgentTaskHarness.Application.Workflow;
+using AgentTaskHarness.Components;
 using AgentTaskHarness.Infrastructure.Agents;
 using AgentTaskHarness.Infrastructure.Git;
 using AgentTaskHarness.Infrastructure.Mcp;
 using AgentTaskHarness.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
-using ModelContextProtocol;
-using ModelContextProtocol.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -60,7 +58,7 @@ using (var scope = app.Services.CreateScope())
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
-	app.UseExceptionHandler("/Error", createScopeForErrors: true);
+	app.UseExceptionHandler("/Error", true);
 	// The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/dotnet-support-policy.
 	app.UseHsts();
 }

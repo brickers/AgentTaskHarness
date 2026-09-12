@@ -9,29 +9,20 @@ public class FeatureDependencyService(AppDbContext dbContext)
 {
 	public async Task AddAsync(Guid featureId, Guid dependsOnFeatureId, CancellationToken cancellationToken = default)
 	{
-		if (featureId == dependsOnFeatureId)
-		{
-			throw new InvalidOperationException("A feature cannot depend on itself.");
-		}
+		if (featureId == dependsOnFeatureId) throw new InvalidOperationException("A feature cannot depend on itself.");
 
 		var feature = await FindFeatureAsync(featureId, cancellationToken);
 		EnsureDependenciesAreEditable(feature);
 
 		var dependsOn = await FindFeatureAsync(dependsOnFeatureId, cancellationToken);
 		if (feature.BoardId != dependsOn.BoardId)
-		{
 			throw new InvalidOperationException("Feature dependencies must remain within the same board.");
-		}
 
-		if (await dbContext.FeatureDependencies.AnyAsync(d => d.FeatureId == featureId && d.DependsOnFeatureId == dependsOnFeatureId, cancellationToken))
-		{
-			return;
-		}
+		if (await dbContext.FeatureDependencies.AnyAsync(
+			    d => d.FeatureId == featureId && d.DependsOnFeatureId == dependsOnFeatureId, cancellationToken)) return;
 
 		if (await WouldCreateCycleAsync(featureId, dependsOnFeatureId, cancellationToken))
-		{
 			throw new InvalidOperationException("Circular dependencies are not allowed.");
-		}
 
 		dbContext.FeatureDependencies.Add(new FeatureDependency
 		{
@@ -41,7 +32,8 @@ public class FeatureDependencyService(AppDbContext dbContext)
 		await dbContext.SaveChangesAsync(cancellationToken);
 	}
 
-	public async Task RemoveAsync(Guid featureId, Guid dependsOnFeatureId, CancellationToken cancellationToken = default)
+	public async Task RemoveAsync(Guid featureId, Guid dependsOnFeatureId,
+		CancellationToken cancellationToken = default)
 	{
 		var feature = await FindFeatureAsync(featureId, cancellationToken);
 		EnsureDependenciesAreEditable(feature);
@@ -50,21 +42,21 @@ public class FeatureDependencyService(AppDbContext dbContext)
 			d => d.FeatureId == featureId && d.DependsOnFeatureId == dependsOnFeatureId,
 			cancellationToken);
 
-		if (dependency is null)
-		{
-			return;
-		}
+		if (dependency is null) return;
 
 		dbContext.FeatureDependencies.Remove(dependency);
 		await dbContext.SaveChangesAsync(cancellationToken);
 	}
 
-	public Task<List<FeatureDependency>> GetForFeatureAsync(Guid featureId, CancellationToken cancellationToken = default) =>
-		dbContext.FeatureDependencies
+	public Task<List<FeatureDependency>> GetForFeatureAsync(Guid featureId,
+		CancellationToken cancellationToken = default)
+	{
+		return dbContext.FeatureDependencies
 			.AsNoTracking()
 			.Include(d => d.DependsOnFeature)
 			.Where(d => d.FeatureId == featureId)
 			.ToListAsync(cancellationToken);
+	}
 
 	public async Task<bool> AreDependenciesMetAsync(Guid featureId, CancellationToken cancellationToken = default)
 	{
@@ -75,26 +67,30 @@ public class FeatureDependencyService(AppDbContext dbContext)
 		return !hasUnfinished;
 	}
 
-	public Task<List<Feature>> GetUnmetDependenciesAsync(Guid featureId, CancellationToken cancellationToken = default) =>
-		dbContext.FeatureDependencies
+	public Task<List<Feature>> GetUnmetDependenciesAsync(Guid featureId, CancellationToken cancellationToken = default)
+	{
+		return dbContext.FeatureDependencies
 			.AsNoTracking()
 			.Where(d => d.FeatureId == featureId && d.DependsOnFeature.WorkflowColumn != WorkflowColumn.Done)
 			.Select(d => d.DependsOnFeature)
 			.ToListAsync(cancellationToken);
+	}
 
-	private async Task<Feature> FindFeatureAsync(Guid featureId, CancellationToken cancellationToken) =>
-		await dbContext.Features.SingleOrDefaultAsync(f => f.Id == featureId, cancellationToken)
-		?? throw new KeyNotFoundException($"Feature '{featureId}' was not found.");
+	private async Task<Feature> FindFeatureAsync(Guid featureId, CancellationToken cancellationToken)
+	{
+		return await dbContext.Features.SingleOrDefaultAsync(f => f.Id == featureId, cancellationToken)
+		       ?? throw new KeyNotFoundException($"Feature '{featureId}' was not found.");
+	}
 
 	private static void EnsureDependenciesAreEditable(Feature feature)
 	{
 		if (feature.WorkflowColumn != WorkflowColumn.Backlog)
-		{
-			throw new InvalidOperationException("Feature dependencies can only be changed while the feature is in the backlog.");
-		}
+			throw new InvalidOperationException(
+				"Feature dependencies can only be changed while the feature is in the backlog.");
 	}
 
-	private async Task<bool> WouldCreateCycleAsync(Guid featureId, Guid dependsOnFeatureId, CancellationToken cancellationToken)
+	private async Task<bool> WouldCreateCycleAsync(Guid featureId, Guid dependsOnFeatureId,
+		CancellationToken cancellationToken)
 	{
 		var visited = new HashSet<Guid>();
 		var queue = new Queue<Guid>();
@@ -103,10 +99,7 @@ public class FeatureDependencyService(AppDbContext dbContext)
 		while (queue.Count > 0)
 		{
 			var current = queue.Dequeue();
-			if (current == featureId)
-			{
-				return true;
-			}
+			if (current == featureId) return true;
 
 			if (visited.Add(current))
 			{
@@ -116,12 +109,8 @@ public class FeatureDependencyService(AppDbContext dbContext)
 					.ToListAsync(cancellationToken);
 
 				foreach (var next in nextDependencies)
-				{
 					if (!visited.Contains(next))
-					{
 						queue.Enqueue(next);
-					}
-				}
 			}
 		}
 

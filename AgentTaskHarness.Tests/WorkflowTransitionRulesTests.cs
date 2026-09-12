@@ -6,7 +6,7 @@ namespace AgentTaskHarness.Tests;
 
 public class WorkflowTransitionRulesTests
 {
-	private readonly WorkflowTransitionRules rules = new();
+	private readonly WorkflowTransitionRules _rules = new();
 
 	[Theory]
 	[InlineData(WorkflowColumn.Backlog, WorkflowColumn.Ready)]
@@ -16,7 +16,7 @@ public class WorkflowTransitionRulesTests
 	[InlineData(WorkflowColumn.HumanReview, WorkflowColumn.Done)]
 	public void IsAllowedTransition_AllowsValidForwardAdjacentMoves(WorkflowColumn from, WorkflowColumn to)
 	{
-		Assert.True(rules.IsAllowedTransition(from, to));
+		Assert.True(_rules.IsAllowedTransition(from, to));
 	}
 
 	[Theory]
@@ -32,7 +32,7 @@ public class WorkflowTransitionRulesTests
 	[InlineData(WorkflowColumn.AgentReview, WorkflowColumn.Done)]
 	public void IsAllowedTransition_RejectsForwardJumps(WorkflowColumn from, WorkflowColumn to)
 	{
-		Assert.False(rules.IsAllowedTransition(from, to));
+		Assert.False(_rules.IsAllowedTransition(from, to));
 	}
 
 	[Theory]
@@ -45,7 +45,7 @@ public class WorkflowTransitionRulesTests
 	[InlineData(WorkflowColumn.HumanReview, WorkflowColumn.Ready)]
 	public void IsAllowedTransition_AllowsBackwardMovesToBacklogOrReady(WorkflowColumn from, WorkflowColumn to)
 	{
-		Assert.True(rules.IsAllowedTransition(from, to));
+		Assert.True(_rules.IsAllowedTransition(from, to));
 	}
 
 	[Theory]
@@ -53,13 +53,13 @@ public class WorkflowTransitionRulesTests
 	[InlineData(WorkflowColumn.HumanReview, WorkflowColumn.Build)]
 	public void IsAllowedTransition_AllowsBackwardMovesToBuildForRework(WorkflowColumn from, WorkflowColumn to)
 	{
-		Assert.True(rules.IsAllowedTransition(from, to));
+		Assert.True(_rules.IsAllowedTransition(from, to));
 	}
 
 	[Fact]
 	public void IsAllowedTransition_RejectsHumanReviewToAgentReview()
 	{
-		Assert.False(rules.IsAllowedTransition(WorkflowColumn.HumanReview, WorkflowColumn.AgentReview));
+		Assert.False(_rules.IsAllowedTransition(WorkflowColumn.HumanReview, WorkflowColumn.AgentReview));
 	}
 
 	[Theory]
@@ -71,7 +71,7 @@ public class WorkflowTransitionRulesTests
 	[InlineData(WorkflowColumn.Done, WorkflowColumn.Done)]
 	public void IsAllowedTransition_RejectsAnyMoveFromDone(WorkflowColumn from, WorkflowColumn to)
 	{
-		Assert.False(rules.IsAllowedTransition(from, to));
+		Assert.False(_rules.IsAllowedTransition(from, to));
 	}
 
 	[Theory]
@@ -83,28 +83,32 @@ public class WorkflowTransitionRulesTests
 	[InlineData(WorkflowColumn.Done)]
 	public void IsAllowedTransition_RejectsMoveToSameColumn(WorkflowColumn column)
 	{
-		Assert.False(rules.IsAllowedTransition(column, column));
+		Assert.False(_rules.IsAllowedTransition(column, column));
 	}
 
 	[Fact]
 	public void GetAllowedTransitions_ReturnsExpectedTransitionsForEachColumn()
 	{
-		Assert.Equal([WorkflowColumn.Ready], rules.GetAllowedTransitions(WorkflowColumn.Backlog));
-		Assert.Equal([WorkflowColumn.Backlog, WorkflowColumn.Build], rules.GetAllowedTransitions(WorkflowColumn.Ready));
-		Assert.Equal([WorkflowColumn.Backlog, WorkflowColumn.Ready, WorkflowColumn.AgentReview], rules.GetAllowedTransitions(WorkflowColumn.Build));
-		Assert.Equal([WorkflowColumn.Backlog, WorkflowColumn.Ready, WorkflowColumn.Build, WorkflowColumn.HumanReview], rules.GetAllowedTransitions(WorkflowColumn.AgentReview));
-		Assert.Equal([WorkflowColumn.Backlog, WorkflowColumn.Ready, WorkflowColumn.Build, WorkflowColumn.Done], rules.GetAllowedTransitions(WorkflowColumn.HumanReview));
-		Assert.Empty(rules.GetAllowedTransitions(WorkflowColumn.Done));
+		Assert.Equal([WorkflowColumn.Ready], _rules.GetAllowedTransitions(WorkflowColumn.Backlog));
+		Assert.Equal([WorkflowColumn.Backlog, WorkflowColumn.Build],
+			_rules.GetAllowedTransitions(WorkflowColumn.Ready));
+		Assert.Equal([WorkflowColumn.Backlog, WorkflowColumn.Ready, WorkflowColumn.AgentReview],
+			_rules.GetAllowedTransitions(WorkflowColumn.Build));
+		Assert.Equal([WorkflowColumn.Backlog, WorkflowColumn.Ready, WorkflowColumn.Build, WorkflowColumn.HumanReview],
+			_rules.GetAllowedTransitions(WorkflowColumn.AgentReview));
+		Assert.Equal([WorkflowColumn.Backlog, WorkflowColumn.Ready, WorkflowColumn.Build, WorkflowColumn.Done],
+			_rules.GetAllowedTransitions(WorkflowColumn.HumanReview));
+		Assert.Empty(_rules.GetAllowedTransitions(WorkflowColumn.Done));
 	}
 
 	[Fact]
 	public void IsTerminal_IdentifiesDoneAsTerminal()
 	{
-		Assert.True(rules.IsTerminal(WorkflowColumn.Done));
-		Assert.False(rules.IsTerminal(WorkflowColumn.Backlog));
-		Assert.False(rules.IsTerminal(WorkflowColumn.Ready));
-		Assert.False(rules.IsTerminal(WorkflowColumn.Build));
-		Assert.False(rules.IsTerminal(WorkflowColumn.AgentReview));
-		Assert.False(rules.IsTerminal(WorkflowColumn.HumanReview));
+		Assert.True(_rules.IsTerminal(WorkflowColumn.Done));
+		Assert.False(_rules.IsTerminal(WorkflowColumn.Backlog));
+		Assert.False(_rules.IsTerminal(WorkflowColumn.Ready));
+		Assert.False(_rules.IsTerminal(WorkflowColumn.Build));
+		Assert.False(_rules.IsTerminal(WorkflowColumn.AgentReview));
+		Assert.False(_rules.IsTerminal(WorkflowColumn.HumanReview));
 	}
 }

@@ -1,15 +1,7 @@
 @page "/boards/{BoardId:guid}"
-@using BoardEntity = AgentTaskHarness.Domain.Entities.Board
-@using AgentTaskHarness.Application.Agents
-@using AgentTaskHarness.Application.Boards
-@using AgentTaskHarness.Application.Features
-@using AgentTaskHarness.Application.Reviews
-@using AgentTaskHarness.Application.Steps
-@using AgentTaskHarness.Application.Usage
-@using AgentTaskHarness.Domain.Entities
-@using AgentTaskHarness.Domain.Enums
 @using AgentTaskHarness.Infrastructure.Persistence
 @using Microsoft.EntityFrameworkCore
+@using BoardEntity = AgentTaskHarness.Domain.Entities.Board
 
 @inject BoardService BoardService
 @inject FeatureService FeatureService
@@ -22,696 +14,733 @@
 @inject AppDbContext DbContext
 @inject NavigationManager Navigation
 
-<PageTitle>@(board?.Name ?? "Board") - AgentTaskHarness</PageTitle>
+<PageTitle>@(_board?.Name ?? "Board") - AgentTaskHarness</PageTitle>
 
-@if (board is null)
+@if (_board is null)
 {
-	<div class="p-4">Loading board...</div>
+    <div class="p-4">Loading board...</div>
 }
 else
 {
-	<div class="board-container">
-		<!-- Top Bar & Workspace Info -->
-		<header class="board-header">
-			<div>
-				<p class="breadcrumb"><a href="/boards">Boards</a> <span>/</span> @board.Name</p>
-				<h1 class="board-title">@board.Name</h1>
-				<div class="board-settings-summary">
-					<span class="tag">Concurrency: @board.ConcurrencyLimit</span>
-					<span class="tag">Feature Review: @(board.SkipFeatureHumanReview ? "Skip Human" : "Require Human")</span>
-					<span class="tag">Step Review: @(board.SkipStepHumanReview ? "Skip Human" : "Require Human")</span>
-					<span class="tag">Agent Fail Limit: @board.AgentReviewFailThreshold</span>
-					<span class="tag">Human Fail Limit: @board.HumanReviewFailThreshold</span>
-				</div>
-			</div>
-			<div class="header-actions">
-				<a class="btn btn-outline-primary" href="@($"/boards/{BoardId}/roadmap")">Roadmap</a>
-				<a class="btn btn-outline-secondary" href="@($"/boards/{BoardId}/agents")">Agents</a>
-				<button class="btn btn-outline-secondary" @onclick="OpenBoardEditor">Settings</button>
-				<button class="btn btn-primary" @onclick="OpenFeatureCreator">+ New Feature</button>
-			</div>
-		</header>
+    <div class="board-container">
+        <!-- Top Bar & Workspace Info -->
+        <header class="board-header">
+            <div>
+                <p class="breadcrumb"><a href="/boards">Boards</a> <span>/</span> @_board.Name</p>
+                <h1 class="board-title">@_board.Name</h1>
+                <div class="board-settings-summary">
+                    <span class="tag">Concurrency: @_board.ConcurrencyLimit</span>
+                    <span
+                        class="tag">Feature Review: @(_board.SkipFeatureHumanReview ? "Skip Human" : "Require Human")</span>
+                    <span class="tag">Step Review: @(_board.SkipStepHumanReview ? "Skip Human" : "Require Human")</span>
+                    <span class="tag">Agent Fail Limit: @_board.AgentReviewFailThreshold</span>
+                    <span class="tag">Human Fail Limit: @_board.HumanReviewFailThreshold</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <a class="btn btn-outline-primary" href="@($"/boards/{BoardId}/roadmap")">Roadmap</a>
+                <a class="btn btn-outline-secondary" href="@($"/boards/{BoardId}/agents")">Agents</a>
+                <button class="btn btn-outline-secondary" @onclick="OpenBoardEditor">Settings</button>
+                <button class="btn btn-primary" @onclick="OpenFeatureCreator">+ New Feature</button>
+            </div>
+        </header>
 
-		@if (!string.IsNullOrWhiteSpace(notificationMessage))
-		{
-			<div class="toast-alert @(isNotificationError ? "toast-error" : "toast-info")" role="alert">
-				<span>@notificationMessage</span>
-				<button type="button" class="btn-close" aria-label="Dismiss" @onclick="() => notificationMessage = null"></button>
-			</div>
-		}
+        @if (!string.IsNullOrWhiteSpace(_notificationMessage))
+        {
+            <div class="toast-alert @(_isNotificationError ? "toast-error" : "toast-info")" role="alert">
+                <span>@_notificationMessage</span>
+                <button type="button" class="btn-close" aria-label="Dismiss"
+                        @onclick="() => _notificationMessage = null"></button>
+            </div>
+        }
 
-		<!-- Row 1: Features Kanban Grid -->
-		<section class="tier-section">
-			<div class="tier-header">
-				<div class="tier-title-area">
-					<h2 class="tier-title">Features</h2>
-					<span class="tier-subtitle">(@features.Count total)</span>
-				</div>
-				<div class="tier-actions">
-					<button class="btn btn-sm btn-outline-primary" @onclick="OpenFeatureCreator">+ Add Feature</button>
-				</div>
-			</div>
+        <!-- Row 1: Features Kanban Grid -->
+        <section class="tier-section">
+            <div class="tier-header">
+                <div class="tier-title-area">
+                    <h2 class="tier-title">Features</h2>
+                    <span class="tier-subtitle">(@_features.Count total)</span>
+                </div>
+                <div class="tier-actions">
+                    <button class="btn btn-sm btn-outline-primary" @onclick="OpenFeatureCreator">+ Add Feature</button>
+                </div>
+            </div>
 
-			<div class="kanban-grid">
-				@foreach (var column in columns)
-				{
-					var columnFeatures = features.Where(f => f.WorkflowColumn == column).ToList();
-					var isValidTarget = draggedCardType == CardType.Feature && currentAllowedDropColumns.Contains(column);
-					var isInvalidTarget = draggedCardType == CardType.Feature && !currentAllowedDropColumns.Contains(column);
-					var isOver = draggedOverColumn == column && draggedCardType == CardType.Feature;
+            <div class="kanban-grid">
+                @foreach (var column in _columns)
+                {
+                    var columnFeatures = _features.Where(f => f.WorkflowColumn == column).ToList();
+                    var isValidTarget = _draggedCardType == CardType.Feature && _currentAllowedDropColumns.Contains(column);
+                    var isInvalidTarget = _draggedCardType == CardType.Feature && !_currentAllowedDropColumns.Contains(column);
+                    var isOver = _draggedOverColumn == column && _draggedCardType == CardType.Feature;
 
-					<div class="kanban-column @(isValidTarget ? "drop-target-valid" : "") @(isInvalidTarget ? "drop-target-invalid" : "") @(isOver ? "drop-over-active" : "")"
-						 ondragover="@(isValidTarget ? "event.preventDefault();" : null)"
-						 @ondragenter="() => HandleDragEnter(column, CardType.Feature)"
-						 @ondragleave="() => HandleDragLeave(column)"
-						 @ondrop="() => HandleFeatureDrop(column)">
+                    <div
+                        class="kanban-column @(isValidTarget ? "drop-target-valid" : "") @(isInvalidTarget ? "drop-target-invalid" : "") @(isOver ? "drop-over-active" : "")"
+                        ondragover="@(isValidTarget ? "event.preventDefault();" : null)"
+                        @ondragenter="() => HandleDragEnter(column, CardType.Feature)"
+                        @ondragleave="() => HandleDragLeave(column)"
+                        @ondrop="() => HandleFeatureDrop(column)">
 
-						<div class="column-header">
-							<h3>@column</h3>
-							<span class="column-count">@columnFeatures.Count</span>
-						</div>
+                        <div class="column-header">
+                            <h3>@column</h3>
+                            <span class="column-count">@columnFeatures.Count</span>
+                        </div>
 
-						<div class="column-cards">
-							@foreach (var feature in columnFeatures)
-							{
-								var run = featureRuns.GetValueOrDefault(feature.Id);
-								var stepStatuses = featureStepStatuses.GetValueOrDefault(feature.Id, []);
-								var isSelected = selectedFeatureId == feature.Id;
+                        <div class="column-cards">
+                            @foreach (var feature in columnFeatures)
+                            {
+                                var run = _featureRuns.GetValueOrDefault(feature.Id);
+                                var stepStatuses = _featureStepStatuses.GetValueOrDefault(feature.Id, []);
+                                var isSelected = _selectedFeatureId == feature.Id;
 
-								<FeatureCard Feature="@feature"
-											 Board="@board"
-											 CurrentRun="@run"
-											 ChildStepStatuses="@stepStatuses"
-											 IsSelected="@isSelected"
-											 OnSelect="HandleFeatureSelected"
-											 OnOpenDetails="OpenFeaturePopup"
-											 OnDragStart="HandleFeatureDragStart"
-											 OnDragEnd="HandleDragEnd" />
-							}
-						</div>
-					</div>
-				}
-			</div>
-		</section>
+                                <FeatureCard Feature="@feature"
+                                             Board="@_board"
+                                             CurrentRun="@run"
+                                             ChildStepStatuses="@stepStatuses"
+                                             IsSelected="@isSelected"
+                                             OnSelect="HandleFeatureSelected"
+                                             OnOpenDetails="OpenFeaturePopup"
+                                             OnDragStart="HandleFeatureDragStart"
+                                             OnDragEnd="HandleDragEnd"/>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </section>
 
-		<!-- Row 2: Steps Kanban Grid (Filtered by Selected Feature or Showing All Steps) -->
-		<section class="tier-section">
-			<div class="tier-header">
-				<div class="tier-title-area">
-					<h2 class="tier-title">
-						@if (selectedFeature != null)
-						{
-							<span>Steps for: <strong>@selectedFeature.Title</strong></span>
-						}
-						else
-						{
-							<span>Steps (All Features)</span>
-						}
-					</h2>
-					<span class="tier-subtitle">(@selectedFeatureSteps.Count dev plan steps)</span>
-					@if (selectedFeature != null)
-					{
-						<button class="clear-filter-btn" @onclick="ClearFeatureFilter" title="Unselect feature and show all steps">
-							✕ Clear Filter
-						</button>
-					}
-				</div>
-				<div class="tier-actions">
-					<button class="btn btn-sm btn-outline-primary" @onclick="OpenStepCreator">+ Add Step</button>
-				</div>
-			</div>
+        <!-- Row 2: Steps Kanban Grid (Filtered by Selected Feature or Showing All Steps) -->
+        <section class="tier-section">
+            <div class="tier-header">
+                <div class="tier-title-area">
+                    <h2 class="tier-title">
+                        @if (_selectedFeature != null)
+                        {
+                            <span>Steps for: <strong>@_selectedFeature.Title</strong></span>
+                        }
+                        else
+                        {
+                            <span>Steps (All Features)</span>
+                        }
+                    </h2>
+                    <span class="tier-subtitle">(@_selectedFeatureSteps.Count dev plan steps)</span>
+                    @if (_selectedFeature != null)
+                    {
+                        <button class="clear-filter-btn" @onclick="ClearFeatureFilter"
+                                title="Unselect feature and show all steps">
+                            ✕ Clear Filter
+                        </button>
+                    }
+                </div>
+                <div class="tier-actions">
+                    <button class="btn btn-sm btn-outline-primary" @onclick="OpenStepCreator">+ Add Step</button>
+                </div>
+            </div>
 
-			<div class="kanban-grid">
-				@foreach (var column in columns)
-				{
-					var columnSteps = selectedFeatureSteps.Where(s => s.WorkflowColumn == column).ToList();
-					var isValidTarget = draggedCardType == CardType.Step && currentAllowedDropColumns.Contains(column);
-					var isInvalidTarget = draggedCardType == CardType.Step && !currentAllowedDropColumns.Contains(column);
-					var isOver = draggedOverColumn == column && draggedCardType == CardType.Step;
+            <div class="kanban-grid">
+                @foreach (var column in _columns)
+                {
+                    var columnSteps = _selectedFeatureSteps.Where(s => s.WorkflowColumn == column).ToList();
+                    var isValidTarget = _draggedCardType == CardType.Step && _currentAllowedDropColumns.Contains(column);
+                    var isInvalidTarget = _draggedCardType == CardType.Step && !_currentAllowedDropColumns.Contains(column);
+                    var isOver = _draggedOverColumn == column && _draggedCardType == CardType.Step;
 
-					<div class="kanban-column @(isValidTarget ? "drop-target-valid" : "") @(isInvalidTarget ? "drop-target-invalid" : "") @(isOver ? "drop-over-active" : "")"
-						 ondragover="@(isValidTarget ? "event.preventDefault();" : null)"
-						 @ondragenter="() => HandleDragEnter(column, CardType.Step)"
-						 @ondragleave="() => HandleDragLeave(column)"
-						 @ondrop="() => HandleStepDrop(column)">
+                    <div
+                        class="kanban-column @(isValidTarget ? "drop-target-valid" : "") @(isInvalidTarget ? "drop-target-invalid" : "") @(isOver ? "drop-over-active" : "")"
+                        ondragover="@(isValidTarget ? "event.preventDefault();" : null)"
+                        @ondragenter="() => HandleDragEnter(column, CardType.Step)"
+                        @ondragleave="() => HandleDragLeave(column)"
+                        @ondrop="() => HandleStepDrop(column)">
 
-						<div class="column-header">
-							<h3>@column</h3>
-							<span class="column-count">@columnSteps.Count</span>
-						</div>
+                        <div class="column-header">
+                            <h3>@column</h3>
+                            <span class="column-count">@columnSteps.Count</span>
+                        </div>
 
-						<div class="column-cards">
-							@foreach (var step in columnSteps)
-							{
-								var run = stepRuns.GetValueOrDefault(step.Id);
+                        <div class="column-cards">
+                            @foreach (var step in columnSteps)
+                            {
+                                var run = _stepRuns.GetValueOrDefault(step.Id);
 
-								<StepCard Step="@step"
-										  Board="@board"
-										  CurrentRun="@run"
-										  OnOpenDetails="OpenStepPopup"
-										  OnDragStart="HandleStepDragStart"
-										  OnDragEnd="HandleDragEnd" />
-							}
-						</div>
-					</div>
-				}
-			</div>
-		</section>
+                                <StepCard Step="@step"
+                                          Board="@_board"
+                                          CurrentRun="@run"
+                                          OnOpenDetails="OpenStepPopup"
+                                          OnDragStart="HandleStepDragStart"
+                                          OnDragEnd="HandleDragEnd"/>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </section>
 
-		<!-- Card Details & Actions Popup Modal -->
-		@if (popupFeature != null || popupStep != null)
-		{
-			<CardPopup Feature="@popupFeature"
-					   Step="@popupStep"
-					   Board="@board"
-					   CurrentRun="@(popupFeature != null ? featureRuns.GetValueOrDefault(popupFeature.Id) : stepRuns.GetValueOrDefault(popupStep!.Id))"
-					   OnClose="CloseCardPopup"
-					   OnChanged="HandleCardChanged" />
-		}
+        <!-- Card Details & Actions Popup Modal -->
+        @if (_popupFeature != null || _popupStep != null)
+        {
+            <CardPopup Feature="@_popupFeature"
+                       Step="@_popupStep"
+                       Board="@_board"
+                       CurrentRun="@(_popupFeature != null ? _featureRuns.GetValueOrDefault(_popupFeature.Id) : _stepRuns.GetValueOrDefault(_popupStep!.Id))"
+                       OnClose="CloseCardPopup"
+                       OnChanged="HandleCardChanged"/>
+        }
 
-		<!-- Board Settings Modal -->
-		@if (isEditingBoard)
-		{
-			<div class="modal-backdrop" @onclick="CloseBoardEditor">
-				<div class="modal-content" @onclick:stopPropagation="true">
-					<div class="modal-header">
-						<h2>Edit Board Settings</h2>
-						<button class="btn-close" @onclick="CloseBoardEditor"></button>
-					</div>
-					<form @onsubmit="SaveBoardAsync" @onsubmit:preventDefault>
-						<div class="form-group">
-							<label>Board Name</label>
-							<input class="form-control" @bind="boardName" />
-						</div>
-						<div class="form-group">
-							<label>Repository Path</label>
-							<input class="form-control" @bind="repoPath" />
-						</div>
-						<div class="form-group">
-							<label>Agent Concurrency Limit</label>
-							<input type="number" min="1" class="form-control" @bind="concurrencyLimit" />
-						</div>
-						<div class="form-check mb-2">
-							<input type="checkbox" class="form-check-input" id="skipFeatureReview" @bind="skipFeatureHumanReview" />
-							<label class="form-check-label" for="skipFeatureReview">Skip Feature Human Review</label>
-						</div>
-						<div class="form-check mb-3">
-							<input type="checkbox" class="form-check-input" id="skipStepReview" @bind="skipStepHumanReview" />
-							<label class="form-check-label" for="skipStepReview">Skip Step Human Review</label>
-						</div>
-						<div class="form-group">
-							<label>Agent Review Fail Threshold</label>
-							<input type="number" min="0" class="form-control" @bind="agentReviewFailThreshold" />
-						</div>
-						<div class="form-group">
-							<label>Human Review Fail Threshold</label>
-							<input type="number" min="0" class="form-control" @bind="humanReviewFailThreshold" />
-						</div>
-						<div class="form-actions">
-							<button type="button" class="btn btn-secondary" @onclick="CloseBoardEditor">Cancel</button>
-							<button type="submit" class="btn btn-primary">Save Changes</button>
-						</div>
-					</form>
-				</div>
-			</div>
-		}
+        <!-- Board Settings Modal -->
+        @if (_isEditingBoard)
+        {
+            <div class="modal-backdrop" @onclick="CloseBoardEditor">
+                <div class="modal-content" @onclick:stopPropagation="true">
+                    <div class="modal-header">
+                        <h2>Edit Board Settings</h2>
+                        <button class="btn-close" @onclick="CloseBoardEditor"></button>
+                    </div>
+                    <form @onsubmit="SaveBoardAsync" @onsubmit:preventDefault>
+                        <div class="form-group">
+                            <label>Board Name</label>
+                            <input class="form-control" @bind="_boardName"/>
+                        </div>
+                        <div class="form-group">
+                            <label>Repository Path</label>
+                            <input class="form-control" @bind="_repoPath"/>
+                        </div>
+                        <div class="form-group">
+                            <label>Agent Concurrency Limit</label>
+                            <input type="number" min="1" class="form-control" @bind="_concurrencyLimit"/>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input type="checkbox" class="form-check-input" id="skipFeatureReview"
+                                   @bind="_skipFeatureHumanReview"/>
+                            <label class="form-check-label" for="skipFeatureReview">Skip Feature Human Review</label>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input type="checkbox" class="form-check-input" id="skipStepReview"
+                                   @bind="_skipStepHumanReview"/>
+                            <label class="form-check-label" for="skipStepReview">Skip Step Human Review</label>
+                        </div>
+                        <div class="form-group">
+                            <label>Agent Review Fail Threshold</label>
+                            <input type="number" min="0" class="form-control" @bind="_agentReviewFailThreshold"/>
+                        </div>
+                        <div class="form-group">
+                            <label>Human Review Fail Threshold</label>
+                            <input type="number" min="0" class="form-control" @bind="_humanReviewFailThreshold"/>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" @onclick="CloseBoardEditor">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Save Changes</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        }
 
-		<!-- New Feature Modal -->
-		@if (isCreatingFeature)
-		{
-			<div class="modal-backdrop" @onclick="CloseFeatureCreator">
-				<div class="modal-content" @onclick:stopPropagation="true">
-					<div class="modal-header">
-						<h2>Create Feature</h2>
-						<button class="btn-close" @onclick="CloseFeatureCreator"></button>
-					</div>
-					<form @onsubmit="CreateFeatureAsync" @onsubmit:preventDefault>
-						<div class="form-group">
-							<label>Title</label>
-							<input class="form-control" @bind="newFeatureTitle" placeholder="Feature title" required />
-						</div>
-						<div class="form-group">
-							<label>Requirements</label>
-							<textarea class="form-control" rows="3" @bind="newFeatureRequirements" placeholder="Requirements"></textarea>
-						</div>
-						<div class="form-group">
-							<label>Acceptance Criteria</label>
-							<textarea class="form-control" rows="3" @bind="newFeatureAcceptanceCriteria" placeholder="Acceptance criteria"></textarea>
-						</div>
-						<div class="form-group">
-							<label>Suggested Solution</label>
-							<textarea class="form-control" rows="2" @bind="newFeatureSuggestedSolution" placeholder="Suggested solution notes"></textarea>
-						</div>
-						<div class="form-check mb-3">
-							<input type="checkbox" class="form-check-input" id="featAlwaysReview" @bind="newFeatureAlwaysHumanReview" />
-							<label class="form-check-label" for="featAlwaysReview">Always require Human Review</label>
-						</div>
-						<div class="form-actions">
-							<button type="button" class="btn btn-secondary" @onclick="CloseFeatureCreator">Cancel</button>
-							<button type="submit" class="btn btn-primary">Create Feature</button>
-						</div>
-					</form>
-				</div>
-			</div>
-		}
+        <!-- New Feature Modal -->
+        @if (_isCreatingFeature)
+        {
+            <div class="modal-backdrop" @onclick="CloseFeatureCreator">
+                <div class="modal-content" @onclick:stopPropagation="true">
+                    <div class="modal-header">
+                        <h2>Create Feature</h2>
+                        <button class="btn-close" @onclick="CloseFeatureCreator"></button>
+                    </div>
+                    <form @onsubmit="CreateFeatureAsync" @onsubmit:preventDefault>
+                        <div class="form-group">
+                            <label>Title</label>
+                            <input class="form-control" @bind="_newFeatureTitle" placeholder="Feature title" required/>
+                        </div>
+                        <div class="form-group">
+                            <label>Requirements</label>
+                            <textarea class="form-control" rows="3" @bind="_newFeatureRequirements"
+                                      placeholder="Requirements"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Acceptance Criteria</label>
+                            <textarea class="form-control" rows="3" @bind="_newFeatureAcceptanceCriteria"
+                                      placeholder="Acceptance criteria"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Suggested Solution</label>
+                            <textarea class="form-control" rows="2" @bind="_newFeatureSuggestedSolution"
+                                      placeholder="Suggested solution notes"></textarea>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input type="checkbox" class="form-check-input" id="featAlwaysReview"
+                                   @bind="_newFeatureAlwaysHumanReview"/>
+                            <label class="form-check-label" for="featAlwaysReview">Always require Human Review</label>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" @onclick="CloseFeatureCreator">Cancel
+                            </button>
+                            <button type="submit" class="btn btn-primary">Create Feature</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        }
 
-		<!-- New Step Modal -->
-		@if (isCreatingStep)
-		{
-			<div class="modal-backdrop" @onclick="CloseStepCreator">
-				<div class="modal-content" @onclick:stopPropagation="true">
-					<div class="modal-header">
-						<h2>Add Step</h2>
-						<button class="btn-close" @onclick="CloseStepCreator"></button>
-					</div>
-					<form @onsubmit="CreateStepAsync" @onsubmit:preventDefault>
-						<div class="form-group">
-							<label>Feature</label>
-							<select class="form-control" @bind="newStepFeatureId" required>
-								@foreach (var feat in features)
-								{
-									<option value="@feat.Id">@feat.Title</option>
-								}
-							</select>
-						</div>
-						<div class="form-group">
-							<label>Title</label>
-							<input class="form-control" @bind="newStepTitle" placeholder="Step title" required />
-						</div>
-						<div class="form-group">
-							<label>Description</label>
-							<textarea class="form-control" rows="3" @bind="newStepDescription" placeholder="Step description"></textarea>
-						</div>
-						<div class="form-group">
-							<label>Guidance Notes for Agent</label>
-							<textarea class="form-control" rows="2" @bind="newStepGuidanceNotes" placeholder="Guidance notes"></textarea>
-						</div>
-						<div class="form-check mb-3">
-							<input type="checkbox" class="form-check-input" id="stepAlwaysReview" @bind="newStepAlwaysHumanReview" />
-							<label class="form-check-label" for="stepAlwaysReview">Always require Human Review</label>
-						</div>
-						<div class="form-actions">
-							<button type="button" class="btn btn-secondary" @onclick="CloseStepCreator">Cancel</button>
-							<button type="submit" class="btn btn-primary">Create Step</button>
-						</div>
-					</form>
-				</div>
-			</div>
-		}
-	</div>
+        <!-- New Step Modal -->
+        @if (_isCreatingStep)
+        {
+            <div class="modal-backdrop" @onclick="CloseStepCreator">
+                <div class="modal-content" @onclick:stopPropagation="true">
+                    <div class="modal-header">
+                        <h2>Add Step</h2>
+                        <button class="btn-close" @onclick="CloseStepCreator"></button>
+                    </div>
+                    <form @onsubmit="CreateStepAsync" @onsubmit:preventDefault>
+                        <div class="form-group">
+                            <label>Feature</label>
+                            <select class="form-control" @bind="_newStepFeatureId" required>
+                                @foreach (var feat in _features)
+                                {
+                                    <option value="@feat.Id">@feat.Title</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Title</label>
+                            <input class="form-control" @bind="_newStepTitle" placeholder="Step title" required/>
+                        </div>
+                        <div class="form-group">
+                            <label>Description</label>
+                            <textarea class="form-control" rows="3" @bind="_newStepDescription"
+                                      placeholder="Step description"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Guidance Notes for Agent</label>
+                            <textarea class="form-control" rows="2" @bind="_newStepGuidanceNotes"
+                                      placeholder="Guidance notes"></textarea>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input type="checkbox" class="form-check-input" id="stepAlwaysReview"
+                                   @bind="_newStepAlwaysHumanReview"/>
+                            <label class="form-check-label" for="stepAlwaysReview">Always require Human Review</label>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" @onclick="CloseStepCreator">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Create Step</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        }
+    </div>
 }
 
 @code {
-	[Parameter] public Guid BoardId { get; set; }
+    [Parameter] public Guid BoardId { get; set; }
 
-	private readonly WorkflowColumn[] columns =
-	[
-		WorkflowColumn.Backlog,
-		WorkflowColumn.Ready,
-		WorkflowColumn.Build,
-		WorkflowColumn.AgentReview,
-		WorkflowColumn.HumanReview,
-		WorkflowColumn.Done
-	];
+    private readonly WorkflowColumn[] _columns =
+    [
+        WorkflowColumn.Backlog,
+        WorkflowColumn.Ready,
+        WorkflowColumn.Build,
+        WorkflowColumn.AgentReview,
+        WorkflowColumn.HumanReview,
+        WorkflowColumn.Done
+    ];
 
-	private BoardEntity? board;
-	private List<Feature> features = [];
-	private Guid? selectedFeatureId;
-	private Feature? selectedFeature;
-	private List<Step> selectedFeatureSteps = [];
+    private BoardEntity? _board;
+    private List<Feature> _features = [];
+    private Guid? _selectedFeatureId;
+    private Feature? _selectedFeature;
+    private List<Step> _selectedFeatureSteps = [];
 
-	private Dictionary<Guid, AgentRun> featureRuns = [];
-	private Dictionary<Guid, AgentRun> stepRuns = [];
-	private Dictionary<Guid, List<AgentRunStatus?>> featureStepStatuses = [];
+    private Dictionary<Guid, AgentRun> _featureRuns = [];
+    private Dictionary<Guid, AgentRun> _stepRuns = [];
+    private Dictionary<Guid, List<AgentRunStatus?>> _featureStepStatuses = [];
 
-	// Popup state
-	private Feature? popupFeature;
-	private Step? popupStep;
+    // Popup state
+    private Feature? _popupFeature;
+    private Step? _popupStep;
 
-	// Drag & Drop state
-	private CardType? draggedCardType;
-	private Feature? draggedFeature;
-	private Step? draggedStep;
-	private List<WorkflowColumn> currentAllowedDropColumns = [];
-	private WorkflowColumn? draggedOverColumn;
+    // Drag & Drop state
+    private CardType? _draggedCardType;
+    private Feature? _draggedFeature;
+    private Step? _draggedStep;
+    private List<WorkflowColumn> _currentAllowedDropColumns = [];
+    private WorkflowColumn? _draggedOverColumn;
 
-	// Board editing state
-	private bool isEditingBoard;
-	private string boardName = "";
-	private string repoPath = "";
-	private int concurrencyLimit = 1;
-	private bool skipFeatureHumanReview;
-	private bool skipStepHumanReview;
-	private int agentReviewFailThreshold;
-	private int humanReviewFailThreshold;
+    // Board editing state
+    private bool _isEditingBoard;
+    private string _boardName = "";
+    private string _repoPath = "";
+    private int _concurrencyLimit = 1;
+    private bool _skipFeatureHumanReview;
+    private bool _skipStepHumanReview;
+    private int _agentReviewFailThreshold;
+    private int _humanReviewFailThreshold;
 
-	// Feature creation state
-	private bool isCreatingFeature;
-	private string newFeatureTitle = "";
-	private string newFeatureRequirements = "";
-	private string newFeatureAcceptanceCriteria = "";
-	private string newFeatureSuggestedSolution = "";
-	private bool newFeatureAlwaysHumanReview;
+    // Feature creation state
+    private bool _isCreatingFeature;
+    private string _newFeatureTitle = "";
+    private string _newFeatureRequirements = "";
+    private string _newFeatureAcceptanceCriteria = "";
+    private string _newFeatureSuggestedSolution = "";
+    private bool _newFeatureAlwaysHumanReview;
 
-	// Step creation state
-	private bool isCreatingStep;
-	private Guid? newStepFeatureId;
-	private string newStepTitle = "";
-	private string newStepDescription = "";
-	private string newStepGuidanceNotes = "";
-	private bool newStepAlwaysHumanReview;
+    // Step creation state
+    private bool _isCreatingStep;
+    private Guid? _newStepFeatureId;
+    private string _newStepTitle = "";
+    private string _newStepDescription = "";
+    private string _newStepGuidanceNotes = "";
+    private bool _newStepAlwaysHumanReview;
 
-	// Notifications
-	private string? notificationMessage;
-	private bool isNotificationError;
+    // Notifications
+    private string? _notificationMessage;
+    private bool _isNotificationError;
 
-	protected override async Task OnInitializedAsync()
-	{
-		await LoadBoardDataAsync();
-	}
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBoardDataAsync();
+    }
 
-	protected override async Task OnParametersSetAsync()
-	{
-		await LoadBoardDataAsync();
-	}
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadBoardDataAsync();
+    }
 
-	private async Task LoadBoardDataAsync()
-	{
-		board = await BoardService.GetByIdAsync(BoardId);
-		if (board == null)
-		{
-			Navigation.NavigateTo("/boards");
-			return;
-		}
+    private async Task LoadBoardDataAsync()
+    {
+        _board = await BoardService.GetByIdAsync(BoardId);
+        if (_board == null)
+        {
+            Navigation.NavigateTo("/boards");
+            return;
+        }
 
-		boardName = board.Name;
-		repoPath = board.RepoPath;
-		concurrencyLimit = board.ConcurrencyLimit;
-		skipFeatureHumanReview = board.SkipFeatureHumanReview;
-		skipStepHumanReview = board.SkipStepHumanReview;
-		agentReviewFailThreshold = board.AgentReviewFailThreshold;
-		humanReviewFailThreshold = board.HumanReviewFailThreshold;
+        _boardName = _board.Name;
+        _repoPath = _board.RepoPath;
+        _concurrencyLimit = _board.ConcurrencyLimit;
+        _skipFeatureHumanReview = _board.SkipFeatureHumanReview;
+        _skipStepHumanReview = _board.SkipStepHumanReview;
+        _agentReviewFailThreshold = _board.AgentReviewFailThreshold;
+        _humanReviewFailThreshold = _board.HumanReviewFailThreshold;
 
-		features = await FeatureService.GetForBoardAsync(BoardId);
+        _features = await FeatureService.GetForBoardAsync(BoardId);
 
-		// Load steps for each feature and assign back-reference
-		var allStepIds = new List<Guid>();
-		var fStepStatuses = new Dictionary<Guid, List<AgentRunStatus?>>();
+        // Load steps for each feature and assign back-reference
+        var allStepIds = new List<Guid>();
+        var fStepStatuses = new Dictionary<Guid, List<AgentRunStatus?>>();
 
-		foreach (var f in features)
-		{
-			var full = await FeatureService.GetByIdAsync(f.Id);
-			if (full != null)
-			{
-				f.Steps = full.Steps;
-				foreach (var s in f.Steps)
-				{
-					s.Feature = f;
-				}
-				allStepIds.AddRange(f.Steps.Select(s => s.Id));
-			}
-		}
+        foreach (var f in _features)
+        {
+            var full = await FeatureService.GetByIdAsync(f.Id);
+            if (full != null)
+            {
+                f.Steps = full.Steps;
+                foreach (var s in f.Steps)
+                {
+                    s.Feature = f;
+                }
 
-		// Load agent runs
-		var featureIds = features.Select(f => f.Id).ToList();
-		var runs = await DbContext.AgentRuns
-			.AsNoTracking()
-			.Where(r => (r.CardType == CardType.Feature && featureIds.Contains(r.CardId)) ||
-						(r.CardType == CardType.Step && allStepIds.Contains(r.CardId)))
-			.ToListAsync();
+                allStepIds.AddRange(f.Steps.Select(s => s.Id));
+            }
+        }
 
-		featureRuns = runs
-			.Where(r => r.CardType == CardType.Feature)
-			.GroupBy(r => r.CardId)
-			.ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.StartedAt).First());
+        // Load agent runs
+        var featureIds = _features.Select(f => f.Id).ToList();
+        var runs = await DbContext.AgentRuns
+            .AsNoTracking()
+            .Where(r => (r.CardType == CardType.Feature && featureIds.Contains(r.CardId)) ||
+                        (r.CardType == CardType.Step && allStepIds.Contains(r.CardId)))
+            .ToListAsync();
 
-		stepRuns = runs
-			.Where(r => r.CardType == CardType.Step)
-			.GroupBy(r => r.CardId)
-			.ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.StartedAt).First());
+        _featureRuns = runs
+            .Where(r => r.CardType == CardType.Feature)
+            .GroupBy(r => r.CardId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.StartedAt).First());
 
-		foreach (var f in features)
-		{
-			fStepStatuses[f.Id] = f.Steps.Select(s => stepRuns.GetValueOrDefault(s.Id)?.Status).ToList();
-		}
-		featureStepStatuses = fStepStatuses;
+        _stepRuns = runs
+            .Where(r => r.CardType == CardType.Step)
+            .GroupBy(r => r.CardId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.StartedAt).First());
 
-		// Maintain selected feature if one was selected
-		if (selectedFeatureId.HasValue)
-		{
-			selectedFeature = features.FirstOrDefault(f => f.Id == selectedFeatureId.Value);
-			if (selectedFeature == null)
-			{
-				selectedFeatureId = null;
-			}
-		}
-		else
-		{
-			selectedFeature = null;
-		}
+        foreach (var f in _features)
+        {
+            fStepStatuses[f.Id] = f.Steps.Select(s => _stepRuns.GetValueOrDefault(s.Id)?.Status).ToList();
+        }
 
-		if (selectedFeature != null)
-		{
-			selectedFeatureSteps = selectedFeature.Steps.OrderBy(s => s.CreatedAt).ToList();
-		}
-		else
-		{
-			selectedFeatureSteps = features.SelectMany(f => f.Steps).OrderBy(s => s.CreatedAt).ToList();
-		}
-	}
+        _featureStepStatuses = fStepStatuses;
 
-	private void HandleFeatureSelected(Feature feature)
-	{
-		if (selectedFeatureId == feature.Id)
-		{
-			ClearFeatureFilter();
-		}
-		else
-		{
-			selectedFeatureId = feature.Id;
-			selectedFeature = feature;
-			selectedFeatureSteps = feature.Steps.OrderBy(s => s.CreatedAt).ToList();
-		}
-	}
+        // Maintain selected feature if one was selected
+        if (_selectedFeatureId.HasValue)
+        {
+            _selectedFeature = _features.FirstOrDefault(f => f.Id == _selectedFeatureId.Value);
+            if (_selectedFeature == null)
+            {
+                _selectedFeatureId = null;
+            }
+        }
+        else
+        {
+            _selectedFeature = null;
+        }
 
-	private void ClearFeatureFilter()
-	{
-		selectedFeatureId = null;
-		selectedFeature = null;
-		selectedFeatureSteps = features.SelectMany(f => f.Steps).OrderBy(s => s.CreatedAt).ToList();
-	}
+        if (_selectedFeature != null)
+        {
+            _selectedFeatureSteps = _selectedFeature.Steps.OrderBy(s => s.CreatedAt).ToList();
+        }
+        else
+        {
+            _selectedFeatureSteps = _features.SelectMany(f => f.Steps).OrderBy(s => s.CreatedAt).ToList();
+        }
+    }
 
-	private void OpenFeaturePopup(Feature feature)
-	{
-		popupFeature = feature;
-		popupStep = null;
-	}
+    private void HandleFeatureSelected(Feature feature)
+    {
+        if (_selectedFeatureId == feature.Id)
+        {
+            ClearFeatureFilter();
+        }
+        else
+        {
+            _selectedFeatureId = feature.Id;
+            _selectedFeature = feature;
+            _selectedFeatureSteps = feature.Steps.OrderBy(s => s.CreatedAt).ToList();
+        }
+    }
 
-	private void OpenStepPopup(Step step)
-	{
-		popupStep = step;
-		popupFeature = null;
-	}
+    private void ClearFeatureFilter()
+    {
+        _selectedFeatureId = null;
+        _selectedFeature = null;
+        _selectedFeatureSteps = _features.SelectMany(f => f.Steps).OrderBy(s => s.CreatedAt).ToList();
+    }
 
-	private void CloseCardPopup()
-	{
-		popupFeature = null;
-		popupStep = null;
-	}
+    private void OpenFeaturePopup(Feature feature)
+    {
+        _popupFeature = feature;
+        _popupStep = null;
+    }
 
-	private async Task HandleCardChanged()
-	{
-		await LoadBoardDataAsync();
-		if (popupFeature != null)
-		{
-			popupFeature = features.FirstOrDefault(f => f.Id == popupFeature.Id);
-		}
-		if (popupStep != null)
-		{
-			popupStep = selectedFeatureSteps.FirstOrDefault(s => s.Id == popupStep.Id);
-		}
-	}
+    private void OpenStepPopup(Step step)
+    {
+        _popupStep = step;
+        _popupFeature = null;
+    }
 
-	// Drag & Drop
-	private async Task HandleFeatureDragStart(Feature feature)
-	{
-		if (await AgentScheduler.IsAgentRunningAsync(CardType.Feature, feature.Id))
-		{
-			return; // Hard blocked
-		}
+    private void CloseCardPopup()
+    {
+        _popupFeature = null;
+        _popupStep = null;
+    }
 
-		draggedCardType = CardType.Feature;
-		draggedFeature = feature;
-		draggedStep = null;
+    private async Task HandleCardChanged()
+    {
+        await LoadBoardDataAsync();
+        if (_popupFeature != null)
+        {
+            _popupFeature = _features.FirstOrDefault(f => f.Id == _popupFeature.Id);
+        }
 
-		var allowed = await FeatureOrchestrator.GetAllowedMovesAsync(feature.Id);
-		currentAllowedDropColumns = allowed.ToList();
-	}
+        if (_popupStep != null)
+        {
+            _popupStep = _selectedFeatureSteps.FirstOrDefault(s => s.Id == _popupStep.Id);
+        }
+    }
 
-	private async Task HandleStepDragStart(Step step)
-	{
-		if (await AgentScheduler.IsAgentRunningAsync(CardType.Step, step.Id))
-		{
-			return; // Hard blocked
-		}
+    // Drag & Drop
+    private async Task HandleFeatureDragStart(Feature feature)
+    {
+        if (await AgentScheduler.IsAgentRunningAsync(CardType.Feature, feature.Id))
+        {
+            return; // Hard blocked
+        }
 
-		draggedCardType = CardType.Step;
-		draggedStep = step;
-		draggedFeature = null;
+        _draggedCardType = CardType.Feature;
+        _draggedFeature = feature;
+        _draggedStep = null;
 
-		var allowed = await StepOrchestrator.GetAllowedMovesAsync(step.Id);
-		currentAllowedDropColumns = allowed.ToList();
-	}
+        var allowed = await FeatureOrchestrator.GetAllowedMovesAsync(feature.Id);
+        _currentAllowedDropColumns = allowed.ToList();
+    }
 
-	private void HandleDragEnter(WorkflowColumn column, CardType cardType)
-	{
-		if (draggedCardType == cardType)
-		{
-			draggedOverColumn = column;
-		}
-	}
+    private async Task HandleStepDragStart(Step step)
+    {
+        if (await AgentScheduler.IsAgentRunningAsync(CardType.Step, step.Id))
+        {
+            return; // Hard blocked
+        }
 
-	private void HandleDragLeave(WorkflowColumn column)
-	{
-		if (draggedOverColumn == column)
-		{
-			draggedOverColumn = null;
-		}
-	}
+        _draggedCardType = CardType.Step;
+        _draggedStep = step;
+        _draggedFeature = null;
 
-	private void HandleDragEnd()
-	{
-		draggedCardType = null;
-		draggedFeature = null;
-		draggedStep = null;
-		currentAllowedDropColumns.Clear();
-		draggedOverColumn = null;
-	}
+        var allowed = await StepOrchestrator.GetAllowedMovesAsync(step.Id);
+        _currentAllowedDropColumns = allowed.ToList();
+    }
 
-	private async Task HandleFeatureDrop(WorkflowColumn targetColumn)
-	{
-		if (draggedFeature == null || !currentAllowedDropColumns.Contains(targetColumn))
-		{
-			HandleDragEnd();
-			return;
-		}
+    private void HandleDragEnter(WorkflowColumn column, CardType cardType)
+    {
+        if (_draggedCardType == cardType)
+        {
+            _draggedOverColumn = column;
+        }
+    }
 
-		try
-		{
-			await FeatureOrchestrator.MoveAsync(draggedFeature.Id, targetColumn);
-			Notify($"Moved feature to {targetColumn}.", isError: false);
-			await LoadBoardDataAsync();
-		}
-		catch (Exception ex)
-		{
-			Notify(ex.Message, isError: true);
-		}
-		finally
-		{
-			HandleDragEnd();
-		}
-	}
+    private void HandleDragLeave(WorkflowColumn column)
+    {
+        if (_draggedOverColumn == column)
+        {
+            _draggedOverColumn = null;
+        }
+    }
 
-	private async Task HandleStepDrop(WorkflowColumn targetColumn)
-	{
-		if (draggedStep == null || !currentAllowedDropColumns.Contains(targetColumn))
-		{
-			HandleDragEnd();
-			return;
-		}
+    private void HandleDragEnd()
+    {
+        _draggedCardType = null;
+        _draggedFeature = null;
+        _draggedStep = null;
+        _currentAllowedDropColumns.Clear();
+        _draggedOverColumn = null;
+    }
 
-		try
-		{
-			await StepOrchestrator.MoveAsync(draggedStep.Id, targetColumn);
-			Notify($"Moved step to {targetColumn}.", isError: false);
-			await LoadBoardDataAsync();
-		}
-		catch (Exception ex)
-		{
-			Notify(ex.Message, isError: true);
-		}
-		finally
-		{
-			HandleDragEnd();
-		}
-	}
+    private async Task HandleFeatureDrop(WorkflowColumn targetColumn)
+    {
+        if (_draggedFeature == null || !_currentAllowedDropColumns.Contains(targetColumn))
+        {
+            HandleDragEnd();
+            return;
+        }
 
-	// Board Editor
-	private void OpenBoardEditor() => isEditingBoard = true;
-	private void CloseBoardEditor() => isEditingBoard = false;
+        try
+        {
+            await FeatureOrchestrator.MoveAsync(_draggedFeature.Id, targetColumn);
+            Notify($"Moved feature to {targetColumn}.", false);
+            await LoadBoardDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Notify(ex.Message, true);
+        }
+        finally
+        {
+            HandleDragEnd();
+        }
+    }
 
-	private async Task SaveBoardAsync()
-	{
-		try
-		{
-			await BoardService.UpdateAsync(BoardId, boardName, repoPath, concurrencyLimit, skipFeatureHumanReview, skipStepHumanReview, agentReviewFailThreshold, humanReviewFailThreshold);
-			CloseBoardEditor();
-			Notify("Board updated.", isError: false);
-			await LoadBoardDataAsync();
-		}
-		catch (Exception ex)
-		{
-			Notify(ex.Message, isError: true);
-		}
-	}
+    private async Task HandleStepDrop(WorkflowColumn targetColumn)
+    {
+        if (_draggedStep == null || !_currentAllowedDropColumns.Contains(targetColumn))
+        {
+            HandleDragEnd();
+            return;
+        }
 
-	// Feature Creator
-	private void OpenFeatureCreator() => isCreatingFeature = true;
-	private void CloseFeatureCreator() => isCreatingFeature = false;
+        try
+        {
+            await StepOrchestrator.MoveAsync(_draggedStep.Id, targetColumn);
+            Notify($"Moved step to {targetColumn}.", false);
+            await LoadBoardDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Notify(ex.Message, true);
+        }
+        finally
+        {
+            HandleDragEnd();
+        }
+    }
 
-	private async Task CreateFeatureAsync()
-	{
-		try
-		{
-			var feat = await FeatureService.CreateAsync(BoardId, newFeatureTitle, newFeatureRequirements, newFeatureAcceptanceCriteria, newFeatureSuggestedSolution, newFeatureAlwaysHumanReview);
-			newFeatureTitle = newFeatureRequirements = newFeatureAcceptanceCriteria = newFeatureSuggestedSolution = "";
-			newFeatureAlwaysHumanReview = false;
-			CloseFeatureCreator();
-			selectedFeatureId = feat.Id;
-			Notify("Feature created.", isError: false);
-			await LoadBoardDataAsync();
-		}
-		catch (Exception ex)
-		{
-			Notify(ex.Message, isError: true);
-		}
-	}
+    // Board Editor
+    private void OpenBoardEditor()
+    {
+        _isEditingBoard = true;
+    }
 
-	// Step Creator
-	private void OpenStepCreator()
-	{
-		if (features.Count == 0)
-		{
-			Notify("Please create a feature before adding steps.", isError: true);
-			return;
-		}
-		newStepFeatureId = selectedFeatureId ?? features[0].Id;
-		isCreatingStep = true;
-	}
+    private void CloseBoardEditor()
+    {
+        _isEditingBoard = false;
+    }
 
-	private void CloseStepCreator() => isCreatingStep = false;
+    private async Task SaveBoardAsync()
+    {
+        try
+        {
+            await BoardService.UpdateAsync(BoardId, _boardName, _repoPath, _concurrencyLimit, _skipFeatureHumanReview, _skipStepHumanReview, _agentReviewFailThreshold, _humanReviewFailThreshold);
+            CloseBoardEditor();
+            Notify("Board updated.", false);
+            await LoadBoardDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Notify(ex.Message, true);
+        }
+    }
 
-	private async Task CreateStepAsync()
-	{
-		if (!newStepFeatureId.HasValue) return;
-		try
-		{
-			await StepService.CreateAsync(newStepFeatureId.Value, newStepTitle, newStepDescription, newStepGuidanceNotes, newStepAlwaysHumanReview);
-			newStepTitle = newStepDescription = newStepGuidanceNotes = "";
-			newStepAlwaysHumanReview = false;
-			CloseStepCreator();
-			Notify("Step created.", isError: false);
-			await LoadBoardDataAsync();
-		}
-		catch (Exception ex)
-		{
-			Notify(ex.Message, isError: true);
-		}
-	}
+    // Feature Creator
+    private void OpenFeatureCreator()
+    {
+        _isCreatingFeature = true;
+    }
 
-	private void Notify(string text, bool isError)
-	{
-		notificationMessage = text;
-		isNotificationError = isError;
-	}
+    private void CloseFeatureCreator()
+    {
+        _isCreatingFeature = false;
+    }
+
+    private async Task CreateFeatureAsync()
+    {
+        try
+        {
+            var feat = await FeatureService.CreateAsync(BoardId, _newFeatureTitle, _newFeatureRequirements, _newFeatureAcceptanceCriteria, _newFeatureSuggestedSolution, _newFeatureAlwaysHumanReview);
+            _newFeatureTitle = _newFeatureRequirements = _newFeatureAcceptanceCriteria = _newFeatureSuggestedSolution = "";
+            _newFeatureAlwaysHumanReview = false;
+            CloseFeatureCreator();
+            _selectedFeatureId = feat.Id;
+            Notify("Feature created.", false);
+            await LoadBoardDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Notify(ex.Message, true);
+        }
+    }
+
+    // Step Creator
+    private void OpenStepCreator()
+    {
+        if (_features.Count == 0)
+        {
+            Notify("Please create a feature before adding steps.", true);
+            return;
+        }
+
+        _newStepFeatureId = _selectedFeatureId ?? _features[0].Id;
+        _isCreatingStep = true;
+    }
+
+    private void CloseStepCreator()
+    {
+        _isCreatingStep = false;
+    }
+
+    private async Task CreateStepAsync()
+    {
+        if (!_newStepFeatureId.HasValue) return;
+        try
+        {
+            await StepService.CreateAsync(_newStepFeatureId.Value, _newStepTitle, _newStepDescription, _newStepGuidanceNotes, _newStepAlwaysHumanReview);
+            _newStepTitle = _newStepDescription = _newStepGuidanceNotes = "";
+            _newStepAlwaysHumanReview = false;
+            CloseStepCreator();
+            Notify("Step created.", false);
+            await LoadBoardDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Notify(ex.Message, true);
+        }
+    }
+
+    private void Notify(string text, bool isError)
+    {
+        _notificationMessage = text;
+        _isNotificationError = isError;
+    }
+
 }

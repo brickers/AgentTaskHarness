@@ -9,9 +9,9 @@ using AgentTaskHarness.Infrastructure.Git;
 namespace AgentTaskHarness.Infrastructure.Agents;
 
 /// <summary>
-/// Infrastructure runner that launches copilot CLI inside the card's worktree path,
-/// generates the git guard shim on PATH to enforce read-only git operations,
-/// tracks process lifetime, and extracts token/time usage on completion.
+///     Infrastructure runner that launches copilot CLI inside the card's worktree path,
+///     generates the git guard shim on PATH to enforce read-only git operations,
+///     tracks process lifetime, and extracts token/time usage on completion.
 /// </summary>
 public class CopilotCliProcessRunner(GitGuardShimWriter shimWriter) : IAgentProcessRunner
 {
@@ -23,16 +23,10 @@ public class CopilotCliProcessRunner(GitGuardShimWriter shimWriter) : IAgentProc
 		@"(?:time_spent|duration|elapsed)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(s|sec|seconds|m|min|minutes|h|hours)?",
 		RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-	private readonly ConcurrentDictionary<int, ProcessTrackingInfo> activeProcesses = new();
+	private readonly ConcurrentDictionary<int, ProcessTrackingInfo> _activeProcesses = new();
 
-	private record ProcessTrackingInfo(
-		Process? Process,
-		Guid StepId,
-		string? ShimDir,
-		DateTimeOffset StartedAt,
-		string? SessionLink);
-
-	public Task<AgentProcessResult> StartAsync(Step step, AgentDefinition definition, CancellationToken cancellationToken = default)
+	public Task<AgentProcessResult> StartAsync(Step step, AgentDefinition definition,
+		CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(step);
 		ArgumentNullException.ThrowIfNull(definition);
@@ -66,7 +60,7 @@ public class CopilotCliProcessRunner(GitGuardShimWriter shimWriter) : IAgentProc
 			if (process.Start())
 			{
 				processId = process.Id;
-				activeProcesses[process.Id] = new ProcessTrackingInfo(
+				_activeProcesses[process.Id] = new ProcessTrackingInfo(
 					process,
 					step.Id,
 					shimDir,
@@ -87,14 +81,10 @@ public class CopilotCliProcessRunner(GitGuardShimWriter shimWriter) : IAgentProc
 
 	public Task StopAsync(int processId, CancellationToken cancellationToken = default)
 	{
-		if (activeProcesses.TryRemove(processId, out var info))
-		{
+		if (_activeProcesses.TryRemove(processId, out var info))
 			try
 			{
-				if (info.Process is { HasExited: false })
-				{
-					info.Process.Kill(entireProcessTree: true);
-				}
+				if (info.Process is { HasExited: false }) info.Process.Kill(true);
 				info.Process?.Dispose();
 			}
 			catch
@@ -103,29 +93,22 @@ public class CopilotCliProcessRunner(GitGuardShimWriter shimWriter) : IAgentProc
 			}
 			finally
 			{
-				if (info.ShimDir != null)
-				{
-					shimWriter.CleanupShimDirectory(info.ShimDir);
-				}
+				if (info.ShimDir != null) shimWriter.CleanupShimDirectory(info.ShimDir);
 			}
-		}
 
 		return Task.CompletedTask;
 	}
 
 	/// <summary>
-	/// Parses token and time usage from agent CLI output or summary log.
-	/// Supports key-value text lines, JSON payloads, and regex matching.
+	///     Parses token and time usage from agent CLI output or summary log.
+	///     Supports key-value text lines, JSON payloads, and regex matching.
 	/// </summary>
 	public static bool TryParseUsage(string output, out long tokensUsed, out TimeSpan timeSpent)
 	{
 		tokensUsed = 0;
 		timeSpent = TimeSpan.Zero;
 
-		if (string.IsNullOrWhiteSpace(output))
-		{
-			return false;
-		}
+		if (string.IsNullOrWhiteSpace(output)) return false;
 
 		var matched = false;
 
@@ -141,13 +124,11 @@ public class CopilotCliProcessRunner(GitGuardShimWriter shimWriter) : IAgentProc
 				if (root.TryGetProperty("tokens_used", out var tokensProp) ||
 				    root.TryGetProperty("tokens", out tokensProp) ||
 				    root.TryGetProperty("total_tokens", out tokensProp))
-				{
 					if (tokensProp.TryGetInt64(out var tokens))
 					{
 						tokensUsed = tokens;
 						matched = true;
 					}
-				}
 
 				if (root.TryGetProperty("time_spent_seconds", out var timeProp) ||
 				    root.TryGetProperty("duration_seconds", out timeProp))
@@ -168,10 +149,7 @@ public class CopilotCliProcessRunner(GitGuardShimWriter shimWriter) : IAgentProc
 					}
 				}
 
-				if (matched)
-				{
-					return true;
-				}
+				if (matched) return true;
 			}
 		}
 		catch
@@ -202,4 +180,11 @@ public class CopilotCliProcessRunner(GitGuardShimWriter shimWriter) : IAgentProc
 
 		return matched;
 	}
+
+	private record ProcessTrackingInfo(
+		Process? Process,
+		Guid StepId,
+		string? ShimDir,
+		DateTimeOffset StartedAt,
+		string? SessionLink);
 }

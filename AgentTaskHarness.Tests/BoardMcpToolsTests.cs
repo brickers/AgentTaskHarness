@@ -1,4 +1,4 @@
-using AgentTaskHarness.Application.Abstractions;
+using System.Text.Json;
 using AgentTaskHarness.Application.Agents;
 using AgentTaskHarness.Application.Boards;
 using AgentTaskHarness.Application.Comments;
@@ -14,7 +14,6 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using Xunit;
 
@@ -22,83 +21,84 @@ namespace AgentTaskHarness.Tests;
 
 public class BoardMcpToolsTests : IAsyncLifetime
 {
-	private readonly SqliteConnection connection = new("Data Source=:memory:");
-	private AppDbContext dbContext = null!;
-	private BoardService boards = null!;
-	private FeatureService features = null!;
-	private StepService steps = null!;
-	private WorkflowTransitionRules rules = null!;
-	private FeatureDependencyService featureDeps = null!;
-	private StepDependencyService stepDeps = null!;
-	private ReviewOutcomeService reviewOutcomeService = null!;
-	private CommentService commentService = null!;
-	private AgentMatchingService agentMatchingService = null!;
-	private TestAgentProcessRunner testProcessRunner = null!;
-	private AgentSchedulerService scheduler = null!;
-	private FeatureTransitionOrchestrator featureOrchestrator = null!;
-	private StepTransitionOrchestrator stepOrchestrator = null!;
-	private BoardMcpTools mcpTools = null!;
+	private readonly SqliteConnection _connection = new("Data Source=:memory:");
+	private AgentMatchingService _agentMatchingService = null!;
+	private BoardService _boards = null!;
+	private CommentService _commentService = null!;
+	private AppDbContext _dbContext = null!;
+	private FeatureDependencyService _featureDeps = null!;
+	private FeatureTransitionOrchestrator _featureOrchestrator = null!;
+	private FeatureService _features = null!;
+	private BoardMcpTools _mcpTools = null!;
+	private ReviewOutcomeService _reviewOutcomeService = null!;
+	private WorkflowTransitionRules _rules = null!;
+	private AgentSchedulerService _scheduler = null!;
+	private StepDependencyService _stepDeps = null!;
+	private StepTransitionOrchestrator _stepOrchestrator = null!;
+	private StepService _steps = null!;
+	private TestAgentProcessRunner _testProcessRunner = null!;
 
 	public async Task InitializeAsync()
 	{
-		await connection.OpenAsync();
-		dbContext = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
-		await dbContext.Database.MigrateAsync();
+		await _connection.OpenAsync();
+		_dbContext = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
+		await _dbContext.Database.MigrateAsync();
 
-		boards = new BoardService(dbContext);
-		features = new FeatureService(dbContext);
-		steps = new StepService(dbContext);
-		rules = new WorkflowTransitionRules();
-		featureDeps = new FeatureDependencyService(dbContext);
-		stepDeps = new StepDependencyService(dbContext);
-		reviewOutcomeService = new ReviewOutcomeService(dbContext);
-		commentService = new CommentService(dbContext);
-		agentMatchingService = new AgentMatchingService(dbContext);
-		testProcessRunner = new TestAgentProcessRunner();
+		_boards = new BoardService(_dbContext);
+		_features = new FeatureService(_dbContext);
+		_steps = new StepService(_dbContext);
+		_rules = new WorkflowTransitionRules();
+		_featureDeps = new FeatureDependencyService(_dbContext);
+		_stepDeps = new StepDependencyService(_dbContext);
+		_reviewOutcomeService = new ReviewOutcomeService(_dbContext);
+		_commentService = new CommentService(_dbContext);
+		_agentMatchingService = new AgentMatchingService(_dbContext);
+		_testProcessRunner = new TestAgentProcessRunner();
 
-		scheduler = new AgentSchedulerService(
-			dbContext,
-			agentMatchingService,
-			reviewOutcomeService,
-			stepDeps,
-			testProcessRunner);
+		_scheduler = new AgentSchedulerService(
+			_dbContext,
+			_agentMatchingService,
+			_reviewOutcomeService,
+			_stepDeps,
+			_testProcessRunner);
 
-		featureOrchestrator = new FeatureTransitionOrchestrator(dbContext, rules, featureDeps, reviewOutcomeService);
-		stepOrchestrator = new StepTransitionOrchestrator(
-			dbContext,
-			rules,
-			stepDeps,
-			featureOrchestrator,
-			reviewOutcomeService,
-			gitWorktrees: null,
-			agentScheduler: scheduler);
+		_featureOrchestrator =
+			new FeatureTransitionOrchestrator(_dbContext, _rules, _featureDeps, _reviewOutcomeService);
+		_stepOrchestrator = new StepTransitionOrchestrator(
+			_dbContext,
+			_rules,
+			_stepDeps,
+			_featureOrchestrator,
+			_reviewOutcomeService,
+			null,
+			_scheduler);
 
-		mcpTools = new BoardMcpTools(
-			featureOrchestrator,
-			stepOrchestrator,
-			featureDeps,
-			stepDeps,
-			reviewOutcomeService,
-			commentService,
-			dbContext);
+		_mcpTools = new BoardMcpTools(
+			_featureOrchestrator,
+			_stepOrchestrator,
+			_featureDeps,
+			_stepDeps,
+			_reviewOutcomeService,
+			_commentService,
+			_dbContext);
 	}
 
 	public async Task DisposeAsync()
 	{
-		await dbContext.DisposeAsync();
-		await connection.DisposeAsync();
+		await _dbContext.DisposeAsync();
+		await _connection.DisposeAsync();
 	}
 
 	[Fact]
 	public async Task StartBuild_StepInReady_TransitionsToBuild()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
 
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
 
-		var result = await mcpTools.StartBuildAsync(step.Id);
+		var result = await _mcpTools.StartBuildAsync(step.Id);
 
 		Assert.Equal("Step", result.CardType);
 		Assert.Equal(step.Id, result.CardId);
@@ -106,62 +106,62 @@ public class BoardMcpToolsTests : IAsyncLifetime
 		Assert.Equal("start_build", result.Action);
 		Assert.False(result.IsBlocked);
 
-		var reloaded = await steps.GetByIdAsync(step.Id);
+		var reloaded = await _steps.GetByIdAsync(step.Id);
 		Assert.Equal(WorkflowColumn.Build, reloaded!.WorkflowColumn);
 	}
 
 	[Fact]
 	public async Task StartBuild_StepNotInReady_ThrowsInvalidOperationException()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
 
 		// Step is in Backlog
-		await Assert.ThrowsAsync<InvalidOperationException>(() => mcpTools.StartBuildAsync(step.Id));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => _mcpTools.StartBuildAsync(step.Id));
 	}
 
 	[Fact]
 	public async Task StartBuild_StepDependenciesUnmet_ThrowsInvalidOperationException()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step1 = await steps.CreateAsync(feat.Id, "Step 1");
-		var step2 = await steps.CreateAsync(feat.Id, "Step 2");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step1 = await _steps.CreateAsync(feat.Id, "Step 1");
+		var step2 = await _steps.CreateAsync(feat.Id, "Step 2");
 
-		await stepDeps.AddAsync(step2.Id, step1.Id);
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _stepDeps.AddAsync(step2.Id, step1.Id);
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
 
-		await Assert.ThrowsAsync<InvalidOperationException>(() => mcpTools.StartBuildAsync(step2.Id));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => _mcpTools.StartBuildAsync(step2.Id));
 	}
 
 	[Fact]
 	public async Task StartBuild_FeatureInBacklog_MovesToReadyAndStepsToReady()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
 
-		var result = await mcpTools.StartBuildAsync(feat.Id, cardType: "Feature");
+		var result = await _mcpTools.StartBuildAsync(feat.Id, "Feature");
 
 		Assert.Equal("Feature", result.CardType);
 		Assert.Equal("Ready", result.WorkflowColumn);
 
-		var reloadedFeat = await features.GetByIdAsync(feat.Id);
+		var reloadedFeat = await _features.GetByIdAsync(feat.Id);
 		Assert.Equal(WorkflowColumn.Ready, reloadedFeat!.WorkflowColumn);
 
-		var reloadedStep = await steps.GetByIdAsync(step.Id);
+		var reloadedStep = await _steps.GetByIdAsync(step.Id);
 		Assert.Equal(WorkflowColumn.Ready, reloadedStep!.WorkflowColumn);
 	}
 
 	[Fact]
 	public async Task StartBuild_FeatureInReady_TransitionsToBuild()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
 
-		var result = await mcpTools.StartBuildAsync(feat.Id);
+		var result = await _mcpTools.StartBuildAsync(feat.Id);
 
 		Assert.Equal("Feature", result.CardType);
 		Assert.Equal("Build", result.WorkflowColumn);
@@ -170,27 +170,27 @@ public class BoardMcpToolsTests : IAsyncLifetime
 	[Fact]
 	public async Task StartBuild_WithActiveAgent_FlagsSoftBlocked()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
 
 		// Simulate an active agent running on the step
-		dbContext.AgentRuns.Add(new AgentRun
+		_dbContext.AgentRuns.Add(new AgentRun
 		{
 			CardType = CardType.Step,
 			CardId = step.Id,
 			Status = AgentRunStatus.Working,
 			StartedAt = DateTimeOffset.UtcNow
 		});
-		await dbContext.SaveChangesAsync();
+		await _dbContext.SaveChangesAsync();
 
-		var result = await mcpTools.StartBuildAsync(step.Id);
+		var result = await _mcpTools.StartBuildAsync(step.Id);
 
 		Assert.Equal("Build", result.WorkflowColumn);
 		Assert.True(result.IsBlocked);
 
-		var hasBlockedRun = await dbContext.AgentRuns.AnyAsync(r =>
+		var hasBlockedRun = await _dbContext.AgentRuns.AnyAsync(r =>
 			r.CardType == CardType.Step && r.CardId == step.Id && r.Status == AgentRunStatus.Blocked);
 		Assert.True(hasBlockedRun);
 	}
@@ -198,22 +198,22 @@ public class BoardMcpToolsTests : IAsyncLifetime
 	[Fact]
 	public async Task SubmitForReview_StepInBuild_TransitionsToAgentReviewAndRecordsNotes()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
 
-		var result = await mcpTools.SubmitForReviewAsync(step.Id, notes: "Finished implementing auth module.");
+		var result = await _mcpTools.SubmitForReviewAsync(step.Id, notes: "Finished implementing auth module.");
 
 		Assert.Equal("Step", result.CardType);
 		Assert.Equal("AgentReview", result.WorkflowColumn);
 		Assert.Equal("submit_for_review", result.Action);
 
-		var reloaded = await steps.GetByIdAsync(step.Id);
+		var reloaded = await _steps.GetByIdAsync(step.Id);
 		Assert.Equal(WorkflowColumn.AgentReview, reloaded!.WorkflowColumn);
 
-		var comments = await commentService.GetCommentsAsync(CardType.Step, step.Id);
+		var comments = await _commentService.GetCommentsAsync(CardType.Step, step.Id);
 		Assert.Single(comments);
 		Assert.Equal("Finished implementing auth module.", comments[0].Body);
 		Assert.Equal("Agent", comments[0].Author);
@@ -222,12 +222,12 @@ public class BoardMcpToolsTests : IAsyncLifetime
 	[Fact]
 	public async Task SubmitForReview_FeatureInBuild_TransitionsToAgentReview()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Build);
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Build);
 
-		var result = await mcpTools.SubmitForReviewAsync(feat.Id);
+		var result = await _mcpTools.SubmitForReviewAsync(feat.Id);
 
 		Assert.Equal("Feature", result.CardType);
 		Assert.Equal("AgentReview", result.WorkflowColumn);
@@ -236,49 +236,49 @@ public class BoardMcpToolsTests : IAsyncLifetime
 	[Fact]
 	public async Task SubmitForReview_NotInBuild_ThrowsInvalidOperationException()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
 
-		await Assert.ThrowsAsync<InvalidOperationException>(() => mcpTools.SubmitForReviewAsync(step.Id));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => _mcpTools.SubmitForReviewAsync(step.Id));
 	}
 
 	[Fact]
 	public async Task ApproveReview_FromAgentReview_AdvancesToHumanReviewOrDone()
 	{
 		// Board without skipStepHumanReview
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1, skipStepHumanReview: false);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
 
-		var result = await mcpTools.ApproveReviewAsync(step.Id, notes: "Looks good to me.");
+		var result = await _mcpTools.ApproveReviewAsync(step.Id, notes: "Looks good to me.");
 
 		Assert.Equal("HumanReview", result.WorkflowColumn);
 		Assert.Equal("approve_review", result.Action);
 
-		var comments = await commentService.GetCommentsAsync(CardType.Step, step.Id);
+		var comments = await _commentService.GetCommentsAsync(CardType.Step, step.Id);
 		Assert.Single(comments);
 		Assert.Equal("Review Agent", comments[0].Author);
 
 		// Now approve from HumanReview -> moves to Done
-		var result2 = await mcpTools.ApproveReviewAsync(step.Id);
+		var result2 = await _mcpTools.ApproveReviewAsync(step.Id);
 		Assert.Equal("Done", result2.WorkflowColumn);
 	}
 
 	[Fact]
 	public async Task ApproveReview_WithSkipHumanReview_AutoAdvancesStraightToDone()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1, skipStepHumanReview: true);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1", skipStepHumanReview: true);
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
 
-		var result = await mcpTools.ApproveReviewAsync(step.Id);
+		var result = await _mcpTools.ApproveReviewAsync(step.Id);
 
 		Assert.Equal("Done", result.WorkflowColumn);
 	}
@@ -286,36 +286,36 @@ public class BoardMcpToolsTests : IAsyncLifetime
 	[Fact]
 	public async Task ApproveReview_NotInReviewColumn_ThrowsInvalidOperationException()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
 
-		await Assert.ThrowsAsync<InvalidOperationException>(() => mcpTools.ApproveReviewAsync(step.Id));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => _mcpTools.ApproveReviewAsync(step.Id));
 	}
 
 	[Fact]
 	public async Task FailReview_FromAgentReview_ReturnsToBuildAndIncrementsAgentFailCount()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
 
 		Assert.Equal(0, step.AgentReviewFailCount);
 
-		var result = await mcpTools.FailReviewAsync(step.Id, reason: "Missing unit tests for edge cases.");
+		var result = await _mcpTools.FailReviewAsync(step.Id, reason: "Missing unit tests for edge cases.");
 
 		Assert.Equal("Build", result.WorkflowColumn);
 		Assert.Equal("fail_review", result.Action);
 
-		var reloaded = await steps.GetByIdAsync(step.Id);
+		var reloaded = await _steps.GetByIdAsync(step.Id);
 		Assert.Equal(WorkflowColumn.Build, reloaded!.WorkflowColumn);
 		Assert.Equal(1, reloaded.AgentReviewFailCount);
 		Assert.Equal(0, reloaded.HumanReviewFailCount);
 
-		var comments = await commentService.GetCommentsAsync(CardType.Step, step.Id);
+		var comments = await _commentService.GetCommentsAsync(CardType.Step, step.Id);
 		Assert.Single(comments);
 		Assert.Equal("Review Agent", comments[0].Author);
 		Assert.Equal("Missing unit tests for edge cases.", comments[0].Body);
@@ -324,19 +324,19 @@ public class BoardMcpToolsTests : IAsyncLifetime
 	[Fact]
 	public async Task FailReview_FromHumanReview_ReturnsToBuildAndIncrementsHumanFailCount()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1, skipStepHumanReview: false);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.HumanReview);
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.HumanReview);
 
-		var result = await mcpTools.FailReviewAsync(step.Id, reason: "Manual testing found regression.");
+		var result = await _mcpTools.FailReviewAsync(step.Id, reason: "Manual testing found regression.");
 
 		Assert.Equal("Build", result.WorkflowColumn);
 
-		var reloaded = await steps.GetByIdAsync(step.Id);
+		var reloaded = await _steps.GetByIdAsync(step.Id);
 		Assert.Equal(WorkflowColumn.Build, reloaded!.WorkflowColumn);
 		Assert.Equal(0, reloaded.AgentReviewFailCount);
 		Assert.Equal(1, reloaded.HumanReviewFailCount);
@@ -345,31 +345,31 @@ public class BoardMcpToolsTests : IAsyncLifetime
 	[Fact]
 	public async Task FailReview_NotInReview_ThrowsInvalidOperationException()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
 
-		await Assert.ThrowsAsync<InvalidOperationException>(() => mcpTools.FailReviewAsync(step.Id));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => _mcpTools.FailReviewAsync(step.Id));
 	}
 
 	[Fact]
 	public async Task SendToBacklog_FromBuild_MovesToBacklog()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
 
-		var result = await mcpTools.SendToBacklogAsync(step.Id, reason: "Deprioritized for now.");
+		var result = await _mcpTools.SendToBacklogAsync(step.Id, reason: "Deprioritized for now.");
 
 		Assert.Equal("Backlog", result.WorkflowColumn);
 		Assert.Equal("send_to_backlog", result.Action);
 
-		var reloaded = await steps.GetByIdAsync(step.Id);
+		var reloaded = await _steps.GetByIdAsync(step.Id);
 		Assert.Equal(WorkflowColumn.Backlog, reloaded!.WorkflowColumn);
 
-		var comments = await commentService.GetCommentsAsync(CardType.Step, step.Id);
+		var comments = await _commentService.GetCommentsAsync(CardType.Step, step.Id);
 		Assert.Single(comments);
 		Assert.Equal("Deprioritized for now.", comments[0].Body);
 	}
@@ -377,27 +377,27 @@ public class BoardMcpToolsTests : IAsyncLifetime
 	[Fact]
 	public async Task SendToBacklog_CompletedCard_ThrowsInvalidOperationException()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1, skipStepHumanReview: true);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Done);
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1", skipStepHumanReview: true);
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.AgentReview);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Done);
 
-		await Assert.ThrowsAsync<InvalidOperationException>(() => mcpTools.SendToBacklogAsync(step.Id));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => _mcpTools.SendToBacklogAsync(step.Id));
 	}
 
 	[Fact]
 	public async Task GetCardDetails_Step_ReturnsCompleteDetails()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1", requirements: "Reqs", acceptanceCriteria: "AC");
-		var step = await steps.CreateAsync(feat.Id, "Step 1", description: "Step desc", guidanceNotes: "Notes");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1", "Reqs", "AC");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1", "Step desc", "Notes");
 
-		await commentService.AddCommentAsync(CardType.Step, step.Id, "Dev", "First comment");
+		await _commentService.AddCommentAsync(CardType.Step, step.Id, "Dev", "First comment");
 
-		var details = await mcpTools.GetCardDetailsAsync(step.Id);
+		var details = await _mcpTools.GetCardDetailsAsync(step.Id);
 
 		Assert.Equal(step.Id, details.CardId);
 		Assert.Equal("Step", details.CardType);
@@ -417,12 +417,12 @@ public class BoardMcpToolsTests : IAsyncLifetime
 	[Fact]
 	public async Task GetCardDetails_Feature_ReturnsCompleteDetails()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1", requirements: "Feature Reqs");
-		var step1 = await steps.CreateAsync(feat.Id, "Step 1");
-		var step2 = await steps.CreateAsync(feat.Id, "Step 2");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1", "Feature Reqs");
+		var step1 = await _steps.CreateAsync(feat.Id, "Step 1");
+		var step2 = await _steps.CreateAsync(feat.Id, "Step 2");
 
-		var details = await mcpTools.GetCardDetailsAsync(feat.Id, cardType: "Feature");
+		var details = await _mcpTools.GetCardDetailsAsync(feat.Id, "Feature");
 
 		Assert.Equal(feat.Id, details.CardId);
 		Assert.Equal("Feature", details.CardType);
@@ -437,70 +437,70 @@ public class BoardMcpToolsTests : IAsyncLifetime
 	[Fact]
 	public async Task GetAvailableActions_Step_ReturnsExpectedActionsPerColumn()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step1 = await steps.CreateAsync(feat.Id, "Step 1");
-		var step2 = await steps.CreateAsync(feat.Id, "Step 2");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step1 = await _steps.CreateAsync(feat.Id, "Step 1");
+		var step2 = await _steps.CreateAsync(feat.Id, "Step 2");
 
 		// Step in Backlog: no direct move actions available
-		var actionsBacklog = await mcpTools.GetAvailableActionsAsync(step1.Id);
+		var actionsBacklog = await _mcpTools.GetAvailableActionsAsync(step1.Id);
 		Assert.Empty(actionsBacklog.AvailableActions);
 
 		// Move feature to Ready (moves steps to Ready)
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
 
 		// Add dependency: step2 depends on step1
-		await stepDeps.AddAsync(step2.Id, step1.Id);
+		await _stepDeps.AddAsync(step2.Id, step1.Id);
 
 		// Step 1 in Ready (dependencies met): can start_build or send_to_backlog
-		var actionsReadyMet = await mcpTools.GetAvailableActionsAsync(step1.Id);
+		var actionsReadyMet = await _mcpTools.GetAvailableActionsAsync(step1.Id);
 		Assert.Contains("start_build", actionsReadyMet.AvailableActions);
 		Assert.Contains("send_to_backlog", actionsReadyMet.AvailableActions);
 
 		// Step 2 in Ready (dependencies unmet): cannot start_build, can send_to_backlog
-		var actionsReadyUnmet = await mcpTools.GetAvailableActionsAsync(step2.Id);
+		var actionsReadyUnmet = await _mcpTools.GetAvailableActionsAsync(step2.Id);
 		Assert.DoesNotContain("start_build", actionsReadyUnmet.AvailableActions);
 		Assert.Contains("send_to_backlog", actionsReadyUnmet.AvailableActions);
 
 		// Move step1 to Build
-		await stepOrchestrator.MoveAsync(step1.Id, WorkflowColumn.Build);
-		var actionsBuild = await mcpTools.GetAvailableActionsAsync(step1.Id);
+		await _stepOrchestrator.MoveAsync(step1.Id, WorkflowColumn.Build);
+		var actionsBuild = await _mcpTools.GetAvailableActionsAsync(step1.Id);
 		Assert.Contains("submit_for_review", actionsBuild.AvailableActions);
 		Assert.Contains("send_to_backlog", actionsBuild.AvailableActions);
 
 		// Move step1 to AgentReview
-		await stepOrchestrator.MoveAsync(step1.Id, WorkflowColumn.AgentReview);
-		var actionsReview = await mcpTools.GetAvailableActionsAsync(step1.Id);
+		await _stepOrchestrator.MoveAsync(step1.Id, WorkflowColumn.AgentReview);
+		var actionsReview = await _mcpTools.GetAvailableActionsAsync(step1.Id);
 		Assert.Contains("approve_review", actionsReview.AvailableActions);
 		Assert.Contains("fail_review", actionsReview.AvailableActions);
 		Assert.Contains("send_to_backlog", actionsReview.AvailableActions);
 
 		// Move step1 to Done
 		step1.WorkflowColumn = WorkflowColumn.Done;
-		await dbContext.SaveChangesAsync();
-		var actionsDone = await mcpTools.GetAvailableActionsAsync(step1.Id);
+		await _dbContext.SaveChangesAsync();
+		var actionsDone = await _mcpTools.GetAvailableActionsAsync(step1.Id);
 		Assert.Empty(actionsDone.AvailableActions);
 	}
 
 	[Fact]
 	public async Task GetAvailableActions_Feature_ReturnsExpectedActionsPerColumn()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
 
 		// Feature in Backlog with dependencies met: start_build available
-		var actionsBacklog = await mcpTools.GetAvailableActionsAsync(feat.Id);
+		var actionsBacklog = await _mcpTools.GetAvailableActionsAsync(feat.Id);
 		Assert.Contains("start_build", actionsBacklog.AvailableActions);
 
 		// In Ready: start_build and send_to_backlog
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
-		var actionsReady = await mcpTools.GetAvailableActionsAsync(feat.Id);
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		var actionsReady = await _mcpTools.GetAvailableActionsAsync(feat.Id);
 		Assert.Contains("start_build", actionsReady.AvailableActions);
 		Assert.Contains("send_to_backlog", actionsReady.AvailableActions);
 
 		// In Build: submit_for_review and send_to_backlog
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Build);
-		var actionsBuild = await mcpTools.GetAvailableActionsAsync(feat.Id);
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Build);
+		var actionsBuild = await _mcpTools.GetAvailableActionsAsync(feat.Id);
 		Assert.Contains("submit_for_review", actionsBuild.AvailableActions);
 		Assert.Contains("send_to_backlog", actionsBuild.AvailableActions);
 	}
@@ -508,28 +508,28 @@ public class BoardMcpToolsTests : IAsyncLifetime
 	[Fact]
 	public async Task GetAvailableActions_WithActiveAgent_ActionsStillAvailableAndIsBlockedTrue()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
-		await featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
-		await stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
+		await _featureOrchestrator.MoveAsync(feat.Id, WorkflowColumn.Ready);
+		await _stepOrchestrator.MoveAsync(step.Id, WorkflowColumn.Build);
 
 		// Agent is working on this step
-		dbContext.AgentRuns.Add(new AgentRun
+		_dbContext.AgentRuns.Add(new AgentRun
 		{
 			CardType = CardType.Step,
 			CardId = step.Id,
 			Status = AgentRunStatus.Working,
 			StartedAt = DateTimeOffset.UtcNow
 		});
-		await dbContext.SaveChangesAsync();
+		await _dbContext.SaveChangesAsync();
 
 		// In UI, GetAllowedMovesAsync returns empty:
-		var uiAllowed = await stepOrchestrator.GetAllowedMovesAsync(step.Id);
+		var uiAllowed = await _stepOrchestrator.GetAllowedMovesAsync(step.Id);
 		Assert.Empty(uiAllowed);
 
 		// In MCP, actions are NOT blocked! Instead IsBlocked is true:
-		var mcpActions = await mcpTools.GetAvailableActionsAsync(step.Id);
+		var mcpActions = await _mcpTools.GetAvailableActionsAsync(step.Id);
 		Assert.Contains("submit_for_review", mcpActions.AvailableActions);
 		Assert.True(mcpActions.IsBlocked);
 	}
@@ -537,17 +537,17 @@ public class BoardMcpToolsTests : IAsyncLifetime
 	[Fact]
 	public async Task AddComment_And_GetComments_RoundTrip()
 	{
-		var board = await boards.CreateAsync("Board 1", "/repos/b1", 1);
-		var feat = await features.CreateAsync(board.Id, "Feat 1");
-		var step = await steps.CreateAsync(feat.Id, "Step 1");
+		var board = await _boards.CreateAsync("Board 1", "/repos/b1");
+		var feat = await _features.CreateAsync(board.Id, "Feat 1");
+		var step = await _steps.CreateAsync(feat.Id, "Step 1");
 
-		var added = await mcpTools.AddCommentAsync(step.Id, "Alice", "Investigating bug...");
+		var added = await _mcpTools.AddCommentAsync(step.Id, "Alice", "Investigating bug...");
 		Assert.Equal("Step", added.CardType);
 		Assert.Equal(step.Id, added.CardId);
 		Assert.Equal("Alice", added.Author);
 		Assert.Equal("Investigating bug...", added.Body);
 
-		var list = await mcpTools.GetCommentsAsync(step.Id);
+		var list = await _mcpTools.GetCommentsAsync(step.Id);
 		Assert.Single(list);
 		Assert.Equal("Alice", list[0].Author);
 		Assert.Equal("Investigating bug...", list[0].Body);
@@ -558,7 +558,7 @@ public class BoardMcpToolsTests : IAsyncLifetime
 	{
 		var services = new ServiceCollection();
 		services.AddLogging();
-		services.AddScoped<BoardMcpTools>(_ => mcpTools);
+		services.AddScoped<BoardMcpTools>(_ => _mcpTools);
 		services.AddMcpServer()
 			.WithTools<BoardMcpTools>();
 
@@ -585,8 +585,9 @@ public class BoardMcpToolsTests : IAsyncLifetime
 		{
 			Assert.Contains(toolCollection, t => t.ProtocolTool.Name == name);
 			var tool = toolCollection[name];
-			Assert.False(string.IsNullOrWhiteSpace(tool.ProtocolTool.Description), $"Tool '{name}' should have a description.");
-			Assert.True(tool.ProtocolTool.InputSchema.ValueKind != System.Text.Json.JsonValueKind.Undefined);
+			Assert.False(string.IsNullOrWhiteSpace(tool.ProtocolTool.Description),
+				$"Tool '{name}' should have a description.");
+			Assert.True(tool.ProtocolTool.InputSchema.ValueKind != JsonValueKind.Undefined);
 		}
 	}
 }

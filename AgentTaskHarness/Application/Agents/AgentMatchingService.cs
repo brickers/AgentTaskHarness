@@ -8,22 +8,28 @@ namespace AgentTaskHarness.Application.Agents;
 
 public class AgentMatchingService(AppDbContext dbContext)
 {
-	public Task<List<AgentColumnAssignment>> GetAssignmentsAsync(Guid boardId, CancellationToken cancellationToken = default) =>
-		dbContext.AgentColumnAssignments
+	public Task<List<AgentColumnAssignment>> GetAssignmentsAsync(Guid boardId,
+		CancellationToken cancellationToken = default)
+	{
+		return dbContext.AgentColumnAssignments
 			.AsNoTracking()
 			.Include(assignment => assignment.AgentDefinition)
 			.Where(assignment => assignment.BoardId == boardId)
 			.OrderBy(assignment => assignment.ColumnScope)
 			.ThenBy(assignment => assignment.Id)
 			.ToListAsync(cancellationToken);
+	}
 
-	public Task<List<AgentColumnAssignment>> GetAssignmentsForScopeAsync(Guid boardId, ColumnScope columnScope, CancellationToken cancellationToken = default) =>
-		dbContext.AgentColumnAssignments
+	public Task<List<AgentColumnAssignment>> GetAssignmentsForScopeAsync(Guid boardId, ColumnScope columnScope,
+		CancellationToken cancellationToken = default)
+	{
+		return dbContext.AgentColumnAssignments
 			.AsNoTracking()
 			.Include(assignment => assignment.AgentDefinition)
 			.Where(assignment => assignment.BoardId == boardId && assignment.ColumnScope == columnScope)
 			.OrderBy(assignment => assignment.Id)
 			.ToListAsync(cancellationToken);
+	}
 
 	public async Task<AgentColumnAssignment> AssignAgentAsync(
 		Guid boardId,
@@ -35,11 +41,10 @@ public class AgentMatchingService(AppDbContext dbContext)
 		ValidateScope(columnScope);
 
 		if (!await dbContext.Boards.AnyAsync(board => board.Id == boardId, cancellationToken))
-		{
 			throw new KeyNotFoundException($"Board '{boardId}' was not found.");
-		}
 
-		var definition = await dbContext.AgentDefinitions.SingleOrDefaultAsync(d => d.Id == agentDefinitionId, cancellationToken)
+		var definition =
+			await dbContext.AgentDefinitions.SingleOrDefaultAsync(d => d.Id == agentDefinitionId, cancellationToken)
 			?? throw new KeyNotFoundException($"Agent definition '{agentDefinitionId}' was not found.");
 
 		var assignment = new AgentColumnAssignment
@@ -64,11 +69,12 @@ public class AgentMatchingService(AppDbContext dbContext)
 		CancellationToken cancellationToken = default)
 	{
 		var assignment = await dbContext.AgentColumnAssignments
-			.Include(a => a.AgentDefinition)
-			.SingleOrDefaultAsync(a => a.Id == assignmentId, cancellationToken)
-			?? throw new KeyNotFoundException($"Agent column assignment '{assignmentId}' was not found.");
+			                 .Include(a => a.AgentDefinition)
+			                 .SingleOrDefaultAsync(a => a.Id == assignmentId, cancellationToken)
+		                 ?? throw new KeyNotFoundException($"Agent column assignment '{assignmentId}' was not found.");
 
-		var definition = await dbContext.AgentDefinitions.SingleOrDefaultAsync(d => d.Id == agentDefinitionId, cancellationToken)
+		var definition =
+			await dbContext.AgentDefinitions.SingleOrDefaultAsync(d => d.Id == agentDefinitionId, cancellationToken)
 			?? throw new KeyNotFoundException($"Agent definition '{agentDefinitionId}' was not found.");
 
 		assignment.AgentDefinitionId = agentDefinitionId;
@@ -81,20 +87,21 @@ public class AgentMatchingService(AppDbContext dbContext)
 
 	public async Task DeleteAssignmentAsync(Guid assignmentId, CancellationToken cancellationToken = default)
 	{
-		var assignment = await dbContext.AgentColumnAssignments.SingleOrDefaultAsync(a => a.Id == assignmentId, cancellationToken)
+		var assignment =
+			await dbContext.AgentColumnAssignments.SingleOrDefaultAsync(a => a.Id == assignmentId, cancellationToken)
 			?? throw new KeyNotFoundException($"Agent column assignment '{assignmentId}' was not found.");
 
 		dbContext.AgentColumnAssignments.Remove(assignment);
 		await dbContext.SaveChangesAsync(cancellationToken);
 	}
 
-	public async Task<AgentDefinition?> ResolveAgentAsync(Step step, ColumnScope columnScope, CancellationToken cancellationToken = default)
+	public async Task<AgentDefinition?> ResolveAgentAsync(Step step, ColumnScope columnScope,
+		CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(step);
 		if (columnScope == ColumnScope.FeatureAgentReview)
-		{
-			throw new ArgumentException("FeatureAgentReview scope is not applicable to a Step card.", nameof(columnScope));
-		}
+			throw new ArgumentException("FeatureAgentReview scope is not applicable to a Step card.",
+				nameof(columnScope));
 		ValidateScope(columnScope);
 
 		var boardId = step.Feature?.BoardId ?? await dbContext.Features
@@ -102,10 +109,7 @@ public class AgentMatchingService(AppDbContext dbContext)
 			.Select(feature => feature.BoardId)
 			.SingleOrDefaultAsync(cancellationToken);
 
-		if (boardId == Guid.Empty)
-		{
-			throw new KeyNotFoundException($"Board for step '{step.Id}' was not found.");
-		}
+		if (boardId == Guid.Empty) throw new KeyNotFoundException($"Board for step '{step.Id}' was not found.");
 
 		var assignments = await dbContext.AgentColumnAssignments
 			.AsNoTracking()
@@ -116,13 +120,13 @@ public class AgentMatchingService(AppDbContext dbContext)
 		return MatchAssignment(assignments, step);
 	}
 
-	public async Task<AgentDefinition?> ResolveAgentAsync(Feature feature, ColumnScope columnScope, CancellationToken cancellationToken = default)
+	public async Task<AgentDefinition?> ResolveAgentAsync(Feature feature, ColumnScope columnScope,
+		CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(feature);
 		if (columnScope != ColumnScope.FeatureAgentReview)
-		{
-			throw new ArgumentException("Only FeatureAgentReview scope is applicable to a Feature card.", nameof(columnScope));
-		}
+			throw new ArgumentException("Only FeatureAgentReview scope is applicable to a Feature card.",
+				nameof(columnScope));
 		ValidateScope(columnScope);
 
 		var assignments = await dbContext.AgentColumnAssignments
@@ -134,12 +138,14 @@ public class AgentMatchingService(AppDbContext dbContext)
 		return MatchAssignment(assignments, feature);
 	}
 
-	public async Task<AgentDefinition?> ResolveAgentAsync(CardType cardType, Guid cardId, ColumnScope columnScope, CancellationToken cancellationToken = default)
+	public async Task<AgentDefinition?> ResolveAgentAsync(CardType cardType, Guid cardId, ColumnScope columnScope,
+		CancellationToken cancellationToken = default)
 	{
 		return cardType switch
 		{
 			CardType.Step => await ResolveAgentAsync(
-				await dbContext.Steps.Include(s => s.Feature).SingleOrDefaultAsync(s => s.Id == cardId, cancellationToken)
+				await dbContext.Steps.Include(s => s.Feature)
+					.SingleOrDefaultAsync(s => s.Id == cardId, cancellationToken)
 				?? throw new KeyNotFoundException($"Step '{cardId}' was not found."),
 				columnScope,
 				cancellationToken),
@@ -159,13 +165,10 @@ public class AgentMatchingService(AppDbContext dbContext)
 
 		var matched = new List<(AgentColumnAssignment Assignment, int Specificity)>();
 
-		foreach (var assignment in assignments.Where(a => a.ColumnScope == ColumnScope.StepBuild || a.ColumnScope == ColumnScope.StepAgentReview))
-		{
+		foreach (var assignment in assignments.Where(a =>
+			         a.ColumnScope == ColumnScope.StepBuild || a.ColumnScope == ColumnScope.StepAgentReview))
 			if (EvaluateCriteria(assignment.MatchCriteria, step, out var specificity))
-			{
 				matched.Add((assignment, specificity));
-			}
-		}
 
 		return matched
 			.OrderByDescending(candidate => candidate.Specificity)
@@ -182,12 +185,8 @@ public class AgentMatchingService(AppDbContext dbContext)
 		var matched = new List<(AgentColumnAssignment Assignment, int Specificity)>();
 
 		foreach (var assignment in assignments.Where(a => a.ColumnScope == ColumnScope.FeatureAgentReview))
-		{
 			if (EvaluateCriteria(assignment.MatchCriteria, feature, out var specificity))
-			{
 				matched.Add((assignment, specificity));
-			}
-		}
 
 		return matched
 			.OrderByDescending(candidate => candidate.Specificity)
@@ -241,7 +240,8 @@ public class AgentMatchingService(AppDbContext dbContext)
 	{
 		specificity = 0;
 
-		if (string.IsNullOrWhiteSpace(criteria) || criteria.Trim() == "*" || criteria.Trim().Equals("default", StringComparison.OrdinalIgnoreCase))
+		if (string.IsNullOrWhiteSpace(criteria) || criteria.Trim() == "*" ||
+		    criteria.Trim().Equals("default", StringComparison.OrdinalIgnoreCase))
 		{
 			specificity = 0;
 			return true;
@@ -250,7 +250,6 @@ public class AgentMatchingService(AppDbContext dbContext)
 		var trimmed = criteria.Trim();
 
 		if (trimmed.StartsWith('{') && trimmed.EndsWith('}'))
-		{
 			try
 			{
 				using var document = JsonDocument.Parse(trimmed);
@@ -269,7 +268,6 @@ public class AgentMatchingService(AppDbContext dbContext)
 			{
 				// Fall through to text-based evaluation
 			}
-		}
 
 		return EvaluateDelimitedCriteria(
 			trimmed,
@@ -295,10 +293,7 @@ public class AgentMatchingService(AppDbContext dbContext)
 		out int specificity)
 	{
 		specificity = 0;
-		if (root.ValueKind != JsonValueKind.Object)
-		{
-			return false;
-		}
+		if (root.ValueKind != JsonValueKind.Object) return false;
 
 		foreach (var property in root.EnumerateObject())
 		{
@@ -313,10 +308,7 @@ public class AgentMatchingService(AppDbContext dbContext)
 						JsonValueKind.String => ParseBoolean(property.Value.GetString()),
 						_ => null
 					};
-					if (targetRework is null || targetRework.Value != isRework)
-					{
-						return false;
-					}
+					if (targetRework is null || targetRework.Value != isRework) return false;
 					specificity += 10;
 					break;
 
@@ -328,30 +320,24 @@ public class AgentMatchingService(AppDbContext dbContext)
 						JsonValueKind.String => ParseBoolean(property.Value.GetString()),
 						_ => null
 					};
-					if (isNew is null || isNew.Value == isRework)
-					{
-						return false;
-					}
+					if (isNew is null || isNew.Value == isRework) return false;
 					specificity += 10;
 					break;
 
 				case "title":
 					var titlePattern = property.Value.GetString();
-					if (string.IsNullOrWhiteSpace(titlePattern) || !title.Contains(titlePattern.Trim(), StringComparison.OrdinalIgnoreCase))
-					{
-						return false;
-					}
+					if (string.IsNullOrWhiteSpace(titlePattern) ||
+					    !title.Contains(titlePattern.Trim(), StringComparison.OrdinalIgnoreCase)) return false;
 					specificity += 5;
 					break;
 
 				case "keyword" or "tag" or "contains":
 					var keyword = property.Value.GetString();
-					if (string.IsNullOrWhiteSpace(keyword) || (!title.Contains(keyword.Trim(), StringComparison.OrdinalIgnoreCase) &&
-						!description.Contains(keyword.Trim(), StringComparison.OrdinalIgnoreCase) &&
-						!extraNotes.Contains(keyword.Trim(), StringComparison.OrdinalIgnoreCase)))
-					{
+					if (string.IsNullOrWhiteSpace(keyword) ||
+					    (!title.Contains(keyword.Trim(), StringComparison.OrdinalIgnoreCase) &&
+					     !description.Contains(keyword.Trim(), StringComparison.OrdinalIgnoreCase) &&
+					     !extraNotes.Contains(keyword.Trim(), StringComparison.OrdinalIgnoreCase)))
 						return false;
-					}
 					specificity += 3;
 					break;
 
@@ -363,42 +349,31 @@ public class AgentMatchingService(AppDbContext dbContext)
 						JsonValueKind.String => ParseBoolean(property.Value.GetString()),
 						_ => null
 					};
-					if (expectedReview is null || expectedReview.Value != alwaysRequireHumanReview)
-					{
-						return false;
-					}
+					if (expectedReview is null || expectedReview.Value != alwaysRequireHumanReview) return false;
 					specificity += 5;
 					break;
 
 				case "agent_fails" or "agent_review_fails":
-					if (!property.Value.TryGetInt32(out var expectedAgentFails) || expectedAgentFails != agentReviewFailCount)
-					{
-						return false;
-					}
+					if (!property.Value.TryGetInt32(out var expectedAgentFails) ||
+					    expectedAgentFails != agentReviewFailCount) return false;
 					specificity += 5;
 					break;
 
 				case "human_fails" or "human_review_fails":
-					if (!property.Value.TryGetInt32(out var expectedHumanFails) || expectedHumanFails != humanReviewFailCount)
-					{
-						return false;
-					}
+					if (!property.Value.TryGetInt32(out var expectedHumanFails) ||
+					    expectedHumanFails != humanReviewFailCount) return false;
 					specificity += 5;
 					break;
 
 				default:
 					var textVal = property.Value.ToString();
 					if (!string.IsNullOrWhiteSpace(textVal) && (
-						title.Contains(textVal, StringComparison.OrdinalIgnoreCase) ||
-						description.Contains(textVal, StringComparison.OrdinalIgnoreCase) ||
-						extraNotes.Contains(textVal, StringComparison.OrdinalIgnoreCase)))
-					{
+						    title.Contains(textVal, StringComparison.OrdinalIgnoreCase) ||
+						    description.Contains(textVal, StringComparison.OrdinalIgnoreCase) ||
+						    extraNotes.Contains(textVal, StringComparison.OrdinalIgnoreCase)))
 						specificity += 2;
-					}
 					else
-					{
 						return false;
-					}
 					break;
 			}
 		}
@@ -418,12 +393,10 @@ public class AgentMatchingService(AppDbContext dbContext)
 		out int specificity)
 	{
 		specificity = 0;
-		var clauses = criteria.Split([',', ';', '\n', '&'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+		var clauses = criteria.Split([',', ';', '\n', '&'],
+			StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-		if (clauses.Length == 0)
-		{
-			return true;
-		}
+		if (clauses.Length == 0) return true;
 
 		foreach (var clause in clauses)
 		{
@@ -437,77 +410,57 @@ public class AgentMatchingService(AppDbContext dbContext)
 				{
 					case "rework" or "is_rework":
 						var boolRework = ParseBoolean(value);
-						if (boolRework is null || boolRework.Value != isRework)
-						{
-							return false;
-						}
+						if (boolRework is null || boolRework.Value != isRework) return false;
 						specificity += 10;
 						break;
 
 					case "new" or "new_build":
 						var boolNew = ParseBoolean(value);
-						if (boolNew is null || boolNew.Value == isRework)
-						{
-							return false;
-						}
+						if (boolNew is null || boolNew.Value == isRework) return false;
 						specificity += 10;
 						break;
 
 					case "title":
-						if (string.IsNullOrWhiteSpace(value) || !title.Contains(value, StringComparison.OrdinalIgnoreCase))
-						{
-							return false;
-						}
+						if (string.IsNullOrWhiteSpace(value) ||
+						    !title.Contains(value, StringComparison.OrdinalIgnoreCase)) return false;
 						specificity += 5;
 						break;
 
 					case "keyword" or "tag" or "contains":
-						if (string.IsNullOrWhiteSpace(value) || (!title.Contains(value, StringComparison.OrdinalIgnoreCase) &&
-							!description.Contains(value, StringComparison.OrdinalIgnoreCase) &&
-							!extraNotes.Contains(value, StringComparison.OrdinalIgnoreCase)))
-						{
+						if (string.IsNullOrWhiteSpace(value) ||
+						    (!title.Contains(value, StringComparison.OrdinalIgnoreCase) &&
+						     !description.Contains(value, StringComparison.OrdinalIgnoreCase) &&
+						     !extraNotes.Contains(value, StringComparison.OrdinalIgnoreCase)))
 							return false;
-						}
 						specificity += 3;
 						break;
 
 					case "always_human_review":
 						var boolRev = ParseBoolean(value);
-						if (boolRev is null || boolRev.Value != alwaysRequireHumanReview)
-						{
-							return false;
-						}
+						if (boolRev is null || boolRev.Value != alwaysRequireHumanReview) return false;
 						specificity += 5;
 						break;
 
 					case "agent_fails" or "agent_review_fails":
-						if (!int.TryParse(value, out var expectedAgentFails) || expectedAgentFails != agentReviewFailCount)
-						{
-							return false;
-						}
+						if (!int.TryParse(value, out var expectedAgentFails) ||
+						    expectedAgentFails != agentReviewFailCount) return false;
 						specificity += 5;
 						break;
 
 					case "human_fails" or "human_review_fails":
-						if (!int.TryParse(value, out var expectedHumanFails) || expectedHumanFails != humanReviewFailCount)
-						{
-							return false;
-						}
+						if (!int.TryParse(value, out var expectedHumanFails) ||
+						    expectedHumanFails != humanReviewFailCount) return false;
 						specificity += 5;
 						break;
 
 					default:
 						if (!string.IsNullOrWhiteSpace(value) && (
-							title.Contains(value, StringComparison.OrdinalIgnoreCase) ||
-							description.Contains(value, StringComparison.OrdinalIgnoreCase) ||
-							extraNotes.Contains(value, StringComparison.OrdinalIgnoreCase)))
-						{
+							    title.Contains(value, StringComparison.OrdinalIgnoreCase) ||
+							    description.Contains(value, StringComparison.OrdinalIgnoreCase) ||
+							    extraNotes.Contains(value, StringComparison.OrdinalIgnoreCase)))
 							specificity += 2;
-						}
 						else
-						{
 							return false;
-						}
 						break;
 				}
 			}
@@ -516,32 +469,22 @@ public class AgentMatchingService(AppDbContext dbContext)
 				var token = clause.ToLowerInvariant();
 				if (token is "rework" or "is_rework")
 				{
-					if (!isRework)
-					{
-						return false;
-					}
+					if (!isRework) return false;
 					specificity += 10;
 				}
 				else if (token is "new" or "new_build")
 				{
-					if (isRework)
-					{
-						return false;
-					}
+					if (isRework) return false;
 					specificity += 10;
 				}
 				else
 				{
 					if (title.Contains(clause, StringComparison.OrdinalIgnoreCase) ||
-						description.Contains(clause, StringComparison.OrdinalIgnoreCase) ||
-						extraNotes.Contains(clause, StringComparison.OrdinalIgnoreCase))
-					{
+					    description.Contains(clause, StringComparison.OrdinalIgnoreCase) ||
+					    extraNotes.Contains(clause, StringComparison.OrdinalIgnoreCase))
 						specificity += 2;
-					}
 					else
-					{
 						return false;
-					}
 				}
 			}
 		}
@@ -551,10 +494,7 @@ public class AgentMatchingService(AppDbContext dbContext)
 
 	private static bool? ParseBoolean(string? value)
 	{
-		if (string.IsNullOrWhiteSpace(value))
-		{
-			return null;
-		}
+		if (string.IsNullOrWhiteSpace(value)) return null;
 		var clean = value.Trim().ToLowerInvariant();
 		return clean switch
 		{
@@ -567,8 +507,6 @@ public class AgentMatchingService(AppDbContext dbContext)
 	private static void ValidateScope(ColumnScope columnScope)
 	{
 		if (!Enum.IsDefined(columnScope))
-		{
 			throw new ArgumentOutOfRangeException(nameof(columnScope), $"Invalid column scope '{columnScope}'.");
-		}
 	}
 }

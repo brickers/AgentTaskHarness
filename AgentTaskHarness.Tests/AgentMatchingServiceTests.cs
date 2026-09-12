@@ -14,42 +14,42 @@ namespace AgentTaskHarness.Tests;
 
 public class AgentMatchingServiceTests : IAsyncLifetime
 {
-	private readonly SqliteConnection connection = new("Data Source=:memory:");
-	private AppDbContext dbContext = null!;
-	private BoardService boards = null!;
-	private FeatureService features = null!;
-	private StepService steps = null!;
-	private AgentDefinitionService definitions = null!;
-	private AgentMatchingService matching = null!;
+	private readonly SqliteConnection _connection = new("Data Source=:memory:");
+	private BoardService _boards = null!;
+	private AppDbContext _dbContext = null!;
+	private AgentDefinitionService _definitions = null!;
+	private FeatureService _features = null!;
+	private AgentMatchingService _matching = null!;
+	private StepService _steps = null!;
 
 	public async Task InitializeAsync()
 	{
-		await connection.OpenAsync();
-		dbContext = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
-		await dbContext.Database.MigrateAsync();
+		await _connection.OpenAsync();
+		_dbContext = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
+		await _dbContext.Database.MigrateAsync();
 
-		boards = new BoardService(dbContext);
-		features = new FeatureService(dbContext);
-		steps = new StepService(dbContext);
-		definitions = new AgentDefinitionService(dbContext, new AgentDefinitionFolderWriter());
-		matching = new AgentMatchingService(dbContext);
+		_boards = new BoardService(_dbContext);
+		_features = new FeatureService(_dbContext);
+		_steps = new StepService(_dbContext);
+		_definitions = new AgentDefinitionService(_dbContext, new AgentDefinitionFolderWriter());
+		_matching = new AgentMatchingService(_dbContext);
 	}
 
 	public async Task DisposeAsync()
 	{
-		await dbContext.DisposeAsync();
-		await connection.DisposeAsync();
+		await _dbContext.DisposeAsync();
+		await _connection.DisposeAsync();
 	}
 
 	[Fact]
 	public async Task AssignmentCrud_CreateGetUpdateDeleteAsync()
 	{
-		var board = await boards.CreateAsync("Test Board", "/repos/test", 1);
-		var agent1 = await definitions.CreateAsync(board.Id, "DevAgent", "/defs/dev");
-		var agent2 = await definitions.CreateAsync(board.Id, "SeniorDevAgent", "/defs/sr-dev");
+		var board = await _boards.CreateAsync("Test Board", "/repos/test");
+		var agent1 = await _definitions.CreateAsync(board.Id, "DevAgent", "/defs/dev");
+		var agent2 = await _definitions.CreateAsync(board.Id, "SeniorDevAgent", "/defs/sr-dev");
 
 		// Assign
-		var created = await matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, agent1.Id, "rework=false");
+		var created = await _matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, agent1.Id, "rework=false");
 		Assert.NotNull(created);
 		Assert.Equal(board.Id, created.BoardId);
 		Assert.Equal(ColumnScope.StepBuild, created.ColumnScope);
@@ -57,101 +57,101 @@ public class AgentMatchingServiceTests : IAsyncLifetime
 		Assert.Equal("rework=false", created.MatchCriteria);
 
 		// Get
-		var all = await matching.GetAssignmentsAsync(board.Id);
+		var all = await _matching.GetAssignmentsAsync(board.Id);
 		var single = Assert.Single(all);
 		Assert.Equal(created.Id, single.Id);
 		Assert.Equal("DevAgent", single.AgentDefinition.Name);
 
-		var scoped = await matching.GetAssignmentsForScopeAsync(board.Id, ColumnScope.StepBuild);
+		var scoped = await _matching.GetAssignmentsForScopeAsync(board.Id, ColumnScope.StepBuild);
 		Assert.Single(scoped);
-		var emptyScope = await matching.GetAssignmentsForScopeAsync(board.Id, ColumnScope.StepAgentReview);
+		var emptyScope = await _matching.GetAssignmentsForScopeAsync(board.Id, ColumnScope.StepAgentReview);
 		Assert.Empty(emptyScope);
 
 		// Update both agent and criteria
-		var updated = await matching.UpdateAssignmentAsync(created.Id, agent2.Id, "rework=true");
+		var updated = await _matching.UpdateAssignmentAsync(created.Id, agent2.Id, "rework=true");
 		Assert.Equal("rework=true", updated.MatchCriteria);
 		Assert.Equal(agent2.Id, updated.AgentDefinitionId);
 		Assert.Equal("SeniorDevAgent", updated.AgentDefinition.Name);
 
 		// Delete
-		await matching.DeleteAssignmentAsync(created.Id);
-		var afterDelete = await matching.GetAssignmentsAsync(board.Id);
+		await _matching.DeleteAssignmentAsync(created.Id);
+		var afterDelete = await _matching.GetAssignmentsAsync(board.Id);
 		Assert.Empty(afterDelete);
 	}
 
 	[Fact]
 	public async Task AssignmentCrud_ValidationsAsync()
 	{
-		var board = await boards.CreateAsync("Val Board", "/repos/val", 1);
-		var agent = await definitions.CreateAsync(board.Id, "ValAgent", "/defs/val");
+		var board = await _boards.CreateAsync("Val Board", "/repos/val");
+		var agent = await _definitions.CreateAsync(board.Id, "ValAgent", "/defs/val");
 
 		// Invalid ColumnScope
 		await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
-			matching.AssignAgentAsync(board.Id, (ColumnScope)999, agent.Id));
+			_matching.AssignAgentAsync(board.Id, (ColumnScope)999, agent.Id));
 
 		// Non-existent Board
 		await Assert.ThrowsAsync<KeyNotFoundException>(() =>
-			matching.AssignAgentAsync(Guid.NewGuid(), ColumnScope.StepBuild, agent.Id));
+			_matching.AssignAgentAsync(Guid.NewGuid(), ColumnScope.StepBuild, agent.Id));
 
 		// Non-existent AgentDefinition
 		await Assert.ThrowsAsync<KeyNotFoundException>(() =>
-			matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, Guid.NewGuid()));
+			_matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, Guid.NewGuid()));
 
 		// Non-existent assignment for Update / Delete
 		await Assert.ThrowsAsync<KeyNotFoundException>(() =>
-			matching.UpdateAssignmentAsync(Guid.NewGuid(), agent.Id));
+			_matching.UpdateAssignmentAsync(Guid.NewGuid(), agent.Id));
 		await Assert.ThrowsAsync<KeyNotFoundException>(() =>
-			matching.DeleteAssignmentAsync(Guid.NewGuid()));
+			_matching.DeleteAssignmentAsync(Guid.NewGuid()));
 	}
 
 	[Fact]
 	public async Task CascadeDelete_WhenBoardOrAgentDeletedAsync()
 	{
-		var board = await boards.CreateAsync("Cascade Board", "/repos/cascade", 1);
-		var agent1 = await definitions.CreateAsync(board.Id, "Agent 1", "/defs/1");
-		var agent2 = await definitions.CreateAsync(board.Id, "Agent 2", "/defs/2");
+		var board = await _boards.CreateAsync("Cascade Board", "/repos/cascade");
+		var agent1 = await _definitions.CreateAsync(board.Id, "Agent 1", "/defs/1");
+		var agent2 = await _definitions.CreateAsync(board.Id, "Agent 2", "/defs/2");
 
-		await matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, agent1.Id, "");
-		var assignment2 = await matching.AssignAgentAsync(board.Id, ColumnScope.StepAgentReview, agent2.Id, "");
+		await _matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, agent1.Id, "");
+		var assignment2 = await _matching.AssignAgentAsync(board.Id, ColumnScope.StepAgentReview, agent2.Id, "");
 
 		// Deleting agent1 cascades delete to assignment1
-		await definitions.DeleteAsync(agent1.Id);
-		var remaining = await matching.GetAssignmentsAsync(board.Id);
+		await _definitions.DeleteAsync(agent1.Id);
+		var remaining = await _matching.GetAssignmentsAsync(board.Id);
 		var left = Assert.Single(remaining);
 		Assert.Equal(assignment2.Id, left.Id);
 
 		// Deleting board cascades delete to assignment2
-		await boards.DeleteAsync(board.Id);
-		var none = await dbContext.AgentColumnAssignments.Where(a => a.BoardId == board.Id).ToListAsync();
+		await _boards.DeleteAsync(board.Id);
+		var none = await _dbContext.AgentColumnAssignments.Where(a => a.BoardId == board.Id).ToListAsync();
 		Assert.Empty(none);
 	}
 
 	[Fact]
 	public async Task ResolveAgent_ReworkMatchingCriteriaAsync()
 	{
-		var board = await boards.CreateAsync("Matching Board", "/repos/match", 1);
-		var newDevAgent = await definitions.CreateAsync(board.Id, "NewDevAgent", "/defs/new");
-		var fixBugAgent = await definitions.CreateAsync(board.Id, "FixBugAgent", "/defs/fix");
-		var fallbackAgent = await definitions.CreateAsync(board.Id, "FallbackAgent", "/defs/fallback");
+		var board = await _boards.CreateAsync("Matching Board", "/repos/match");
+		var newDevAgent = await _definitions.CreateAsync(board.Id, "NewDevAgent", "/defs/new");
+		var fixBugAgent = await _definitions.CreateAsync(board.Id, "FixBugAgent", "/defs/fix");
+		var fallbackAgent = await _definitions.CreateAsync(board.Id, "FallbackAgent", "/defs/fallback");
 
-		await matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, fallbackAgent.Id, "");
-		await matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, newDevAgent.Id, "rework=false");
-		await matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, fixBugAgent.Id, "rework=true");
+		await _matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, fallbackAgent.Id, "");
+		await _matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, newDevAgent.Id, "rework=false");
+		await _matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, fixBugAgent.Id, "rework=true");
 
-		var feature = await features.CreateAsync(board.Id, "Feature 1", "Reqs", "Criteria", "Solution");
-		var step = await steps.CreateAsync(feature.Id, "Step 1", "Desc", "Notes");
+		var feature = await _features.CreateAsync(board.Id, "Feature 1", "Reqs", "Criteria", "Solution");
+		var step = await _steps.CreateAsync(feature.Id, "Step 1", "Desc", "Notes");
 
 		// Brand new step (fails = 0) -> should match newDevAgent
-		var resolvedNew = await matching.ResolveAgentAsync(step, ColumnScope.StepBuild);
+		var resolvedNew = await _matching.ResolveAgentAsync(step, ColumnScope.StepBuild);
 		Assert.NotNull(resolvedNew);
 		Assert.Equal(newDevAgent.Id, resolvedNew.Id);
 
 		// Simulate review failure
 		step.AgentReviewFailCount = 1;
-		await dbContext.SaveChangesAsync();
+		await _dbContext.SaveChangesAsync();
 
 		// Rework step (AgentReviewFailCount > 0) -> should match fixBugAgent
-		var resolvedFix = await matching.ResolveAgentAsync(step, ColumnScope.StepBuild);
+		var resolvedFix = await _matching.ResolveAgentAsync(step, ColumnScope.StepBuild);
 		Assert.NotNull(resolvedFix);
 		Assert.Equal(fixBugAgent.Id, resolvedFix.Id);
 	}
@@ -159,31 +159,32 @@ public class AgentMatchingServiceTests : IAsyncLifetime
 	[Fact]
 	public async Task ResolveAgent_SpecificityRankingAsync()
 	{
-		var board = await boards.CreateAsync("Specificity Board", "/repos/spec", 1);
-		var defaultAgent = await definitions.CreateAsync(board.Id, "DefaultAgent", "/defs/def");
-		var reworkAgent = await definitions.CreateAsync(board.Id, "ReworkAgent", "/defs/rework");
-		var authReworkAgent = await definitions.CreateAsync(board.Id, "AuthReworkAgent", "/defs/auth-rework");
+		var board = await _boards.CreateAsync("Specificity Board", "/repos/spec");
+		var defaultAgent = await _definitions.CreateAsync(board.Id, "DefaultAgent", "/defs/def");
+		var reworkAgent = await _definitions.CreateAsync(board.Id, "ReworkAgent", "/defs/rework");
+		var authReworkAgent = await _definitions.CreateAsync(board.Id, "AuthReworkAgent", "/defs/auth-rework");
 
-		await matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, defaultAgent.Id, "");
-		await matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, reworkAgent.Id, "rework=true");
-		await matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, authReworkAgent.Id, "rework=true, title:auth");
+		await _matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, defaultAgent.Id, "");
+		await _matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, reworkAgent.Id, "rework=true");
+		await _matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, authReworkAgent.Id,
+			"rework=true, title:auth");
 
-		var feature = await features.CreateAsync(board.Id, "Feature", "Reqs", "Criteria", "Solution");
-		var normalStep = await steps.CreateAsync(feature.Id, "Implement cache", "Desc", "Notes");
+		var feature = await _features.CreateAsync(board.Id, "Feature", "Reqs", "Criteria", "Solution");
+		var normalStep = await _steps.CreateAsync(feature.Id, "Implement cache", "Desc", "Notes");
 		normalStep.AgentReviewFailCount = 1;
-		await dbContext.SaveChangesAsync();
+		await _dbContext.SaveChangesAsync();
 
 		// Rework but not auth -> ReworkAgent
-		var resolved1 = await matching.ResolveAgentAsync(normalStep, ColumnScope.StepBuild);
+		var resolved1 = await _matching.ResolveAgentAsync(normalStep, ColumnScope.StepBuild);
 		Assert.NotNull(resolved1);
 		Assert.Equal(reworkAgent.Id, resolved1.Id);
 
 		// Rework AND auth -> AuthReworkAgent (more specific)
-		var authStep = await steps.CreateAsync(feature.Id, "Implement auth token refresh", "Desc", "Notes");
+		var authStep = await _steps.CreateAsync(feature.Id, "Implement auth token refresh", "Desc", "Notes");
 		authStep.HumanReviewFailCount = 1;
-		await dbContext.SaveChangesAsync();
+		await _dbContext.SaveChangesAsync();
 
-		var resolved2 = await matching.ResolveAgentAsync(authStep, ColumnScope.StepBuild);
+		var resolved2 = await _matching.ResolveAgentAsync(authStep, ColumnScope.StepBuild);
 		Assert.NotNull(resolved2);
 		Assert.Equal(authReworkAgent.Id, resolved2.Id);
 	}
@@ -191,23 +192,25 @@ public class AgentMatchingServiceTests : IAsyncLifetime
 	[Fact]
 	public async Task ResolveAgent_JsonCriteriaAsync()
 	{
-		var board = await boards.CreateAsync("JSON Board", "/repos/json", 1);
-		var jsonAgent = await definitions.CreateAsync(board.Id, "JsonAgent", "/defs/json");
+		var board = await _boards.CreateAsync("JSON Board", "/repos/json");
+		var jsonAgent = await _definitions.CreateAsync(board.Id, "JsonAgent", "/defs/json");
 
-		await matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, jsonAgent.Id, "{\"rework\": true, \"keyword\": \"payment\"}");
+		await _matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, jsonAgent.Id,
+			"{\"rework\": true, \"keyword\": \"payment\"}");
 
-		var feature = await features.CreateAsync(board.Id, "Billing Feature", "Payment requirements", "Criteria", "Solution");
-		var step = await steps.CreateAsync(feature.Id, "Payment gateway integration", "Payment details", "Notes");
+		var feature = await _features.CreateAsync(board.Id, "Billing Feature", "Payment requirements", "Criteria",
+			"Solution");
+		var step = await _steps.CreateAsync(feature.Id, "Payment gateway integration", "Payment details", "Notes");
 
 		// Fails = 0, so rework=true doesn't match
-		var noMatch = await matching.ResolveAgentAsync(step, ColumnScope.StepBuild);
+		var noMatch = await _matching.ResolveAgentAsync(step, ColumnScope.StepBuild);
 		Assert.Null(noMatch);
 
 		// Now make it rework
 		step.AgentReviewFailCount = 1;
-		await dbContext.SaveChangesAsync();
+		await _dbContext.SaveChangesAsync();
 
-		var match = await matching.ResolveAgentAsync(step, ColumnScope.StepBuild);
+		var match = await _matching.ResolveAgentAsync(step, ColumnScope.StepBuild);
 		Assert.NotNull(match);
 		Assert.Equal(jsonAgent.Id, match.Id);
 	}
@@ -215,19 +218,20 @@ public class AgentMatchingServiceTests : IAsyncLifetime
 	[Fact]
 	public async Task ResolveAgent_FeatureAgentReviewAsync()
 	{
-		var board = await boards.CreateAsync("Feature Board", "/repos/feature", 1);
-		var featureReviewAgent = await definitions.CreateAsync(board.Id, "FeatureReviewer", "/defs/frev");
+		var board = await _boards.CreateAsync("Feature Board", "/repos/feature");
+		var featureReviewAgent = await _definitions.CreateAsync(board.Id, "FeatureReviewer", "/defs/frev");
 
-		await matching.AssignAgentAsync(board.Id, ColumnScope.FeatureAgentReview, featureReviewAgent.Id, "");
+		await _matching.AssignAgentAsync(board.Id, ColumnScope.FeatureAgentReview, featureReviewAgent.Id, "");
 
-		var feature = await features.CreateAsync(board.Id, "Feature 1", "Reqs", "Criteria", "Solution");
+		var feature = await _features.CreateAsync(board.Id, "Feature 1", "Reqs", "Criteria", "Solution");
 
-		var resolved = await matching.ResolveAgentAsync(feature, ColumnScope.FeatureAgentReview);
+		var resolved = await _matching.ResolveAgentAsync(feature, ColumnScope.FeatureAgentReview);
 		Assert.NotNull(resolved);
 		Assert.Equal(featureReviewAgent.Id, resolved.Id);
 
 		// Feature using CardType overload
-		var resolvedViaCardType = await matching.ResolveAgentAsync(CardType.Feature, feature.Id, ColumnScope.FeatureAgentReview);
+		var resolvedViaCardType =
+			await _matching.ResolveAgentAsync(CardType.Feature, feature.Id, ColumnScope.FeatureAgentReview);
 		Assert.NotNull(resolvedViaCardType);
 		Assert.Equal(featureReviewAgent.Id, resolvedViaCardType.Id);
 	}
@@ -235,38 +239,41 @@ public class AgentMatchingServiceTests : IAsyncLifetime
 	[Fact]
 	public async Task ScopeGating_DisallowsMismatchedScopes()
 	{
-		var board = await boards.CreateAsync("Gating Board", "/repos/gate", 1);
-		var feature = await features.CreateAsync(board.Id, "Feature 1", "Reqs", "Criteria", "Solution");
-		var step = await steps.CreateAsync(feature.Id, "Step 1", "Desc", "Notes");
+		var board = await _boards.CreateAsync("Gating Board", "/repos/gate");
+		var feature = await _features.CreateAsync(board.Id, "Feature 1", "Reqs", "Criteria", "Solution");
+		var step = await _steps.CreateAsync(feature.Id, "Step 1", "Desc", "Notes");
 
 		// Step cannot be resolved for FeatureAgentReview
-		await Assert.ThrowsAsync<ArgumentException>(() => matching.ResolveAgentAsync(step, ColumnScope.FeatureAgentReview));
+		await Assert.ThrowsAsync<ArgumentException>(() =>
+			_matching.ResolveAgentAsync(step, ColumnScope.FeatureAgentReview));
 
 		// Feature cannot be resolved for Step scopes
-		await Assert.ThrowsAsync<ArgumentException>(() => matching.ResolveAgentAsync(feature, ColumnScope.StepBuild));
-		await Assert.ThrowsAsync<ArgumentException>(() => matching.ResolveAgentAsync(feature, ColumnScope.StepAgentReview));
+		await Assert.ThrowsAsync<ArgumentException>(() => _matching.ResolveAgentAsync(feature, ColumnScope.StepBuild));
+		await Assert.ThrowsAsync<ArgumentException>(() =>
+			_matching.ResolveAgentAsync(feature, ColumnScope.StepAgentReview));
 
 		// Invalid CardType
-		await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => matching.ResolveAgentAsync((CardType)99, Guid.NewGuid(), ColumnScope.StepBuild));
+		await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+			_matching.ResolveAgentAsync((CardType)99, Guid.NewGuid(), ColumnScope.StepBuild));
 	}
 
 	[Fact]
 	public async Task ScopeIsolation_DoesNotCrossColumnScopes()
 	{
-		var board = await boards.CreateAsync("Iso Board", "/repos/iso", 1);
-		var buildAgent = await definitions.CreateAsync(board.Id, "Builder", "/defs/build");
-		var reviewAgent = await definitions.CreateAsync(board.Id, "Reviewer", "/defs/rev");
+		var board = await _boards.CreateAsync("Iso Board", "/repos/iso");
+		var buildAgent = await _definitions.CreateAsync(board.Id, "Builder", "/defs/build");
+		var reviewAgent = await _definitions.CreateAsync(board.Id, "Reviewer", "/defs/rev");
 
-		await matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, buildAgent.Id, "");
-		await matching.AssignAgentAsync(board.Id, ColumnScope.StepAgentReview, reviewAgent.Id, "");
+		await _matching.AssignAgentAsync(board.Id, ColumnScope.StepBuild, buildAgent.Id, "");
+		await _matching.AssignAgentAsync(board.Id, ColumnScope.StepAgentReview, reviewAgent.Id, "");
 
-		var feature = await features.CreateAsync(board.Id, "Feature 1", "Reqs", "Criteria", "Solution");
-		var step = await steps.CreateAsync(feature.Id, "Step 1", "Desc", "Notes");
+		var feature = await _features.CreateAsync(board.Id, "Feature 1", "Reqs", "Criteria", "Solution");
+		var step = await _steps.CreateAsync(feature.Id, "Step 1", "Desc", "Notes");
 
-		var resolvedBuild = await matching.ResolveAgentAsync(step, ColumnScope.StepBuild);
+		var resolvedBuild = await _matching.ResolveAgentAsync(step, ColumnScope.StepBuild);
 		Assert.Equal(buildAgent.Id, resolvedBuild!.Id);
 
-		var resolvedReview = await matching.ResolveAgentAsync(step, ColumnScope.StepAgentReview);
+		var resolvedReview = await _matching.ResolveAgentAsync(step, ColumnScope.StepAgentReview);
 		Assert.Equal(reviewAgent.Id, resolvedReview!.Id);
 	}
 
