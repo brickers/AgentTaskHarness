@@ -100,7 +100,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 		modelBuilder.Entity<AgentDefinition>(entity =>
 		{
 			entity.Property(definition => definition.Name).HasMaxLength(200).IsRequired();
-			entity.Property(definition => definition.FolderPath).HasMaxLength(1_024).IsRequired();
+			entity.Property(definition => definition.Prompt).IsRequired();
+			entity.Property(definition => definition.Instructions).IsRequired();
+			entity.Property(definition => definition.ToolConfiguration).IsRequired();
 			entity.HasIndex(definition => new { definition.BoardId, definition.Name }).IsUnique();
 			entity.HasOne(definition => definition.Board)
 				.WithMany(board => board.AgentDefinitions)

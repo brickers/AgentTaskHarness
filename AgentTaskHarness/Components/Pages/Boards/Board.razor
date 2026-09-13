@@ -2,6 +2,8 @@
 @using AgentTaskHarness.Infrastructure.Persistence
 @using Microsoft.EntityFrameworkCore
 @using BoardEntity = AgentTaskHarness.Domain.Entities.Board
+@using AgentTaskHarness.Domain.Entities
+@using AgentTaskHarness.Domain.Enums
 
 @inject BoardService BoardService
 @inject FeatureService FeatureService
@@ -11,6 +13,7 @@
 @inject IAgentScheduler AgentScheduler
 @inject ReviewOutcomeService ReviewOutcomeService
 @inject UsageTrackingService UsageService
+@inject AgentMatchingService AgentMatchingService
 @inject AppDbContext DbContext
 @inject NavigationManager Navigation
 
@@ -82,7 +85,17 @@ else
                         @ondrop="() => HandleFeatureDrop(column)">
 
                         <div class="column-header">
-                            <h3>@column</h3>
+                            <div><h3>@column</h3>
+                                @if (GetColumnScope(column, CardType.Feature) is ColumnScope featureScope)
+                                {
+                                    <select class="column-agent-select" aria-label="Agent for @column features"
+                                            value="@GetAssignedAgentId(featureScope)"
+                                            @onchange="e => AssignAgentAsync(featureScope, e.Value?.ToString())">
+                                        <option value="">No agent</option>
+                                        @foreach (var agent in _agentDefinitions) { <option value="@agent.Id">@agent.Name</option> }
+                                    </select>
+                                }
+                            </div>
                             <span class="column-count">@columnFeatures.Count</span>
                         </div>
 
@@ -153,7 +166,17 @@ else
                         @ondrop="() => HandleStepDrop(column)">
 
                         <div class="column-header">
-                            <h3>@column</h3>
+                            <div><h3>@column</h3>
+                                @if (GetColumnScope(column, CardType.Step) is ColumnScope stepScope)
+                                {
+                                    <select class="column-agent-select" aria-label="Agent for @column steps"
+                                            value="@GetAssignedAgentId(stepScope)"
+                                            @onchange="e => AssignAgentAsync(stepScope, e.Value?.ToString())">
+                                        <option value="">No agent</option>
+                                        @foreach (var agent in _agentDefinitions) { <option value="@agent.Id">@agent.Name</option> }
+                                    </select>
+                                }
+                            </div>
                             <span class="column-count">@columnSteps.Count</span>
                         </div>
 
@@ -350,6 +373,8 @@ else
     private Dictionary<Guid, AgentRun> _featureRuns = [];
     private Dictionary<Guid, AgentRun> _stepRuns = [];
     private Dictionary<Guid, List<AgentRunStatus?>> _featureStepStatuses = [];
+    private List<AgentDefinition> _agentDefinitions = [];
+    private List<AgentColumnAssignment> _agentAssignments = [];
 
     // Popup state
     private Feature? _popupFeature;
@@ -402,6 +427,37 @@ else
         await LoadBoardDataAsync();
     }
 
+    private static ColumnScope? GetColumnScope(WorkflowColumn column, CardType cardType)
+    {
+        return (cardType, column) switch
+        {
+            (CardType.Step, WorkflowColumn.Build) => ColumnScope.StepBuild,
+            (CardType.Step, WorkflowColumn.AgentReview) => ColumnScope.StepAgentReview,
+            (CardType.Feature, WorkflowColumn.AgentReview) => ColumnScope.FeatureAgentReview,
+            _ => null
+        };
+    }
+
+    private string GetAssignedAgentId(ColumnScope scope)
+        => _agentAssignments.FirstOrDefault(assignment => assignment.ColumnScope == scope)?.AgentDefinitionId.ToString() ?? string.Empty;
+
+    private async Task AssignAgentAsync(ColumnScope scope, string? value)
+    {
+        if (!Guid.TryParse(value, out var agentId))
+        {
+            var existing = _agentAssignments.FirstOrDefault(assignment => assignment.ColumnScope == scope);
+            if (existing is not null) await AgentMatchingService.DeleteAssignmentAsync(existing.Id);
+        }
+        else
+        {
+            var existing = _agentAssignments.FirstOrDefault(assignment => assignment.ColumnScope == scope);
+            if (existing is null) await AgentMatchingService.AssignAgentAsync(BoardId, scope, agentId);
+            else await AgentMatchingService.UpdateAssignmentAsync(existing.Id, agentId);
+        }
+
+        _agentAssignments = await AgentMatchingService.GetAssignmentsAsync(BoardId);
+    }
+
     private async Task LoadBoardDataAsync()
     {
         _board = await BoardService.GetByIdAsync(BoardId);
@@ -418,6 +474,9 @@ else
         _skipStepHumanReview = _board.SkipStepHumanReview;
         _agentReviewFailThreshold = _board.AgentReviewFailThreshold;
         _humanReviewFailThreshold = _board.HumanReviewFailThreshold;
+        _agentDefinitions = await DbContext.AgentDefinitions.AsNoTracking()
+            .Where(agent => agent.BoardId == BoardId).OrderBy(agent => agent.Name).ToListAsync();
+        _agentAssignments = await AgentMatchingService.GetAssignmentsAsync(BoardId);
 
         _features = await FeatureService.GetForBoardAsync(BoardId);
 
@@ -428,16 +487,16 @@ else
         foreach (var f in _features)
         {
             var full = await FeatureService.GetByIdAsync(f.Id);
-            if (full != null)
-            {
-                f.Steps = full.Steps;
-                foreach (var s in f.Steps)
-                {
-                    s.Feature = f;
-                }
 
-                allStepIds.AddRange(f.Steps.Select(s => s.Id));
+            if (full == null) continue;
+
+            f.Steps = full.Steps;
+            foreach (var s in f.Steps)
+            {
+                s.Feature = f;
             }
+
+            allStepIds.AddRange(f.Steps.Select(s => s.Id));
         }
 
         // Load agent runs

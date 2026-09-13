@@ -63,7 +63,7 @@ else
             {
                 <article>
                     <div><h3>@definition.Name</h3>
-                        <p>@definition.FolderPath</p></div>
+                        <p class="muted-copy">Database-backed configuration</p></div>
                     <button class="button-quiet" @onclick="() => SelectDefinitionAsync(definition.Id)">Edit</button>
                 </article>
             }
@@ -157,6 +157,22 @@ else
     </div>
 }
 
+@if (_isEditingComponent && _editingComponent is not null)
+{
+    <div class="modal-backdrop" role="presentation">
+        <section class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-component-title">
+            <div class="modal-heading"><h2 id="edit-component-title">Edit component</h2>
+                <button class="icon-button" type="button" aria-label="Close" @onclick="CloseComponentEditor">×</button></div>
+            <form class="form-panel" @onsubmit="UpdateComponentAsync" @onsubmit:preventDefault>
+                <label>Name <input @bind="_editingComponentName" /></label>
+                <label>Configuration <textarea @bind="_editingComponentConfig"></textarea></label>
+                <div class="modal-actions"><button class="button-quiet" type="button" @onclick="CloseComponentEditor">Cancel</button>
+                    <button class="button-primary" type="submit">Save component</button></div>
+            </form>
+        </section>
+    </div>
+}
+
 @if (_isCreatingDefinition)
 {
     <div class="modal-backdrop" role="presentation">
@@ -169,13 +185,9 @@ else
             </div>
             <form class="form-panel" @onsubmit="CreateDefinitionAsync" @onsubmit:preventDefault><label>Name <input
                         @bind="_newDefinitionName" placeholder="Implementation agent"/></label>
-                <div class="field-group"><label for="new-definition-folder">Definition folder</label>
-                    <div class="path-input"><input id="new-definition-folder" @bind="_newDefinitionFolderPath"
-                                                   placeholder="/path/to/definition"/>
-                        <FolderPicker OnFolderSelected="path => _newDefinitionFolderPath = path"/>
-                    </div>
-                    <small>Choose a folder to fill this field. Browsers hide its full local path, so replace the name
-                        with the server-visible path when needed.</small></div>
+                <label>Prompt <textarea @bind="_newDefinitionPrompt" placeholder="Primary agent prompt"></textarea></label>
+                <label>Instructions <textarea @bind="_newDefinitionInstructions" placeholder="Instructions and guardrails"></textarea></label>
+                <label>Tool configuration <textarea @bind="_newDefinitionTools" placeholder="JSON or CLI tool configuration"></textarea></label>
                 <div class="modal-actions">
                     <button class="button-quiet" type="button" @onclick="CloseDefinitionCreator">Cancel</button>
                     <button class="button-primary" type="submit">Create definition</button>
@@ -196,13 +208,9 @@ else
             </div>
             <form @onsubmit="SaveAsync" @onsubmit:preventDefault>
                 <div class="form-panel"><label>Name <input @bind="_definitionName"/></label>
-                    <div class="field-group"><label for="definition-folder">Definition folder</label>
-                        <div class="path-input"><input id="definition-folder" @bind="_definitionFolderPath"
-                                                       placeholder="/path/to/definition"/>
-                            <FolderPicker OnFolderSelected="path => _definitionFolderPath = path"/>
-                        </div>
-                        <small>Choose a folder to fill this field. Browsers hide its full local path, so replace the
-                            name with the server-visible path when needed.</small></div>
+                    <label>Prompt <textarea @bind="_definitionPrompt"></textarea></label>
+                    <label>Instructions <textarea @bind="_definitionInstructions"></textarea></label>
+                    <label>Tool configuration <textarea @bind="_definitionTools"></textarea></label>
                     <label>Component
                         <select @bind="_componentToAdd">
                             <option value="">Select a component…</option>
@@ -228,6 +236,7 @@ else
                                 var component = _selectedComponents[index];
                                 <li>
                                     <strong>@component.Name</strong>
+                                    <button class="button-quiet button-small" type="button" @onclick="() => OpenComponentEditor(component)">Edit</button>
                                     <button class="button-quiet" type="button" @onclick="() => MoveComponent(index, -1)"
                                             disabled="@(index == 0)">Earlier
                                     </button>
@@ -343,9 +352,17 @@ else
     private string _newComponentName = string.Empty;
     private string _newComponentConfig = string.Empty;
     private string _newDefinitionName = string.Empty;
-    private string _newDefinitionFolderPath = string.Empty;
+    private string _newDefinitionPrompt = string.Empty;
+    private string _newDefinitionInstructions = string.Empty;
+    private string _newDefinitionTools = string.Empty;
     private string _definitionName = string.Empty;
-    private string _definitionFolderPath = string.Empty;
+    private string _definitionPrompt = string.Empty;
+    private string _definitionInstructions = string.Empty;
+    private string _definitionTools = string.Empty;
+    private AgentComponent? _editingComponent;
+    private string _editingComponentName = string.Empty;
+    private string _editingComponentConfig = string.Empty;
+    private bool _isEditingComponent;
     private Guid? _componentToAdd;
     private string? _message;
     private int _messageVersion;
@@ -493,9 +510,12 @@ else
     {
         try
         {
-            await AgentDefinitionService.CreateAsync(BoardId, _newDefinitionName, _newDefinitionFolderPath);
+            await AgentDefinitionService.CreateAsync(BoardId, _newDefinitionName, _newDefinitionPrompt,
+                _newDefinitionInstructions, _newDefinitionTools);
             _newDefinitionName = string.Empty;
-            _newDefinitionFolderPath = string.Empty;
+            _newDefinitionPrompt = string.Empty;
+            _newDefinitionInstructions = string.Empty;
+            _newDefinitionTools = string.Empty;
             CloseDefinitionCreator();
             await LoadAsync();
         }
@@ -514,7 +534,9 @@ else
         }
 
         _definitionName = _selectedDefinition.Name;
-        _definitionFolderPath = _selectedDefinition.FolderPath;
+        _definitionPrompt = _selectedDefinition.Prompt;
+        _definitionInstructions = _selectedDefinition.Instructions;
+        _definitionTools = _selectedDefinition.ToolConfiguration;
         _selectedComponents = _selectedDefinition.Components.OrderBy(component => component.Order).Select(component => component.Component).ToList();
         _componentToAdd = null;
         _isEditingDefinition = true;
@@ -556,7 +578,8 @@ else
 
         try
         {
-            await AgentDefinitionService.SaveAsync(_selectedDefinition.Id, _definitionName, _definitionFolderPath, _selectedComponents.Select(component => component.Id).ToList());
+            await AgentDefinitionService.SaveAsync(_selectedDefinition.Id, _definitionName, _definitionPrompt,
+                _definitionInstructions, _definitionTools, _selectedComponents.Select(component => component.Id).ToList());
             await LoadAsync();
             CloseDefinitionEditor();
         }
@@ -590,6 +613,37 @@ else
     private void OpenComponentCreator()
     {
         _isCreatingComponent = true;
+    }
+
+    private void OpenComponentEditor(AgentComponent component)
+    {
+        _editingComponent = component;
+        _editingComponentName = component.Name;
+        _editingComponentConfig = component.ConfigContent;
+        _isEditingComponent = true;
+    }
+
+    private void CloseComponentEditor()
+    {
+        _isEditingComponent = false;
+        _editingComponent = null;
+    }
+
+    private async Task UpdateComponentAsync()
+    {
+        if (_editingComponent is null) return;
+        try
+        {
+            await AgentDefinitionService.UpdateComponentAsync(_editingComponent.Id, _editingComponentName,
+                _editingComponentConfig);
+            CloseComponentEditor();
+            _availableComponents = await AgentDefinitionService.GetComponentsAsync();
+            if (_selectedDefinition is not null) await SelectDefinitionAsync(_selectedDefinition.Id);
+        }
+        catch (Exception exception)
+        {
+            ShowMessage(exception.Message);
+        }
     }
 
     private void CloseComponentCreator()

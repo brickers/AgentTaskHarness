@@ -41,7 +41,7 @@ public class CopilotCliProcessRunner(GitGuardShimWriter shimWriter) : IAgentProc
 		process.StartInfo = new ProcessStartInfo
 		{
 			FileName = "copilot",
-			Arguments = $"--agent \"{definition.FolderPath}\" --worktree \"{workingDirectory}\" --session {sessionId}",
+			Arguments = $"--prompt {QuoteArgument(BuildAgentPrompt(definition))} --worktree {QuoteArgument(workingDirectory)} --session {sessionId}",
 			WorkingDirectory = workingDirectory,
 			UseShellExecute = false,
 			RedirectStandardOutput = true,
@@ -78,6 +78,15 @@ public class CopilotCliProcessRunner(GitGuardShimWriter shimWriter) : IAgentProc
 
 		return Task.FromResult(new AgentProcessResult(processId, sessionLink));
 	}
+
+	private static string BuildAgentPrompt(AgentDefinition definition)
+	{
+		var parts = new[] { definition.Prompt, definition.Instructions, definition.ToolConfiguration }
+			.Where(part => !string.IsNullOrWhiteSpace(part));
+		return string.Join(Environment.NewLine + Environment.NewLine, parts);
+	}
+
+	private static string QuoteArgument(string value) => $"\\\"{value.Replace("\\\"", "\\\\\\\"")}\\\"";
 
 	public Task StopAsync(int processId, CancellationToken cancellationToken = default)
 	{

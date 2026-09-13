@@ -4,17 +4,36 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AgentTaskHarness.Application.Agents;
 
-public class AgentDefinitionService(AppDbContext dbContext, IAgentDefinitionFolderWriter folderWriter)
+public class AgentDefinitionService(AppDbContext dbContext, IAgentDefinitionFolderWriter? legacyFolderWriter = null)
 {
-	public async Task<AgentDefinition> CreateAsync(Guid boardId, string name, string folderPath,
-		CancellationToken cancellationToken = default)
+	public Task<AgentDefinition> CreateAsync(Guid boardId, string name, CancellationToken cancellationToken = default)
+		=> CreateAsync(boardId, name, string.Empty, string.Empty, string.Empty, cancellationToken);
+
+	public async Task<AgentDefinition> CreateAsync(Guid boardId, string name, string prompt, string instructions,
+		string toolConfiguration, CancellationToken cancellationToken = default)
 	{
-		Validate(name, folderPath);
+		ValidateName(name);
 		if (!await dbContext.Boards.AnyAsync(board => board.Id == boardId, cancellationToken))
 			throw new KeyNotFoundException($"Board '{boardId}' was not found.");
-		var definition = new AgentDefinition { BoardId = boardId, Name = name.Trim(), FolderPath = folderPath.Trim() };
+		var definition = new AgentDefinition
+		{
+			BoardId = boardId,
+			Name = name.Trim(),
+			Prompt = prompt ?? string.Empty,
+			Instructions = instructions ?? string.Empty,
+			ToolConfiguration = toolConfiguration ?? string.Empty
+		};
 		dbContext.AgentDefinitions.Add(definition);
 		await dbContext.SaveChangesAsync(cancellationToken);
+		return definition;
+	}
+
+	[Obsolete("Use the database-backed overload without a folder path.")]
+	public async Task<AgentDefinition> CreateAsync(Guid boardId, string name, string legacyFolderPath,
+		CancellationToken cancellationToken = default)
+	{
+		var definition = await CreateAsync(boardId, name, string.Empty, string.Empty, string.Empty, cancellationToken);
+		definition.FolderPath = legacyFolderPath;
 		return definition;
 	}
 
@@ -32,28 +51,48 @@ public class AgentDefinitionService(AppDbContext dbContext, IAgentDefinitionFold
 			.SingleOrDefaultAsync(definition => definition.Id == definitionId, cancellationToken);
 	}
 
-	public async Task<AgentDefinition> UpdateAsync(Guid definitionId, string name, string folderPath,
-		CancellationToken cancellationToken = default)
+	public async Task<AgentDefinition> UpdateAsync(Guid definitionId, string name, string prompt, string instructions,
+		string toolConfiguration, CancellationToken cancellationToken = default)
 	{
-		Validate(name, folderPath);
+		ValidateName(name);
 		var definition = await FindDefinitionAsync(definitionId, cancellationToken);
 		definition.Name = name.Trim();
-		definition.FolderPath = folderPath.Trim();
+		definition.Prompt = prompt ?? string.Empty;
+		definition.Instructions = instructions ?? string.Empty;
+		definition.ToolConfiguration = toolConfiguration ?? string.Empty;
 		await dbContext.SaveChangesAsync(cancellationToken);
 		return definition;
 	}
 
-	public async Task<AgentDefinition> SaveAsync(Guid definitionId, string name, string folderPath,
-		IReadOnlyList<Guid> componentIds, CancellationToken cancellationToken = default)
+	[Obsolete("Use the database-backed overload without a folder path.")]
+	public Task<AgentDefinition> UpdateAsync(Guid definitionId, string name, string legacyFolderPath,
+		CancellationToken cancellationToken = default)
+		=> UpdateAsync(definitionId, name, string.Empty, string.Empty, string.Empty, cancellationToken);
+
+	public async Task<AgentDefinition> SaveAsync(Guid definitionId, string name, string prompt, string instructions,
+		string toolConfiguration, IReadOnlyList<Guid> componentIds, CancellationToken cancellationToken = default)
 	{
-		Validate(name, folderPath);
+		ValidateName(name);
 		ArgumentNullException.ThrowIfNull(componentIds);
 		var definition = await FindDefinitionWithComponentsAsync(definitionId, cancellationToken);
 		await ReplaceComponentsAsync(definition, componentIds, cancellationToken);
 		definition.Name = name.Trim();
-		definition.FolderPath = folderPath.Trim();
+		definition.Prompt = prompt ?? string.Empty;
+		definition.Instructions = instructions ?? string.Empty;
+		definition.ToolConfiguration = toolConfiguration ?? string.Empty;
 		await dbContext.SaveChangesAsync(cancellationToken);
-		await folderWriter.WriteAsync(definition, cancellationToken);
+		return definition;
+	}
+
+	[Obsolete("Use the database-backed overload without a folder path.")]
+	public async Task<AgentDefinition> SaveAsync(Guid definitionId, string name, string legacyFolderPath,
+		IReadOnlyList<Guid> componentIds, CancellationToken cancellationToken = default)
+	{
+		var definition = await SaveAsync(definitionId, name, string.Empty, string.Empty, string.Empty, componentIds,
+			cancellationToken);
+		definition.FolderPath = legacyFolderPath;
+		if (legacyFolderWriter is not null)
+			await legacyFolderWriter.WriteAsync(definition, cancellationToken);
 		return definition;
 	}
 
@@ -215,10 +254,9 @@ public class AgentDefinitionService(AppDbContext dbContext, IAgentDefinitionFold
 		await dbContext.SaveChangesAsync(cancellationToken);
 	}
 
-	private static void Validate(string name, string folderPath)
+	private static void ValidateName(string name)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(name);
-		ArgumentException.ThrowIfNullOrWhiteSpace(folderPath);
 	}
 
 	private static void ValidateComponent(string name, string configContent)
