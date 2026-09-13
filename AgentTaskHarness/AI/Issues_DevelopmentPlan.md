@@ -16,8 +16,8 @@ This plan breaks down the 15 issues from `Issues.md` into logical, manageable ph
 | **Phase 2: Data Model & Agent Management** | 1. Agents in Database, not Hard Drive | **Completed** | Prompt, instructions, and tool configuration are persisted on `AgentDefinition`; filesystem persistence is legacy-only. |
 | | 2. Editable Agent Components | **Completed** | Components can be created and edited in place from `AgentDefinitionEditor.razor`. |
 | | 3. Move Agent Assignment to Column View | **Completed** | Agent selectors are available in Build and Agent Review column headers on `Board.razor`. |
-| **Phase 3: Validation, Paths & Drag-and-Drop** | 1. Fix Browser Folder Selection | **Partially Completed** | Direct text input exists; legacy `FolderPicker` button still alerts. |
-| | 2. Git Repository Validation | **Not Completed** | No `LibGit2Sharp.Repository.IsValid()` check during board creation. |
+| **Phase 3: Validation, Paths & Drag-and-Drop** | 1. Fix Browser Folder Selection | **Completed** | Removed the browser-only folder picker; users enter the server-visible repository path directly. |
+| | 2. Git Repository Validation | **Completed** | Board creation and updates reject paths that are not existing valid Git repositories. |
 | | 3. Kanban Drag and Drop | **Completed** | HTML5 drag-and-drop with valid/invalid destination highlights. |
 | **Phase 4: Roadmap & Dependencies** | 1. Create Features on Roadmap | **Not Completed** | No "Create Feature" button or form on `Roadmap.razor`. |
 | | 2. Feature Dependencies (Backend & UI) | **Partially Completed** | Backend & Roadmap UI done; missing on `CardPopup.razor`. |
@@ -87,26 +87,22 @@ This plan breaks down the 15 issues from `Issues.md` into logical, manageable ph
 
 ---
 
-## Phase 3: Validation, Paths & Board Drag-and-Drop (Partially Completed)
+## Phase 3: Validation, Paths & Board Drag-and-Drop (Completed)
 
 *Improves data validation and core board interactions.*
 
 1. **Fix Browser Folder Selection (Board Creation)**
-    - **Status**: **Partially Completed**
+    - **Status**: **Completed**
     - **Target**: Board creation component (`Components/Pages/Boards/BoardList.razor`).
     - **Action**: Web browsers restrict retrieving absolute paths for security (throwing standard support errors). If a true path is needed on the backend, replace the `<input type="file" webkitdirectory />` with a direct `<input type="text" />` letting the user paste the path manually, or build a server-side tree browser.
-    - **Current State**: A direct text `<input id="new-repository-path" @bind="_newRepoPath" />` exists, but the legacy `FolderPicker` button calling `directoryPicker.choose` is still rendered next to it and displays an alert ("Your browser does not support folder selection...").
-    - **Remaining Work**:
-        - Remove the failing `FolderPicker` button or replace it with a server-side folder browser dialog that traverses server-visible paths.
+    - **Current State**: The repository path is entered through a direct text `<input id="new-repository-path" @bind="_newRepoPath" />`. The browser-only `FolderPicker` control is no longer rendered.
+    - **Implementation**: Updated the help text to explain that the path must be visible to the server.
 
 2. **Git Repository Validation**
-    - **Status**: **Not Completed**
+    - **Status**: **Completed**
     - **Target**: Board creation logic (`Application/Boards/BoardService.cs`).
     - **Action**: Before saving the board, use `LibGit2Sharp` to validate if the given path contains a valid `.git` repository (e.g., `Repository.IsValid(path)`). If false, add a validation error message in the UI preventing creation.
-    - **Current State**: `BoardService.Validate` only verifies non-whitespace strings and numeric boundaries. Invalid or non-git folders are saved without validation.
-    - **Remaining Work**:
-        - Inject or call `LibGit2Sharp.Repository.IsValid(repoPath)` inside `BoardService.CreateAsync` and `UpdateAsync`.
-        - Return a descriptive validation error (e.g., *"The specified path does not contain a valid Git repository."*) to display in the UI.
+    - **Implementation**: `BoardService.Validate` now requires an existing directory containing a valid Git repository via `LibGit2Sharp.Repository.IsValid(repoPath)`. The same validation runs for both `CreateAsync` and `UpdateAsync`, and failures return the descriptive message *"The specified path does not contain a valid Git repository."* to the UI.
 
 3. **Kanban Drag and Drop**
     - **Status**: **Completed**

@@ -1,5 +1,6 @@
 using AgentTaskHarness.Domain.Entities;
 using AgentTaskHarness.Infrastructure.Persistence;
+using LibGit2Sharp;
 using Microsoft.EntityFrameworkCore;
 
 namespace AgentTaskHarness.Application.Boards;
@@ -16,12 +17,14 @@ public class BoardService(AppDbContext dbContext)
 		int humanReviewFailThreshold = 3,
 		CancellationToken cancellationToken = default)
 	{
-		Validate(name, repoPath, concurrencyLimit, agentReviewFailThreshold, humanReviewFailThreshold);
+		ArgumentException.ThrowIfNullOrWhiteSpace(repoPath);
+		var normalizedRepoPath = repoPath.Trim();
+		Validate(name, normalizedRepoPath, concurrencyLimit, agentReviewFailThreshold, humanReviewFailThreshold);
 
 		var board = new Board
 		{
 			Name = name.Trim(),
-			RepoPath = repoPath.Trim(),
+			RepoPath = normalizedRepoPath,
 			ConcurrencyLimit = concurrencyLimit,
 			SkipFeatureHumanReview = skipFeatureHumanReview,
 			SkipStepHumanReview = skipStepHumanReview,
@@ -56,10 +59,12 @@ public class BoardService(AppDbContext dbContext)
 		int humanReviewFailThreshold = 3,
 		CancellationToken cancellationToken = default)
 	{
-		Validate(name, repoPath, concurrencyLimit, agentReviewFailThreshold, humanReviewFailThreshold);
+		ArgumentException.ThrowIfNullOrWhiteSpace(repoPath);
+		var normalizedRepoPath = repoPath.Trim();
+		Validate(name, normalizedRepoPath, concurrencyLimit, agentReviewFailThreshold, humanReviewFailThreshold);
 		var board = await FindBoardAsync(boardId, cancellationToken);
 		board.Name = name.Trim();
-		board.RepoPath = repoPath.Trim();
+		board.RepoPath = normalizedRepoPath;
 		board.ConcurrencyLimit = concurrencyLimit;
 		board.SkipFeatureHumanReview = skipFeatureHumanReview;
 		board.SkipStepHumanReview = skipStepHumanReview;
@@ -87,6 +92,8 @@ public class BoardService(AppDbContext dbContext)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(name);
 		ArgumentException.ThrowIfNullOrWhiteSpace(repoPath);
+		if (!Directory.Exists(repoPath) || !Repository.IsValid(repoPath))
+			throw new ArgumentException("The specified path does not contain a valid Git repository.", nameof(repoPath));
 		if (concurrencyLimit < 1)
 			throw new ArgumentOutOfRangeException(nameof(concurrencyLimit), "Concurrency limit must be at least one.");
 		if (agentReviewFailThreshold < 0)

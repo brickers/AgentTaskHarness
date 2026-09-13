@@ -42,6 +42,7 @@ public class FeatureService(AppDbContext dbContext)
 	public async Task<Feature?> GetByIdAsync(Guid featureId, CancellationToken cancellationToken = default)
 	{
 		var feature = await dbContext.Features
+			.AsNoTracking()
 			.Include(f => f.Steps)
 			.Include(f => f.Dependencies).ThenInclude(d => d.DependsOnFeature)
 			.Include(f => f.DependedOnBy).ThenInclude(d => d.Feature)

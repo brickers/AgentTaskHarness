@@ -79,7 +79,7 @@ else
 
                     <div
                         class="kanban-column @(isValidTarget ? "drop-target-valid" : "") @(isInvalidTarget ? "drop-target-invalid" : "") @(isOver ? "drop-over-active" : "")"
-                        ondragover="@(isValidTarget ? "event.preventDefault();" : null)"
+                        @ondragover:preventDefault="true"
                         @ondragenter="() => HandleDragEnter(column, CardType.Feature)"
                         @ondragleave="() => HandleDragLeave(column)"
                         @ondrop="() => HandleFeatureDrop(column)">
@@ -160,7 +160,7 @@ else
 
                     <div
                         class="kanban-column @(isValidTarget ? "drop-target-valid" : "") @(isInvalidTarget ? "drop-target-invalid" : "") @(isOver ? "drop-over-active" : "")"
-                        ondragover="@(isValidTarget ? "event.preventDefault();" : null)"
+                        @ondragover:preventDefault="true"
                         @ondragenter="() => HandleDragEnter(column, CardType.Step)"
                         @ondragleave="() => HandleDragLeave(column)"
                         @ondrop="() => HandleStepDrop(column)">

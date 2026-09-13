@@ -37,12 +37,8 @@
                 <label>Name <input @bind="_newName" placeholder="Product workspace"/></label>
                 <div class="field-group">
                     <label for="new-repository-path">Repository path</label>
-                    <div class="path-input">
-                        <input id="new-repository-path" @bind="_newRepoPath" placeholder="/path/to/repository"/>
-                        <FolderPicker OnFolderSelected="path => _newRepoPath = path"/>
-                    </div>
-                    <small>Choose a folder to fill this field. Browsers hide its full local path, so replace the name
-                        with the server-visible path when needed.</small>
+                    <input id="new-repository-path" @bind="_newRepoPath" placeholder="/path/to/repository"/>
+                    <small>Enter the server-visible path to an existing Git repository.</small>
                 </div>
                 <label>Agent concurrency <input type="number" min="1" @bind="_newConcurrencyLimit"/></label>
                 <label class="checkbox-label"><input type="checkbox" @bind="_newSkipFeatureHumanReview"/> Skip Feature
