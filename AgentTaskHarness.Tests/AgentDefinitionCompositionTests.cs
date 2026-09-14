@@ -1,7 +1,5 @@
-using System.Text.Json;
 using AgentTaskHarness.Application.Agents;
 using AgentTaskHarness.Application.Boards;
-using AgentTaskHarness.Infrastructure.Agents;
 using AgentTaskHarness.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -13,10 +11,6 @@ public class AgentDefinitionCompositionTests : IAsyncLifetime
 {
 	private readonly SqliteConnection _connection = new("Data Source=:memory:");
 
-	private readonly string _definitionFolder =
-		Path.Combine(Path.GetTempPath(), $"agent-task-harness-{Guid.NewGuid():N}");
-
-	private BoardService _boards = null!;
 	private AppDbContext _dbContext = null!;
 	private AgentDefinitionService _definitions = null!;
 
@@ -25,22 +19,19 @@ public class AgentDefinitionCompositionTests : IAsyncLifetime
 		await _connection.OpenAsync();
 		_dbContext = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
 		await _dbContext.Database.MigrateAsync();
-		_boards = new BoardService(_dbContext);
-		_definitions = new AgentDefinitionService(_dbContext, new AgentDefinitionFolderWriter());
+		_definitions = new AgentDefinitionService(_dbContext);
 	}
 
 	public async Task DisposeAsync()
 	{
 		await _dbContext.DisposeAsync();
 		await _connection.DisposeAsync();
-		if (Directory.Exists(_definitionFolder)) Directory.Delete(_definitionFolder, true);
 	}
 
 	[Fact]
 	public async Task ComponentOperationsAsync_AddRemoveAndReorderComponents()
 	{
-		var board = await _boards.CreateAsync("Harness", "/repos/harness");
-		var definition = await _definitions.CreateAsync(board.Id, "Implementer", _definitionFolder);
+		var definition = await _definitions.CreateAsync("Implementer");
 		var instructions = await _definitions.CreateComponentAsync("Instructions", "Follow the task.");
 		var review = await _definitions.CreateComponentAsync("Review", "Run the tests.");
 
@@ -56,25 +47,18 @@ public class AgentDefinitionCompositionTests : IAsyncLifetime
 	}
 
 	[Fact]
-	public async Task SaveAsync_WritesOrderedComponentConfigurationToDefinitionFolder()
+	public async Task SaveAsync_PersistsOrderedComponentConfiguration()
 	{
-		var board = await _boards.CreateAsync("Harness", "/repos/harness");
-		var definition = await _definitions.CreateAsync(board.Id, "Implementer", _definitionFolder);
+		var definition = await _definitions.CreateAsync("Implementer");
 		var instructions = await _definitions.CreateComponentAsync("Instructions", "Follow the task.");
 		var review = await _definitions.CreateComponentAsync("Review", "Run the tests.");
 
-		await _definitions.SaveAsync(definition.Id, "Reviewer", _definitionFolder, [review.Id, instructions.Id]);
+		await _definitions.SaveAsync(definition.Id, "Reviewer", "Prompt", "Instructions", "Tools", [review.Id, instructions.Id]);
 
-		await using var stream = File.OpenRead(Path.Combine(_definitionFolder, "agent-definition.json"));
-		using var document = await JsonDocument.ParseAsync(stream);
-		Assert.Equal("Reviewer", document.RootElement.GetProperty("name").GetString());
-		var components = document.RootElement.GetProperty("components").EnumerateArray().ToList();
-		Assert.Collection(components,
-			component =>
-			{
-				Assert.Equal("Review", component.GetProperty("name").GetString());
-				Assert.Equal("Run the tests.", component.GetProperty("configContent").GetString());
-			},
-			component => Assert.Equal("Instructions", component.GetProperty("name").GetString()));
+		var saved = (await _definitions.GetByIdAsync(definition.Id))!;
+		Assert.Equal("Reviewer", saved.Name);
+		Assert.Collection(saved.Components.OrderBy(component => component.Order),
+			component => Assert.Equal("Review", component.Component.Name),
+			component => Assert.Equal("Instructions", component.Component.Name));
 	}
 }

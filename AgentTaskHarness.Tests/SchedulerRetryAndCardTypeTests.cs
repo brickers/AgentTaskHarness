@@ -76,7 +76,6 @@ public class SchedulerRetryAndCardTypeTests : IAsyncLifetime
 		var agentName = name ?? $"Agent_{scope}_{Guid.NewGuid():N}";
 		var def = new AgentDefinition
 		{
-			BoardId = boardId,
 			Name = agentName,
 			FolderPath = $"/agents/{agentName}"
 		};

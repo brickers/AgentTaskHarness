@@ -1,0 +1,21 @@
+<header class="flex flex-col gap-6 border-b-[3px] border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
+    <div>
+        <p class="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">@Eyebrow</p>
+        <h1 class="text-3xl font-bold tracking-tight text-slate-900">@Title</h1>
+        @if (!string.IsNullOrWhiteSpace(Description))
+        {
+            <p class="mt-1 text-slate-600">@Description</p>
+        }
+    </div>
+    @if (Actions is not null)
+    {
+        <div class="flex flex-wrap items-center gap-2">@Actions</div>
+    }
+</header>
+
+@code {
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public string Eyebrow { get; set; } = string.Empty;
+    [Parameter] public string Description { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? Actions { get; set; }
+}

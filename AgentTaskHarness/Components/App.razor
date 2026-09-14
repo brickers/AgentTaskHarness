@@ -8,14 +8,16 @@
     <ResourcePreloader/>
     <link rel="stylesheet" href="@Assets["app.css"]"/>
     <link rel="stylesheet" href="@Assets["AgentTaskHarness.styles.css"]"/>
+    <script src="https://cdn.tailwindcss.com"></script>
     <ImportMap/>
-    <HeadOutlet @rendermode="InteractiveServer"/>
+    <HeadOutlet @rendermode="Microsoft.AspNetCore.Components.Web.RenderMode.InteractiveServer"/>
 </head>
 
-<body>
-<Routes @rendermode="InteractiveServer"/>
+<body class="mx-auto bg-slate-50 p-6 font-sans text-slate-900">
+<Routes @rendermode="Microsoft.AspNetCore.Components.Web.RenderMode.InteractiveServer"/>
 <ReconnectModal/>
 <script src="@Assets["directory-picker.js"]"></script>
+<script src="@Assets["nav-dropdown.js"]"></script>
 <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 

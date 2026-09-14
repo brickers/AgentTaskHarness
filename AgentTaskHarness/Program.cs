@@ -32,7 +32,6 @@ builder.Services.AddScoped<CommentService>();
 builder.Services.AddScoped<ReviewOutcomeService>();
 builder.Services.AddScoped<FeatureTransitionOrchestrator>();
 builder.Services.AddScoped<StepTransitionOrchestrator>();
-builder.Services.AddScoped<IAgentDefinitionFolderWriter, AgentDefinitionFolderWriter>();
 builder.Services.AddScoped<AgentDefinitionService>();
 builder.Services.AddScoped<AgentMatchingService>();
 builder.Services.AddScoped<IGitWorktreeService, LibGit2WorktreeService>();

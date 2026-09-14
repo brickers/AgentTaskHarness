@@ -1,0 +1,173 @@
+@page "/boards/{BoardId:guid}/settings"
+@using AgentTaskHarness.Domain.Entities
+@using AgentTaskHarness.Domain.Enums
+@using BoardEntity = AgentTaskHarness.Domain.Entities.Board
+@inject BoardService BoardService
+@inject AgentDefinitionService AgentDefinitionService
+@inject AgentMatchingService AgentMatchingService
+@inject NavigationManager Navigation
+
+<PageTitle>Board settings</PageTitle>
+
+@if (_board is null)
+{
+    <p class="p-6 text-gray-600">Loading board settings...</p>
+}
+else
+{
+    <PageTemplate Title="Settings" Eyebrow="@_board.Name"
+                  Description="Configure the project and assign agents to workflow columns.">
+        <ChildContent>
+            @if (_message is not null)
+            {
+                <p class="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700" role="alert">@_message</p>
+            }
+            <section class="mb-8 rounded-lg border-[3px] border-gray-200 bg-white p-6 shadow-sm">
+                <h2 class="mb-4 text-lg font-semibold text-gray-900">Configuration</h2>
+                <form class="grid gap-4" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+                    <label class="grid gap-1 text-sm font-medium text-gray-700">Name <input
+                            class="rounded-md border-[3px] border-gray-300 px-3 py-2" @bind="_name" required/></label>
+                    <label class="grid gap-1 text-sm font-medium text-gray-700">Repository path <input
+                            class="rounded-md border-[3px] border-gray-300 px-3 py-2" @bind="_repoPath" required/></label>
+                    <label class="grid gap-1 text-sm font-medium text-gray-700">Agent concurrency limit <input
+                            class="rounded-md border-[3px] border-gray-300 px-3 py-2" type="number" min="1"
+                            @bind="_concurrencyLimit"/></label>
+                    <div class="grid gap-2 text-sm text-gray-700"><label><input type="checkbox"
+                                                                                @bind="_skipFeatureReview"/>
+                            Skip feature human review</label><label><input type="checkbox" @bind="_skipStepReview"/>
+                            Skip
+                            step human review</label></div>
+                    <div class="grid gap-4 sm:grid-cols-2"><label class="grid gap-1 text-sm font-medium text-gray-700">Agent
+                            review failure threshold <input class="rounded-md border-[3px] border-gray-300 px-3 py-2"
+                                                            type="number" min="0"
+                                                            @bind="_agentThreshold"/></label><label
+                            class="grid gap-1 text-sm font-medium text-gray-700">Human review failure threshold <input
+                                class="rounded-md border-[3px] border-gray-300 px-3 py-2" type="number" min="0"
+                                @bind="_humanThreshold"/></label></div>
+                    <div>
+                        <button
+                            class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            type="submit">Save settings
+                        </button>
+                    </div>
+                </form>
+            </section>
+            <section class="rounded-lg border-[3px] border-gray-200 bg-white p-6 shadow-sm">
+                <h2 class="mb-1 text-lg font-semibold text-gray-900">Agent column assignments</h2>
+                <p class="mb-4 text-sm text-gray-600">Global agents can be assigned to this board's eligible workflow
+                    columns.</p>
+                @foreach (var scope in EligibleScopes)
+                {
+                    var assignments = _assignments.Where(a => a.ColumnScope == scope).ToList();
+                    <div class="mb-4 rounded-md border-[3px] border-gray-200 p-4"><h3
+                            class="font-medium text-gray-900">@ScopeName(scope)</h3>
+                        @foreach (var assignment in assignments)
+                        {
+                            <div class="mt-2 flex items-center justify-between text-sm">
+                            <span>@assignment.AgentDefinition.Name
+                                @if (!string.IsNullOrWhiteSpace(assignment.MatchCriteria))
+                                {
+                                    <span class="text-gray-500">(@assignment.MatchCriteria)</span>
+                                }</span>
+                                <button class="inline-flex items-center justify-center rounded-md border-[3px] border-red-600 bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-red-700 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                        @onclick="() => RemoveAssignmentAsync(assignment.Id)">Remove
+                                </button>
+                            </div>
+                        }
+                        <div class="mt-3 flex flex-wrap gap-2"><select
+                                class="rounded-md border-[3px] border-gray-300 px-3 py-2 text-sm"
+                                @bind="_selectedAgents[scope]">
+                                <option value="@Guid.Empty">Select an agent</option>
+                                @foreach (var agent in _agents)
+                                {
+                                    <option value="@agent.Id">@agent.Name</option>
+                                }</select><input class="rounded-md border-[3px] border-gray-300 px-3 py-2 text-sm"
+                                                 placeholder="Optional match criteria" @bind="_criteria[scope]"/>
+                            <button
+                                class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                @onclick="() => AddAssignmentAsync(scope)">Assign
+                            </button>
+                        </div>
+                    </div>
+                }
+            </section>
+        </ChildContent>
+    </PageTemplate>
+}
+
+@code {
+    [Parameter] public Guid BoardId { get; set; }
+    private static readonly ColumnScope[] EligibleScopes = [ColumnScope.StepBuild, ColumnScope.StepAgentReview, ColumnScope.FeatureAgentReview];
+    private BoardEntity? _board;
+    private List<AgentDefinition> _agents = [];
+    private List<AgentColumnAssignment> _assignments = [];
+    private readonly Dictionary<ColumnScope, Guid> _selectedAgents = [];
+    private readonly Dictionary<ColumnScope, string> _criteria = [];
+    private string? _message;
+    private string _name = "", _repoPath = "";
+    private int _concurrencyLimit, _agentThreshold, _humanThreshold;
+    private bool _skipFeatureReview, _skipStepReview;
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _board = await BoardService.GetByIdAsync(BoardId);
+        if (_board is null)
+        {
+            Navigation.NavigateTo("/boards");
+            return;
+        }
+
+        _name = _board.Name;
+        _repoPath = _board.RepoPath;
+        _concurrencyLimit = _board.ConcurrencyLimit;
+        _skipFeatureReview = _board.SkipFeatureHumanReview;
+        _skipStepReview = _board.SkipStepHumanReview;
+        _agentThreshold = _board.AgentReviewFailThreshold;
+        _humanThreshold = _board.HumanReviewFailThreshold;
+        _agents = await AgentDefinitionService.GetAllAsync();
+        _assignments = await AgentMatchingService.GetAssignmentsAsync(BoardId);
+        foreach (var scope in EligibleScopes)
+        {
+            _selectedAgents.TryAdd(scope, Guid.Empty);
+            _criteria.TryAdd(scope, string.Empty);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            await BoardService.UpdateAsync(BoardId, _name, _repoPath, _concurrencyLimit, _skipFeatureReview, _skipStepReview, _agentThreshold, _humanThreshold);
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            _message = exception.Message;
+        }
+    }
+
+    private async Task AddAssignmentAsync(ColumnScope scope)
+    {
+        if (!_selectedAgents.TryGetValue(scope, out var agentId) || agentId == Guid.Empty) return;
+        try
+        {
+            await AgentMatchingService.AssignAgentAsync(BoardId, scope, agentId, _criteria[scope]);
+            _selectedAgents[scope] = Guid.Empty;
+            _criteria[scope] = string.Empty;
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            _message = exception.Message;
+        }
+    }
+
+    private async Task RemoveAssignmentAsync(Guid assignmentId)
+    {
+        await AgentMatchingService.DeleteAssignmentAsync(assignmentId);
+        await LoadAsync();
+    }
+
+    private static string ScopeName(ColumnScope scope) => scope switch { ColumnScope.StepBuild => "Step: Build", ColumnScope.StepAgentReview => "Step: Agent Review", ColumnScope.FeatureAgentReview => "Feature: Agent Review", _ => scope.ToString() };
+}

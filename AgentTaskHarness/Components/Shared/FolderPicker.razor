@@ -1,6 +1,6 @@
 @inject IJSRuntime Js
 
-<button class="folder-picker" type="button" @onclick="ChooseAsync">Choose folder</button>
+<button class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" type="button" @onclick="ChooseAsync">Choose folder</button>
 
 @code {
     [Parameter][EditorRequired] public EventCallback<string> OnFolderSelected { get; set; }

@@ -1,352 +1,306 @@
-@page "/boards/{BoardId:guid}/agents"
-@inject BoardService BoardService
+@page "/agents"
+@page "/agents/{AgentId:guid}"
 @inject AgentDefinitionService AgentDefinitionService
-@inject AgentMatchingService AgentMatchingService
-@inject NavigationManager Navigation
 
 <PageTitle>Agent definitions</PageTitle>
 
-<section class="page-intro compact-intro">
-    <div><p class="breadcrumb"><a href="@($"/boards/{BoardId}")">Board</a> <span>/</span> Settings</p>
-        <h1>Agent definitions</h1>
-        <p>Compose reusable instructions and assign them to the workflow.</p></div>
-    <div class="header-actions">
-        <button class="button-quiet" @onclick="OpenComponentCreator">New component</button>
-        <button class="button-primary" @onclick="OpenDefinitionCreator">New definition</button>
-    </div>
-</section>
-
-@if (!string.IsNullOrWhiteSpace(_message))
-{
-    <div class="toast" role="alert" @key="_messageVersion"><span>@_message</span>
-        <button class="icon-button" type="button" aria-label="Dismiss notification" @onclick="DismissMessage">×</button>
-    </div>
-}
-
-<section class="definition-panel">
-    <div class="section-heading">
-        <div><p class="eyebrow">Building blocks</p>
-            <h2>Reusable components</h2></div>
-        <span class="tag">@_availableComponents.Count total</span></div>
-    @if (_availableComponents.Count > 0)
-    {
-        <ul class="component-list">
-            @foreach (var component in _availableComponents)
-            {
-                <li><strong>@component.Name</strong><span>@component.ConfigContent</span></li>
-            }
-        </ul>
-    }
-    else
-    {
-        <p class="muted-copy">Create components for instructions, guardrails, or tool configuration.</p>
-    }
-</section>
-
-@if (_definitions.Count == 0)
-{
-    <section class="empty-state"><p class="eyebrow">No definitions yet</p>
-        <h2>Build an agent</h2>
-        <p>Combine reusable components into a definition that can be assigned to a column.</p>
-        <button class="button-primary" @onclick="OpenDefinitionCreator">Create definition</button>
-    </section>
-}
-else
-{
-    <section class="definition-panel definition-list-panel">
-        <div class="section-heading">
-            <div><p class="eyebrow">Compositions</p>
-                <h2>Definitions</h2></div>
-        </div>
-        <div class="definition-list">
-            @foreach (var definition in _definitions)
-            {
-                <article>
-                    <div><h3>@definition.Name</h3>
-                        <p class="muted-copy">Database-backed configuration</p></div>
-                    <button class="button-quiet" @onclick="() => SelectDefinitionAsync(definition.Id)">Edit</button>
-                </article>
-            }
-        </div>
-    </section>
-
-    <section class="definition-panel assignment-panel">
-        <div class="section-heading">
-            <div>
-                <p class="eyebrow">Workflow Assignment</p>
-                <h2>Column assignments</h2>
-            </div>
-            <button class="button-primary" @onclick="() => OpenAssignmentCreator()">Assign agent</button>
-        </div>
-        <p class="muted-copy">Assign agent definitions to eligible column scopes with optional matching criteria (e.g.
-            <code>rework=true</code>, <code>rework=false</code>, or keywords). Feature Build is never assignable.</p>
-
-        <div class="scope-grid">
-            @foreach (var scope in EligibleScopes)
-            {
-                var scopeAssignments = _assignments.Where(a => a.ColumnScope == scope).ToList();
-                <div class="scope-card">
-                    <div class="scope-card-header">
-                        <div>
-                            <h3>@GetScopeDisplayName(scope)</h3>
-                            <p class="muted-copy"><small>@GetScopeDescription(scope)</small></p>
-                        </div>
-                        <button class="button-quiet button-small" @onclick="() => OpenAssignmentCreator(scope)">+
-                            Assign
-                        </button>
-                    </div>
-                    @if (scopeAssignments.Count > 0)
-                    {
-                        <ul class="assignment-list">
-                            @foreach (var assignment in scopeAssignments)
-                            {
-                                <li class="assignment-item">
-                                    <div class="assignment-details">
-                                        <strong>@(assignment.AgentDefinition?.Name ?? "Agent")</strong>
-                                        @if (!string.IsNullOrWhiteSpace(assignment.MatchCriteria))
-                                        {
-                                            <span class="criteria-badge"
-                                                  title="Match criteria">@assignment.MatchCriteria</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="criteria-badge default-criteria"
-                                                  title="Default catch-all for any card">Default (all cards)</span>
-                                        }
-                                    </div>
-                                    <div class="assignment-item-actions">
-                                        <button class="button-quiet button-small"
-                                                @onclick="() => OpenAssignmentEditor(assignment)">Edit
-                                        </button>
-                                        <button class="button-danger button-small"
-                                                @onclick="() => DeleteAssignmentAsync(assignment.Id)">Remove
-                                        </button>
-                                    </div>
-                                </li>
-                            }
-                        </ul>
-                    }
-                    else
-                    {
-                        <p class="empty-scope"><small>No agents assigned to this column scope.</small></p>
-                    }
-                </div>
-            }
-        </div>
-    </section>
-}
-
-@if (_isCreatingComponent)
-{
-    <div class="modal-backdrop" role="presentation">
-        <section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-component-title">
-            <div class="modal-heading">
-                <div><p class="eyebrow">Building block</p>
-                    <h2 id="new-component-title">New component</h2></div>
-                <button class="icon-button" type="button" aria-label="Close" @onclick="CloseComponentCreator">×</button>
-            </div>
-            <form class="form-panel" @onsubmit="CreateComponentAsync" @onsubmit:preventDefault><label>Name <input
-                        @bind="_newComponentName" placeholder="Repository conventions"/></label><label>Configuration
-                    <textarea @bind="_newComponentConfig" placeholder="Add the component content."></textarea></label>
-                <div class="modal-actions">
-                    <button class="button-quiet" type="button" @onclick="CloseComponentCreator">Cancel</button>
-                    <button class="button-primary" type="submit">Create component</button>
-                </div>
-            </form>
-        </section>
-    </div>
-}
-
-@if (_isEditingComponent && _editingComponent is not null)
-{
-    <div class="modal-backdrop" role="presentation">
-        <section class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-component-title">
-            <div class="modal-heading"><h2 id="edit-component-title">Edit component</h2>
-                <button class="icon-button" type="button" aria-label="Close" @onclick="CloseComponentEditor">×</button></div>
-            <form class="form-panel" @onsubmit="UpdateComponentAsync" @onsubmit:preventDefault>
-                <label>Name <input @bind="_editingComponentName" /></label>
-                <label>Configuration <textarea @bind="_editingComponentConfig"></textarea></label>
-                <div class="modal-actions"><button class="button-quiet" type="button" @onclick="CloseComponentEditor">Cancel</button>
-                    <button class="button-primary" type="submit">Save component</button></div>
-            </form>
-        </section>
-    </div>
-}
-
-@if (_isCreatingDefinition)
-{
-    <div class="modal-backdrop" role="presentation">
-        <section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-definition-title">
-            <div class="modal-heading">
-                <div><p class="eyebrow">Agent composition</p>
-                    <h2 id="new-definition-title">New definition</h2></div>
-                <button class="icon-button" type="button" aria-label="Close" @onclick="CloseDefinitionCreator">×
+<PageTemplate Title="Agent definitions" Eyebrow="Agents"
+              Description="Compose reusable instructions and assign them to the workflow.">
+    <Actions>
+        <button
+            class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            @onclick="OpenComponentCreator">New component
+        </button>
+        <button
+            class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            @onclick="OpenDefinitionCreator">New definition
+        </button>
+    </Actions>
+    <ChildContent>
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div
+                class="fixed right-6 top-6 z-30 flex max-w-lg items-center justify-between gap-3 rounded-lg border-[3px] border-amber-300 bg-amber-50 px-4 py-2 text-amber-900 shadow-lg"
+                role="alert" @key="_messageVersion"><span>@_message</span>
+                <button
+                    class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-200 bg-slate-100 px-2 py-1 text-xl leading-none text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                    type="button" aria-label="Dismiss notification" @onclick="DismissMessage">×
                 </button>
             </div>
-            <form class="form-panel" @onsubmit="CreateDefinitionAsync" @onsubmit:preventDefault><label>Name <input
-                        @bind="_newDefinitionName" placeholder="Implementation agent"/></label>
-                <label>Prompt <textarea @bind="_newDefinitionPrompt" placeholder="Primary agent prompt"></textarea></label>
-                <label>Instructions <textarea @bind="_newDefinitionInstructions" placeholder="Instructions and guardrails"></textarea></label>
-                <label>Tool configuration <textarea @bind="_newDefinitionTools" placeholder="JSON or CLI tool configuration"></textarea></label>
-                <div class="modal-actions">
-                    <button class="button-quiet" type="button" @onclick="CloseDefinitionCreator">Cancel</button>
-                    <button class="button-primary" type="submit">Create definition</button>
-                </div>
-            </form>
-        </section>
-    </div>
-}
+        }
 
-@if (_selectedDefinition is not null && _isEditingDefinition)
-{
-    <div class="modal-backdrop" role="presentation">
-        <section class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-definition-title">
-            <div class="modal-heading">
-                <div><p class="eyebrow">Agent composition</p>
-                    <h2 id="edit-definition-title">Edit @_selectedDefinition.Name</h2></div>
-                <button class="icon-button" type="button" aria-label="Close" @onclick="CloseDefinitionEditor">×</button>
+        <section class="mt-4 max-w-5xl rounded-xl border-[3px] border-slate-200 bg-white p-5 shadow-sm">
+            <div class="flex items-start justify-between">
+                <div><p class="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Building blocks</p>
+                    <h2>Reusable components</h2></div>
+                <span
+                    class="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600">@_availableComponents.Count total</span>
             </div>
-            <form @onsubmit="SaveAsync" @onsubmit:preventDefault>
-                <div class="form-panel"><label>Name <input @bind="_definitionName"/></label>
-                    <label>Prompt <textarea @bind="_definitionPrompt"></textarea></label>
-                    <label>Instructions <textarea @bind="_definitionInstructions"></textarea></label>
-                    <label>Tool configuration <textarea @bind="_definitionTools"></textarea></label>
-                    <label>Component
-                        <select @bind="_componentToAdd">
-                            <option value="">Select a component…</option>
-                            @foreach (var component in _availableComponents.Where(component => _selectedComponents.All(selected => selected.Id != component.Id)))
-                            {
-                                <option value="@component.Id">@component.Name</option>
-                            }
-                        </select>
-                    </label>
-                    <button class="button-quiet" type="button" @onclick="AddComponent">Add component</button>
-                </div>
-
-                <section class="composition-editor"><h3>Composition order</h3>
-                    @if (_selectedComponents.Count == 0)
+            @if (_availableComponents.Count > 0)
+            {
+                <ul class="mt-4 grid list-none gap-2 p-0">
+                    @foreach (var component in _availableComponents)
                     {
-                        <p class="muted-copy">No components selected.</p>
+                        <li class="grid gap-1 rounded-lg bg-slate-100 p-3"><strong
+                                class="text-slate-900">@component.Name</strong><span
+                                class="whitespace-pre-wrap text-sm leading-6 text-slate-600">@component.ConfigContent</span>
+                        </li>
                     }
-                    else
-                    {
-                        <ol class="composition-list">
-                            @for (var index = 0; index < _selectedComponents.Count; index++)
-                            {
-                                var component = _selectedComponents[index];
-                                <li>
-                                    <strong>@component.Name</strong>
-                                    <button class="button-quiet button-small" type="button" @onclick="() => OpenComponentEditor(component)">Edit</button>
-                                    <button class="button-quiet" type="button" @onclick="() => MoveComponent(index, -1)"
-                                            disabled="@(index == 0)">Earlier
-                                    </button>
-                                    <button class="button-quiet" type="button" @onclick="() => MoveComponent(index, 1)"
-                                            disabled="@(index == _selectedComponents.Count - 1)">Later
-                                    </button>
-                                    <button class="button-danger" type="button"
-                                            @onclick="() => RemoveComponent(component.Id)">Remove
-                                    </button>
-                                </li>
-                            }
-                        </ol>
-                    }
-                </section>
-                <div class="modal-actions">
-                    <button class="button-danger" type="button" @onclick="DeleteDefinitionAsync">Delete definition
-                    </button>
-                    <span class="modal-action-spacer"></span>
-                    <button class="button-quiet" type="button" @onclick="CloseDefinitionEditor">Cancel</button>
-                    <button class="button-primary" type="submit">Save definition</button>
-                </div>
-            </form>
+                </ul>
+            }
+            else
+            {
+                <p class="text-sm leading-6 text-slate-500">Create components for instructions, guardrails, or tool
+                    configuration.</p>
+            }
         </section>
-    </div>
-}
 
-@if (_isManagingAssignment)
-{
-    <div class="modal-backdrop" role="presentation">
-        <section class="modal" role="dialog" aria-modal="true" aria-labelledby="assignment-modal-title">
-            <div class="modal-heading">
-                <div>
-                    <p class="eyebrow">Workflow Assignment</p>
-                    <h2 id="assignment-modal-title">@(_editingAssignment is null ? "Assign agent to column" : "Edit column assignment")</h2>
+        @if (_definitions.Count == 0)
+        {
+            <section class="empty-state"><p class="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    No definitions yet</p>
+                <h2>Build an agent</h2>
+                <p>Combine reusable components into a definition that can be assigned to a column.</p>
+                <button class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        @onclick="OpenDefinitionCreator">Create definition
+                </button>
+            </section>
+        }
+        else
+        {
+            <section class="mt-4 max-w-5xl rounded-xl border-[3px] border-slate-200 bg-white p-5 shadow-sm">
+                <div class="flex items-start justify-between">
+                    <div><p class="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Compositions</p>
+                        <h2>Definitions</h2></div>
                 </div>
-                <button class="icon-button" type="button" aria-label="Close" @onclick="CloseAssignmentModal">×</button>
-            </div>
-            <form class="form-panel" @onsubmit="SaveAssignmentAsync" @onsubmit:preventDefault>
-                @if (_editingAssignment is null)
-                {
-                    <label>
-                        Column Scope
-                        <select @bind="_selectedScope">
-                            @foreach (var scope in EligibleScopes)
-                            {
-                                <option value="@scope">@GetScopeDisplayName(scope)</option>
-                            }
-                        </select>
-                    </label>
-                }
-                else
-                {
-                    <div>
-                        <span class="eyebrow">Column Scope</span>
-                        <p><strong>@GetScopeDisplayName(_selectedScope)</strong></p>
-                    </div>
-                }
-
-                <label>
-                    Agent Definition
-                    <select @bind="_selectedAgentDefinitionId">
-                        <option value="@Guid.Empty">Select a definition…</option>
-                        @foreach (var definition in _definitions)
-                        {
-                            <option value="@definition.Id">@definition.Name</option>
-                        }
-                    </select>
-                </label>
-
-                <label>
-                    Match Criteria
-                    <input @bind="_matchCriteriaInput"
-                           placeholder="e.g. rework=true, rework=false, or leave blank for default"/>
-                    <small class="muted-copy">
-                        Optional. Leave blank to match all cards unconditionally. Specify rules like
-                        <code>rework=true</code>, <code>rework=false</code>, or keywords to target specific cards.
-                    </small>
-                </label>
-
-                <div class="modal-actions">
-                    @if (_editingAssignment is not null)
+                <div class="mt-4 grid gap-3">
+                    @foreach (var definition in _definitions)
                     {
-                        <button class="button-danger" type="button"
-                                @onclick="() => DeleteAssignmentAsync(_editingAssignment.Id)">Delete assignment
+                        <article
+                            class="flex flex-col justify-between gap-3 rounded-lg border-[3px] border-slate-200 p-3 sm:flex-row sm:items-center">
+                            <div><h3 class="font-semibold text-slate-900">@definition.Name</h3>
+                                <p class="text-sm leading-6 text-slate-500">Database-backed configuration</p></div>
+                            <button
+                                class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                @onclick="() => SelectDefinitionAsync(definition.Id)">Edit
+                            </button>
+                        </article>
+                    }
+                </div>
+            </section>
+
+            @if (false)
+            {
+            }
+        }
+
+        @if (_isCreatingComponent)
+        {
+            <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+                 role="presentation">
+                <section
+                    class="max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-y-auto rounded-xl border-[3px] border-slate-200 bg-white p-6 shadow-2xl"
+                    role="dialog" aria-modal="true" aria-labelledby="new-component-title">
+                    <div class="mb-5 flex items-start justify-between">
+                        <div><p class="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Building
+                                block</p>
+                            <h2 id="new-component-title">New component</h2></div>
+                        <button
+                            class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-200 bg-slate-100 px-2 py-1 text-xl leading-none text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                            type="button" aria-label="Close" @onclick="CloseComponentCreator">×
                         </button>
-                        <span class="modal-action-spacer"></span>
-                    }
-                    <button class="button-quiet" type="button" @onclick="CloseAssignmentModal">Cancel</button>
-                    <button class="button-primary" type="submit" disabled="@(_selectedAgentDefinitionId == Guid.Empty)">
-                        @(_editingAssignment is null ? "Assign" : "Save changes")
-                    </button>
-                </div>
-            </form>
-        </section>
-    </div>
-}
+                    </div>
+                    <form class="grid gap-4" @onsubmit="CreateComponentAsync" @onsubmit:preventDefault><label>Name
+                            <input
+                                @bind="_newComponentName" placeholder="Repository conventions"/></label><label>Configuration
+                            <textarea @bind="_newComponentConfig"
+                                      placeholder="Add the component content."></textarea></label>
+                        <div class="mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 pt-4">
+                            <button
+                                class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                type="button" @onclick="CloseComponentCreator">Cancel
+                            </button>
+                            <button
+                                class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                type="submit">Create component
+                            </button>
+                        </div>
+                    </form>
+                </section>
+            </div>
+        }
+
+        @if (_isEditingComponent && _editingComponent is not null)
+        {
+            <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+                 role="presentation">
+                <section
+                    class="max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-y-auto rounded-xl border-[3px] border-slate-200 bg-white p-6 shadow-2xl"
+                    role="dialog" aria-modal="true" aria-labelledby="edit-component-title">
+                    <div class="mb-5 flex items-start justify-between"><h2 id="edit-component-title">Edit component</h2>
+                        <button
+                            class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-200 bg-slate-100 px-2 py-1 text-xl leading-none text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                            type="button" aria-label="Close" @onclick="CloseComponentEditor">×
+                        </button>
+                    </div>
+                    <form class="grid gap-4" @onsubmit="UpdateComponentAsync" @onsubmit:preventDefault>
+                        <label>Name <input @bind="_editingComponentName"/></label>
+                        <label>Configuration <textarea @bind="_editingComponentConfig"></textarea></label>
+                        <div class="mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 pt-4">
+                            <button
+                                class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                type="button" @onclick="CloseComponentEditor">Cancel
+                            </button>
+                            <button
+                                class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                type="submit">Save component
+                            </button>
+                        </div>
+                    </form>
+                </section>
+            </div>
+        }
+
+        @if (_isCreatingDefinition)
+        {
+            <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+                 role="presentation">
+                <section
+                    class="max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-y-auto rounded-xl border-[3px] border-slate-200 bg-white p-6 shadow-2xl"
+                    role="dialog" aria-modal="true" aria-labelledby="new-definition-title">
+                    <div class="mb-5 flex items-start justify-between">
+                        <div><p class="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Agent
+                                composition</p>
+                            <h2 id="new-definition-title">New definition</h2></div>
+                        <button
+                            class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-200 bg-slate-100 px-2 py-1 text-xl leading-none text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                            type="button" aria-label="Close" @onclick="CloseDefinitionCreator">×
+                        </button>
+                    </div>
+                    <form class="grid gap-4" @onsubmit="CreateDefinitionAsync" @onsubmit:preventDefault><label>Name
+                            <input
+                                @bind="_newDefinitionName" placeholder="Implementation agent"/></label>
+                        <label>Prompt <textarea @bind="_newDefinitionPrompt"
+                                                placeholder="Primary agent prompt"></textarea></label>
+                        <label>Instructions <textarea @bind="_newDefinitionInstructions"
+                                                      placeholder="Instructions and guardrails"></textarea></label>
+                        <label>Tool configuration <textarea @bind="_newDefinitionTools"
+                                                            placeholder="JSON or CLI tool configuration"></textarea></label>
+                        <div class="mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 pt-4">
+                            <button
+                                class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                type="button" @onclick="CloseDefinitionCreator">Cancel
+                            </button>
+                            <button
+                                class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                type="submit">Create definition
+                            </button>
+                        </div>
+                    </form>
+                </section>
+            </div>
+        }
+
+        @if (_selectedDefinition is not null && _isEditingDefinition)
+        {
+            <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+                 role="presentation">
+                <section
+                    class="max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-y-auto rounded-xl border-[3px] border-slate-200 bg-white p-6 shadow-2xl"
+                    role="dialog" aria-modal="true" aria-labelledby="edit-definition-title">
+                    <div class="mb-5 flex items-start justify-between">
+                        <div><p class="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Agent
+                                composition</p>
+                            <h2 id="edit-definition-title">Edit @_selectedDefinition.Name</h2></div>
+                        <button
+                            class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-200 bg-slate-100 px-2 py-1 text-xl leading-none text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                            type="button" aria-label="Close" @onclick="CloseDefinitionEditor">×
+                        </button>
+                    </div>
+                    <form @onsubmit="SaveAsync" @onsubmit:preventDefault>
+                        <div class="grid gap-4"><label>Name <input @bind="_definitionName"/></label>
+                            <label>Prompt <textarea @bind="_definitionPrompt"></textarea></label>
+                            <label>Instructions <textarea @bind="_definitionInstructions"></textarea></label>
+                            <label>Tool configuration <textarea @bind="_definitionTools"></textarea></label>
+                            <label>Component
+                                <select @bind="_componentToAdd">
+                                    <option value="">Select a component…</option>
+                                    @foreach (var component in _availableComponents.Where(component => _selectedComponents.All(selected => selected.Id != component.Id)))
+                                    {
+                                        <option value="@component.Id">@component.Name</option>
+                                    }
+                                </select>
+                            </label>
+                            <button
+                                class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                type="button" @onclick="AddComponent">Add component
+                            </button>
+                        </div>
+
+                        <section class="mt-5"><h3>Composition order</h3>
+                            @if (_selectedComponents.Count == 0)
+                            {
+                                <p class="text-sm leading-6 text-slate-500">No components selected.</p>
+                            }
+                            else
+                            {
+                                <ol class="mt-3 grid list-none gap-2 p-0">
+                                    @for (var index = 0; index < _selectedComponents.Count; index++)
+                                    {
+                                        var component = _selectedComponents[index];
+                                        <li>
+                                            <strong>@component.Name</strong>
+                                            <button
+                                                class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 text-xs"
+                                                type="button"
+                                                @onclick="() => OpenComponentEditor(component)">Edit
+                                            </button>
+                                            <button
+                                                class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                                type="button" @onclick="() => MoveComponent(index, -1)"
+                                                disabled="@(index == 0)">Earlier
+                                            </button>
+                                            <button
+                                                class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                                type="button" @onclick="() => MoveComponent(index, 1)"
+                                                disabled="@(index == _selectedComponents.Count - 1)">Later
+                                            </button>
+                                            <button
+                                                class="inline-flex items-center justify-center rounded-md border-[3px] border-red-600 bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-red-700 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                                type="button"
+                                                @onclick="() => RemoveComponent(component.Id)">Remove
+                                            </button>
+                                        </li>
+                                    }
+                                </ol>
+                            }
+                        </section>
+                        <div class="mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 pt-4">
+                            <button
+                                class="inline-flex items-center justify-center rounded-md border-[3px] border-red-600 bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-red-700 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                type="button" @onclick="DeleteDefinitionAsync">Delete definition
+                            </button>
+                            <span class="flex-1"></span>
+                            <button
+                                class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                type="button" @onclick="CloseDefinitionEditor">Cancel
+                            </button>
+                            <button
+                                class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                type="submit">Save definition
+                            </button>
+                        </div>
+                    </form>
+                </section>
+            </div>
+        }
+    </ChildContent>
+</PageTemplate>
 
 @code {
-    [Parameter] public Guid BoardId { get; set; }
-
-    private static readonly ColumnScope[] EligibleScopes =
-    [
-        ColumnScope.StepBuild,
-        ColumnScope.StepAgentReview,
-        ColumnScope.FeatureAgentReview
-    ];
-
+    [Parameter] public Guid AgentId { get; set; }
     private List<AgentDefinition> _definitions = [];
     private List<AgentComponent> _availableComponents = [];
-    private List<AgentColumnAssignment> _assignments = [];
     private AgentDefinition? _selectedDefinition;
     private List<AgentComponent> _selectedComponents = [];
     private string _newComponentName = string.Empty;
@@ -370,124 +324,19 @@ else
     private bool _isCreatingDefinition;
     private bool _isEditingDefinition;
 
-    private bool _isManagingAssignment;
-    private AgentColumnAssignment? _editingAssignment;
-    private ColumnScope _selectedScope = ColumnScope.StepBuild;
-    private Guid _selectedAgentDefinitionId;
-    private string _matchCriteriaInput = string.Empty;
-
     protected override async Task OnParametersSetAsync()
     {
-        if (await BoardService.GetByIdAsync(BoardId) is null)
-        {
-            Navigation.NavigateTo("/boards");
-            return;
-        }
-
         await LoadAsync();
+        if (AgentId != Guid.Empty && _definitions.Any(definition => definition.Id == AgentId))
+            await SelectDefinitionAsync(AgentId);
     }
 
     private async Task LoadAsync()
     {
-        _definitions = await AgentDefinitionService.GetForBoardAsync(BoardId);
+        _definitions = await AgentDefinitionService.GetAllAsync();
         _availableComponents = await AgentDefinitionService.GetComponentsAsync();
-        _assignments = await AgentMatchingService.GetAssignmentsAsync(BoardId);
         if (_selectedDefinition is not null)
-        {
             await SelectDefinitionAsync(_selectedDefinition.Id);
-        }
-    }
-
-    private static string GetScopeDisplayName(ColumnScope scope)
-    {
-        return scope switch
-        {
-            ColumnScope.StepBuild => "Step: Build",
-            ColumnScope.StepAgentReview => "Step: Agent Review",
-            ColumnScope.FeatureAgentReview => "Feature: Agent Review",
-            _ => scope.ToString()
-        };
-    }
-
-    private static string GetScopeDescription(ColumnScope scope)
-    {
-        return scope switch
-        {
-            ColumnScope.StepBuild => "Runs when a dev plan step begins active implementation.",
-            ColumnScope.StepAgentReview => "Runs when a step is submitted for automated review.",
-            ColumnScope.FeatureAgentReview => "Runs when all steps complete and the feature enters review.",
-            _ => string.Empty
-        };
-    }
-
-    private void OpenAssignmentCreator(ColumnScope? scope = null)
-    {
-        _editingAssignment = null;
-        _selectedScope = scope ?? ColumnScope.StepBuild;
-        _selectedAgentDefinitionId = _definitions.FirstOrDefault()?.Id ?? Guid.Empty;
-        _matchCriteriaInput = string.Empty;
-        _isManagingAssignment = true;
-    }
-
-    private void OpenAssignmentEditor(AgentColumnAssignment assignment)
-    {
-        _editingAssignment = assignment;
-        _selectedScope = assignment.ColumnScope;
-        _selectedAgentDefinitionId = assignment.AgentDefinitionId;
-        _matchCriteriaInput = assignment.MatchCriteria;
-        _isManagingAssignment = true;
-    }
-
-    private void CloseAssignmentModal()
-    {
-        _isManagingAssignment = false;
-        _editingAssignment = null;
-    }
-
-    private async Task SaveAssignmentAsync()
-    {
-        if (_selectedAgentDefinitionId == Guid.Empty)
-        {
-            ShowMessage("Please select an agent definition.");
-            return;
-        }
-
-        try
-        {
-            if (_editingAssignment is null)
-            {
-                await AgentMatchingService.AssignAgentAsync(BoardId, _selectedScope, _selectedAgentDefinitionId, _matchCriteriaInput);
-            }
-            else
-            {
-                await AgentMatchingService.UpdateAssignmentAsync(_editingAssignment.Id, _selectedAgentDefinitionId, _matchCriteriaInput);
-            }
-
-            CloseAssignmentModal();
-            await LoadAsync();
-        }
-        catch (Exception exception)
-        {
-            ShowMessage(exception.Message);
-        }
-    }
-
-    private async Task DeleteAssignmentAsync(Guid assignmentId)
-    {
-        try
-        {
-            await AgentMatchingService.DeleteAssignmentAsync(assignmentId);
-            if (_editingAssignment?.Id == assignmentId)
-            {
-                CloseAssignmentModal();
-            }
-
-            await LoadAsync();
-        }
-        catch (Exception exception)
-        {
-            ShowMessage(exception.Message);
-        }
     }
 
     private async Task CreateComponentAsync()
@@ -510,7 +359,7 @@ else
     {
         try
         {
-            await AgentDefinitionService.CreateAsync(BoardId, _newDefinitionName, _newDefinitionPrompt,
+            await AgentDefinitionService.CreateAsync(_newDefinitionName, _newDefinitionPrompt,
                 _newDefinitionInstructions, _newDefinitionTools);
             _newDefinitionName = string.Empty;
             _newDefinitionPrompt = string.Empty;

@@ -1,0 +1,108 @@
+@inject NavigationManager Navigation
+@inject BoardService BoardService
+@inject AgentDefinitionService AgentDefinitionService
+@inject IJSRuntime JS
+@implements IDisposable
+
+<nav @ref="_root" class="flex items-center gap-2 text-sm" aria-label="Breadcrumb">
+    <details class="relative">
+        <summary class="cursor-pointer rounded px-2 py-1 font-semibold text-slate-700 hover:bg-slate-100">Projects</summary>
+        <div class="absolute left-0 top-full z-20 grid min-w-36 gap-1 rounded-md border-[3px] border-slate-200 bg-white p-1 shadow-lg">
+            <a class="rounded px-2 py-1 text-slate-700 no-underline hover:bg-slate-100" href="/boards">Projects</a>
+            <a class="rounded px-2 py-1 text-slate-700 no-underline hover:bg-slate-100" href="/agents">Agents</a>
+        </div>
+    </details>
+
+    @if (_boardId is not null)
+    {
+        <span class="text-slate-400">/</span>
+        <details class="relative">
+            <summary class="cursor-pointer rounded px-2 py-1 font-semibold text-slate-700 hover:bg-slate-100">@_boardName</summary>
+            <div class="absolute left-0 top-full z-20 grid max-h-64 min-w-48 gap-1 overflow-y-auto rounded-md border-[3px] border-slate-200 bg-white p-1 shadow-lg">
+                @foreach (var board in _boards)
+                {
+                    <a class="rounded px-2 py-1 text-slate-700 no-underline hover:bg-slate-100" href="@($"/boards/{board.Id}")">@board.Name</a>
+                }
+            </div>
+        </details>
+        <span class="text-slate-400">/</span>
+        <details class="relative">
+            <summary class="cursor-pointer rounded px-2 py-1 font-semibold text-slate-700 hover:bg-slate-100">@_section</summary>
+            <div class="absolute left-0 top-full z-20 grid min-w-36 gap-1 rounded-md border-[3px] border-slate-200 bg-white p-1 shadow-lg">
+                <a class="rounded px-2 py-1 text-slate-700 no-underline hover:bg-slate-100" href="@($"/boards/{_boardId}")">Board</a>
+                <a class="rounded px-2 py-1 text-slate-700 no-underline hover:bg-slate-100" href="@($"/boards/{_boardId}/roadmap")">Roadmap</a>
+                <a class="rounded px-2 py-1 text-slate-700 no-underline hover:bg-slate-100" href="@($"/boards/{_boardId}/settings")">Settings</a>
+            </div>
+        </details>
+        @if (_section == "Roadmap")
+        {
+            <span class="text-slate-400">/</span>
+            <details class="relative">
+                <summary class="cursor-pointer rounded px-2 py-1 font-semibold text-slate-700 hover:bg-slate-100">@_roadmapView</summary>
+                <div class="absolute left-0 top-full z-20 grid min-w-36 gap-1 rounded-md border-[3px] border-slate-200 bg-white p-1 shadow-lg">
+                    <a class="rounded px-2 py-1 text-slate-700 no-underline hover:bg-slate-100" href="@($"/boards/{_boardId}/roadmap?view=plan")">Plan view</a>
+                    <a class="rounded px-2 py-1 text-slate-700 no-underline hover:bg-slate-100" href="@($"/boards/{_boardId}/roadmap?view=graph")">Graph view</a>
+                </div>
+            </details>
+        }
+    }
+    else if (_isAgents)
+    {
+        <span class="text-slate-400">/</span>
+        <span class="font-semibold text-slate-900">Agents</span>
+    }
+</nav>
+
+@code {
+    private List<AgentTaskHarness.Domain.Entities.Board> _boards = [];
+    private Guid? _boardId;
+    private string _boardName = "Project";
+    private string _section = "Board";
+    private string _roadmapView = "Plan view";
+    private bool _isAgents;
+    private ElementReference _root;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("agentTaskHarnessDropdowns.registerOutsideClose", _root);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += LocationChanged;
+        await UpdateAsync(Navigation.Uri);
+    }
+
+    private async void LocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        await UpdateAsync(e.Location);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task UpdateAsync(string uri)
+    {
+        var parts = Navigation.ToBaseRelativePath(uri).Split('?', '#')[0].Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        _boardId = null;
+        _roadmapView = uri.Contains("view=graph", StringComparison.OrdinalIgnoreCase) ? "Graph view" : "Plan view";
+        _isAgents = parts.Length > 0 && parts[0].Equals("agents", StringComparison.OrdinalIgnoreCase);
+        if (parts.Length >= 2 && parts[0].Equals("boards", StringComparison.OrdinalIgnoreCase) && Guid.TryParse(parts[1], out var boardId))
+        {
+            _boardId = boardId;
+            var board = await BoardService.GetByIdAsync(boardId);
+            _boardName = board?.Name ?? "Project";
+            _section = parts.Length > 2 && parts[2].Equals("roadmap", StringComparison.OrdinalIgnoreCase)
+                ? "Roadmap"
+                : parts.Length > 2 && parts[2].Equals("settings", StringComparison.OrdinalIgnoreCase) ? "Settings" : "Board";
+            _boards = await BoardService.GetAllAsync();
+        }
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= LocationChanged;
+        _ = JS.InvokeVoidAsync("agentTaskHarnessDropdowns.unregisterOutsideClose", _root);
+    }
+}

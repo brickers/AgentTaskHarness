@@ -12,6 +12,5 @@ public class Board
 	public int HumanReviewFailThreshold { get; set; } = 3;
 
 	public ICollection<Feature> Features { get; set; } = new List<Feature>();
-	public ICollection<AgentDefinition> AgentDefinitions { get; set; } = new List<AgentDefinition>();
 	public ICollection<AgentColumnAssignment> ColumnAssignments { get; set; } = new List<AgentColumnAssignment>();
 }

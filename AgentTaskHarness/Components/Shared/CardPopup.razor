@@ -9,60 +9,60 @@
 @inject CommentService CommentService
 @inject FeatureDependencyService FeatureDependencyService
 
-<div class="popup-backdrop" @onclick="HandleBackdropClick">
-    <div class="popup-container" @onclick:stopPropagation="true">
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm" @onclick="HandleBackdropClick">
+    <div class="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl" @onclick:stopPropagation="true">
         @if (Feature is null && Step is null)
         {
-            <div class="popup-body">
+            <div class="p-6 text-slate-700">
                 <p>No card selected.</p>
-                <button class="btn btn-secondary" @onclick="Close">Close</button>
+                <button class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" @onclick="Close">Close</button>
             </div>
         }
         else
         {
-            <header class="popup-header">
-                <div class="header-main">
-                    <div class="header-meta">
-						<span class="type-pill @(IsFeature ? "pill-feature" : "pill-step")">
+            <header class="flex items-start justify-between border-b-[3px] border-slate-200 bg-slate-50 px-6 py-4">
+                <div class="min-w-0 flex-1">
+                    <div class="mb-2 flex flex-wrap items-center gap-2">
+						<span class="rounded-full px-2 py-1 text-xs font-semibold @(IsFeature ? "bg-indigo-100 text-indigo-700" : "bg-slate-200 text-slate-700")">
 							@(IsFeature ? "Feature" : "Step")
 						</span>
-                        <span class="column-badge">@CurrentColumn</span>
+                        <span class="rounded-full bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-700">@CurrentColumn</span>
                         <StatusIcon Status="@CurrentRun?.Status" ShowText="true"/>
                     </div>
-                    <h2 class="popup-title">@CardTitle</h2>
+                    <h2 class="truncate text-xl font-semibold text-slate-900">@CardTitle</h2>
                 </div>
-                <div class="header-actions">
-                    <button class="btn-close" @onclick="Close" aria-label="Close popup">&times;</button>
+                <div class="ml-4 shrink-0">
+                    <button class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-200 bg-slate-100 px-2 py-1 text-xl leading-none text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" @onclick="Close" aria-label="Close popup">&times;</button>
                 </div>
             </header>
 
             @if (!string.IsNullOrEmpty(_errorMessage))
             {
-                <div class="alert alert-danger" role="alert">
+                <div class="flex items-center justify-between gap-3 border-[3px] border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
                     @_errorMessage
-                    <button type="button" class="btn-dismiss" @onclick="() => _errorMessage = null">&times;</button>
+                    <button type="button" class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-200 bg-slate-100 px-2 py-1 text-xl leading-none text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" @onclick="() => _errorMessage = null">&times;</button>
                 </div>
             }
 
             @if (!string.IsNullOrEmpty(_successMessage))
             {
-                <div class="alert alert-success" role="alert">
+                <div class="flex items-center justify-between gap-3 border-[3px] border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700" role="alert">
                     @_successMessage
-                    <button type="button" class="btn-dismiss" @onclick="() => _successMessage = null">&times;</button>
+                    <button type="button" class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-200 bg-slate-100 px-2 py-1 text-xl leading-none text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" @onclick="() => _successMessage = null">&times;</button>
                 </div>
             }
 
             <!-- Rework / Issue Alerts -->
             @if (IsRework)
             {
-                <div class="alert alert-warning rework-banner">
+                <div class="border-[3px] border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                     <strong>Rework in progress:</strong> This card was returned to Build after review failures.
                 </div>
             }
 
             @if (HasThresholdIssue)
             {
-                <div class="alert alert-danger issue-banner">
+                <div class="border-[3px] border-red-200 bg-red-50 p-3 text-sm text-red-700">
                     <strong>Issue threshold reached:</strong> Review failure counters reached the board limit. Agent
                     auto-start is suspended.
                 </div>
@@ -70,7 +70,7 @@
 
             @if (MergeConflictPending)
             {
-                <div class="alert alert-warning conflict-banner">
+                <div class="border-[3px] border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                     <strong>Merge conflict pending:</strong> Worktree has git conflicts. Resolve them in the worktree
                     and click <em>Resume Merge</em>.
                 </div>
@@ -79,14 +79,14 @@
             <!-- Active Agent Session Alert -->
             @if (IsAgentRunning)
             {
-                <div class="agent-running-banner">
+                <div class="flex items-center gap-3 rounded-md border-[3px] border-blue-200 bg-blue-50 p-4 text-blue-900">
                     <StatusIcon Status="@CurrentRun?.Status" ShowText="true"/>
-                    <div class="agent-banner-info">
+                    <div class="flex min-w-0 flex-1 items-center justify-between gap-3">
                         <span>Agent is currently active. Card cannot be moved while agent is running.</span>
                         @if (!string.IsNullOrWhiteSpace(CurrentRun?.SessionLink))
                         {
                             <a href="@CurrentRun.SessionLink" target="_blank" rel="noreferrer noopener"
-                               class="session-link-button">
+                               class="shrink-0 rounded-md border-[3px] border-blue-300 bg-white px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100">
                                 Open Agent Window &nearr;
                             </a>
                         }
@@ -94,96 +94,96 @@
                 </div>
             }
 
-            <div class="popup-nav-tabs">
-                <button class="nav-tab @(_activeTab == "details" ? "active" : "")"
+            <div class="flex flex-wrap gap-1 border-b-[3px] border-slate-200 bg-white px-6">
+                <button class="border-b-2 border-transparent bg-slate-50 px-3 py-2 text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 @(_activeTab == "details" ? "active" : "")"
                         @onclick='() => _activeTab = "details"'>Details
                 </button>
                 @if (IsFeature)
                 {
-                    <button class="nav-tab @(_activeTab == "dependencies" ? "active" : "")" @onclick='() => _activeTab = "dependencies"'>Dependencies</button>
+                    <button class="border-b-2 border-transparent bg-slate-50 px-3 py-2 text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 @(_activeTab == "dependencies" ? "active" : "")" @onclick='() => _activeTab = "dependencies"'>Dependencies</button>
                 }
-                <button class="nav-tab @(_activeTab == "moves" ? "active" : "")" @onclick='() => _activeTab = "moves"'>
+                <button class="border-b-2 border-transparent bg-slate-50 px-3 py-2 text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 @(_activeTab == "moves" ? "active" : "")" @onclick='() => _activeTab = "moves"'>
                     Available Moves
                 </button>
-                <button class="nav-tab @(_activeTab == "controls" ? "active" : "")"
+                <button class="border-b-2 border-transparent bg-slate-50 px-3 py-2 text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 @(_activeTab == "controls" ? "active" : "")"
                         @onclick='() => _activeTab = "controls"'>Manual Controls
                 </button>
-                <button class="nav-tab @(_activeTab == "usage" ? "active" : "")" @onclick='() => _activeTab = "usage"'>
+                <button class="border-b-2 border-transparent bg-slate-50 px-3 py-2 text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 @(_activeTab == "usage" ? "active" : "")" @onclick='() => _activeTab = "usage"'>
                     Cost &amp; Quality
                 </button>
-                <button class="nav-tab @(_activeTab == "comments" ? "active" : "")"
+                <button class="border-b-2 border-transparent bg-slate-50 px-3 py-2 text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 @(_activeTab == "comments" ? "active" : "")"
                         @onclick='() => _activeTab = "comments"'>Comments (@_comments.Count)
                 </button>
             </div>
 
-            <div class="popup-content">
+            <div class="min-h-0 flex-1 overflow-y-auto p-6">
                 @if (_activeTab == "details")
                 {
-                    <div class="tab-panel">
+                    <div class="space-y-4">
                         <!-- Status Indicator & Explanation Section -->
-                        <div class="status-explanation-card">
-                            <div class="current-status-banner">
-                                <div class="status-banner-left">
+                        <div class="mb-6 overflow-hidden rounded-lg border-[3px] border-slate-200 bg-white shadow-sm">
+                            <div class="flex flex-wrap items-center justify-between gap-3 border-b-[3px] border-slate-200 bg-slate-50 p-4">
+                                <div class="flex items-center gap-2">
                                     <StatusIcon Status="@CurrentRun?.Status"/>
-                                    <span class="status-banner-title">
+                                    <span class="font-semibold text-slate-800">
 										<strong>Status:</strong> @(CurrentRun != null ? CurrentRun.Status.ToString() : "Idle")
 									</span>
                                 </div>
-                                <span class="status-banner-desc">
+                                <span class="text-sm text-slate-600">
 									@(CurrentRun != null
                                         ? StatusIcon.GetStatusDescription(CurrentRun.Status)
                                         : "No active agent run. Card is currently idle.")
 								</span>
                             </div>
 
-                            <div class="status-legend-section">
-                                <div class="legend-header" @onclick="() => _showStatusLegend = !_showStatusLegend">
-                                    <span class="legend-title">Status Indicator Legend</span>
-                                    <span class="legend-toggle">@(_showStatusLegend ? "Hide ▲" : "Show ▼")</span>
+                            <div class="p-4">
+                                <div class="flex cursor-pointer items-center justify-between font-medium text-slate-700" @onclick="() => _showStatusLegend = !_showStatusLegend">
+                                    <span class="font-semibold">Status Indicator Legend</span>
+                                    <span class="text-sm text-indigo-600">@(_showStatusLegend ? "Hide ▲" : "Show ▼")</span>
                                 </div>
                                 @if (_showStatusLegend)
                                 {
-                                    <div class="status-legend-grid">
-                                        <div class="legend-item">
+                                    <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                                        <div class="flex items-start gap-2 rounded-md bg-slate-50 p-2 text-sm text-slate-600">
                                             <StatusIcon Status="@AgentRunStatus.Working"/>
                                             <div><strong>Working:</strong> Agent is actively executing tasks and
                                                 modifying code.
                                             </div>
                                         </div>
-                                        <div class="legend-item">
+                                        <div class="flex items-start gap-2 rounded-md bg-slate-50 p-2 text-sm text-slate-600">
                                             <StatusIcon Status="@AgentRunStatus.WaitingForInput"/>
                                             <div><strong>Waiting for input:</strong> Agent is paused waiting for user
                                                 response.
                                             </div>
                                         </div>
-                                        <div class="legend-item">
+                                        <div class="flex items-start gap-2 rounded-md bg-slate-50 p-2 text-sm text-slate-600">
                                             <StatusIcon Status="@AgentRunStatus.Queued"/>
                                             <div><strong>Queued:</strong> Scheduled and awaiting an available worker
                                                 slot.
                                             </div>
                                         </div>
-                                        <div class="legend-item">
+                                        <div class="flex items-start gap-2 rounded-md bg-slate-50 p-2 text-sm text-slate-600">
                                             <StatusIcon Status="@AgentRunStatus.Completed"/>
                                             <div><strong>Completed:</strong> Agent finished execution successfully.
                                             </div>
                                         </div>
-                                        <div class="legend-item">
+                                        <div class="flex items-start gap-2 rounded-md bg-slate-50 p-2 text-sm text-slate-600">
                                             <StatusIcon Status="@AgentRunStatus.Failed"/>
                                             <div><strong>Failed:</strong> Agent encountered an error or failed
                                                 tests/reviews.
                                             </div>
                                         </div>
-                                        <div class="legend-item">
+                                        <div class="flex items-start gap-2 rounded-md bg-slate-50 p-2 text-sm text-slate-600">
                                             <StatusIcon Status="@AgentRunStatus.Blocked"/>
                                             <div><strong>Blocked:</strong> Card is blocked by dependencies or issue
                                                 threshold.
                                             </div>
                                         </div>
-                                        <div class="legend-item">
+                                        <div class="flex items-start gap-2 rounded-md bg-slate-50 p-2 text-sm text-slate-600">
                                             <StatusIcon Status="@AgentRunStatus.Stopped"/>
                                             <div><strong>Stopped:</strong> Agent process was manually terminated.</div>
                                         </div>
-                                        <div class="legend-item">
+                                        <div class="flex items-start gap-2 rounded-md bg-slate-50 p-2 text-sm text-slate-600">
                                             <StatusIcon Status="null"/>
                                             <div><strong>Idle:</strong> No agent task currently running or assigned.
                                             </div>
@@ -195,49 +195,49 @@
 
                         @if (IsFeature)
                         {
-                            <div class="detail-group">
+                            <div class="mb-4 grid gap-2">
                                 <label>Requirements</label>
                                 <div
-                                    class="detail-value text-block">@(string.IsNullOrWhiteSpace(Feature!.Requirements) ? "No requirements provided." : Feature.Requirements)</div>
+                                    class="whitespace-pre-wrap text-sm leading-6 text-slate-600">@(string.IsNullOrWhiteSpace(Feature!.Requirements) ? "No requirements provided." : Feature.Requirements)</div>
                             </div>
-                            <div class="detail-group">
+                            <div class="mb-4 grid gap-2">
                                 <label>Acceptance Criteria</label>
                                 <div
-                                    class="detail-value text-block">@(string.IsNullOrWhiteSpace(Feature.AcceptanceCriteria) ? "No acceptance criteria specified." : Feature.AcceptanceCriteria)</div>
+                                    class="whitespace-pre-wrap text-sm leading-6 text-slate-600">@(string.IsNullOrWhiteSpace(Feature.AcceptanceCriteria) ? "No acceptance criteria specified." : Feature.AcceptanceCriteria)</div>
                             </div>
-                            <div class="detail-group">
+                            <div class="mb-4 grid gap-2">
                                 <label>Suggested Solution</label>
                                 <div
-                                    class="detail-value text-block">@(string.IsNullOrWhiteSpace(Feature.SuggestedSolution) ? "None specified." : Feature.SuggestedSolution)</div>
+                                    class="whitespace-pre-wrap text-sm leading-6 text-slate-600">@(string.IsNullOrWhiteSpace(Feature.SuggestedSolution) ? "None specified." : Feature.SuggestedSolution)</div>
                             </div>
                         }
                         else
                         {
-                            <div class="detail-group">
+                            <div class="mb-4 grid gap-2">
                                 <label>Description</label>
                                 <div
-                                    class="detail-value text-block">@(string.IsNullOrWhiteSpace(Step!.Description) ? "No description provided." : Step.Description)</div>
+                                    class="whitespace-pre-wrap text-sm leading-6 text-slate-600">@(string.IsNullOrWhiteSpace(Step!.Description) ? "No description provided." : Step.Description)</div>
                             </div>
-                            <div class="detail-group">
+                            <div class="mb-4 grid gap-2">
                                 <label>Guidance Notes</label>
                                 <div
-                                    class="detail-value text-block">@(string.IsNullOrWhiteSpace(Step.GuidanceNotes) ? "No guidance notes." : Step.GuidanceNotes)</div>
+                                    class="whitespace-pre-wrap text-sm leading-6 text-slate-600">@(string.IsNullOrWhiteSpace(Step.GuidanceNotes) ? "No guidance notes." : Step.GuidanceNotes)</div>
                             </div>
                         }
 
-                        <div class="detail-grid">
-                            <div class="detail-item">
-                                <span class="detail-label">Branch Name:</span>
-                                <span class="detail-val">@(BranchName ?? "None")</span>
+                        <div class="grid gap-3 sm:grid-cols-2">
+                            <div class="grid gap-1 rounded-md bg-slate-50 p-3">
+                                <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Branch Name:</span>
+                                <span class="break-all text-sm text-slate-700">@(BranchName ?? "None")</span>
                             </div>
-                            <div class="detail-item">
-                                <span class="detail-label">Worktree Path:</span>
-                                <span class="detail-val">@(WorktreePath ?? "None")</span>
+                            <div class="grid gap-1 rounded-md bg-slate-50 p-3">
+                                <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Worktree Path:</span>
+                                <span class="break-all text-sm text-slate-700">@(WorktreePath ?? "None")</span>
                             </div>
                         </div>
 
-                        <div class="toggle-group">
-                            <label class="toggle-label">
+                        <div class="mt-4 rounded-md border-[3px] border-slate-200 bg-slate-50 p-3">
+                            <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
                                 <input type="checkbox" checked="@AlwaysRequireHumanReview"
                                        @onchange="ToggleAlwaysRequireHumanReview"/>
                                 <span>Always require human review (overrides board-level skip)</span>
@@ -247,80 +247,80 @@
                 }
                 else if (_activeTab == "dependencies")
                 {
-                    <div class="tab-panel">
-                        <p class="tab-subtitle">Prerequisites for this feature. Dependencies can only be changed while it is in Backlog.</p>
+                    <div class="space-y-4">
+                        <p class="mb-4 text-sm text-slate-600">Prerequisites for this feature. Dependencies can only be changed while it is in Backlog.</p>
                         @if (_featureDependencies.Count == 0)
                         {
-                            <p class="text-muted">No dependencies.</p>
+                            <p class="text-sm text-slate-500">No dependencies.</p>
                         }
                         else
                         {
-                            <div class="dep-list">
+                            <div class="grid gap-2">
                                 @foreach (var dependency in _featureDependencies)
                                 {
-                                    <div class="dep-item"><span>@dependency.DependsOnFeature.Title</span><span class="dep-status">(@dependency.DependsOnFeature.WorkflowColumn)</span>
+                                    <div class="flex items-center justify-between gap-2 rounded-md border-[3px] border-slate-200 bg-slate-50 p-2 text-sm"><span>@dependency.DependsOnFeature.Title</span><span class="text-xs text-slate-500">(@dependency.DependsOnFeature.WorkflowColumn)</span>
                                         @if (CurrentColumn == WorkflowColumn.Backlog)
-                                        { <button class="btn-remove-dep" @onclick="() => RemoveFeatureDependency(dependency.DependsOnFeatureId)">&times;</button> }
+                                        { <button class="inline-flex items-center justify-center rounded-md border-[3px] border-red-600 bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-red-700 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" @onclick="() => RemoveFeatureDependency(dependency.DependsOnFeatureId)">&times;</button> }
                                     </div>
                                 }
                             </div>
                         }
                         @if (CurrentColumn == WorkflowColumn.Backlog)
                         {
-                            <div class="add-dep-form mt-3">
-                                <select class="form-select" @bind="_selectedDependencyId">
+                            <div class="mt-3 flex items-center gap-2">
+                                <select class="block min-w-0 flex-1 rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" @bind="_selectedDependencyId">
                                     <option value="">Select prerequisite...</option>
                                     @foreach (var candidate in _dependencyCandidates)
                                     { <option value="@candidate.Id">@candidate.Title (@candidate.WorkflowColumn)</option> }
                                 </select>
-                                <button class="btn btn-primary" disabled="@(_selectedDependencyId == Guid.Empty)" @onclick="AddFeatureDependency">Add</button>
+                                <button class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" disabled="@(_selectedDependencyId == Guid.Empty)" @onclick="AddFeatureDependency">Add</button>
                             </div>
                         }
                     </div>
                 }
                 else if (_activeTab == "moves")
                 {
-                    <div class="tab-panel">
-                        <p class="tab-subtitle">Allowed column transitions according to workflow rules and dependency
+                    <div class="space-y-4">
+                        <p class="mb-4 text-sm text-slate-600">Allowed column transitions according to workflow rules and dependency
                             gating:</p>
 
                         @if (IsAgentRunning)
                         {
-                            <div class="alert alert-info">
+                            <div class="border-[3px] border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
                                 Card moves are hard-blocked while an agent is currently running. Stop the agent under
                                 <em>Manual Controls</em> if you need to move it.
                             </div>
                         }
                         else if (MergeConflictPending)
                         {
-                            <div class="alert alert-warning">
+                            <div class="border-[3px] border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                                 Card has an unresolved merge conflict. Resolve the conflict and resume merge before
                                 moving.
                                 <div class="mt-2">
-                                    <button class="btn btn-primary" @onclick="HandleResumeMerge">Resume Merge</button>
+                                    <button class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" @onclick="HandleResumeMerge">Resume Merge</button>
                                 </div>
                             </div>
                         }
                         else if (_allowedMoves.Count == 0)
                         {
-                            <div class="alert alert-secondary">
+                            <div class="border-[3px] border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
                                 No transitions available from <strong>@CurrentColumn</strong>.
                             </div>
                         }
                         else
                         {
-                            <div class="moves-container">
+                            <div class="flex flex-wrap items-center gap-2">
                                 @foreach (var move in _allowedMoves)
                                 {
                                     @if (move == WorkflowColumn.Backlog)
                                     {
-                                        <div class="backlog-move-group">
-                                            <span class="move-target-label">Move to Backlog:</span>
-                                            <button class="btn btn-outline-warning"
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <span class="text-sm font-semibold text-slate-700">Move to Backlog:</span>
+                                            <button class="inline-flex items-center justify-center rounded-md border-[3px] border-amber-500 bg-amber-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-amber-600 hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                                                     @onclick="() => ExecuteMove(move, false)">
                                                 Pause Worktree
                                             </button>
-                                            <button class="btn btn-outline-danger"
+                                            <button class="inline-flex items-center justify-center rounded-md border-[3px] border-red-600 bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-red-700 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                                                     @onclick="() => ExecuteMove(move, true)">
                                                 Discard Worktree
                                             </button>
@@ -328,7 +328,7 @@
                                     }
                                     else
                                     {
-                                        <button class="btn btn-primary btn-move"
+                                        <button class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                                                 @onclick="() => ExecuteMove(move, false)">
                                             Move to @move
                                         </button>
@@ -340,17 +340,17 @@
                 }
                 else if (_activeTab == "controls")
                 {
-                    <div class="tab-panel">
-                        <p class="tab-subtitle">Direct agent execution and worktree controls:</p>
+                    <div class="space-y-4">
+                        <p class="mb-4 text-sm text-slate-600">Direct agent execution and worktree controls:</p>
 
-                        <div class="controls-list">
+                        <div class="grid gap-3">
                             <!-- Stop agent -->
-                            <div class="control-row">
-                                <div class="control-desc">
+                            <div class="flex items-center justify-between gap-4 rounded-md border-[3px] border-slate-200 p-3">
+                                <div class="min-w-0 flex-1">
                                     <strong>Stop Agent Process</strong>
                                     <p>Terminates the active copilot CLI process and marks the run as Stopped.</p>
                                 </div>
-                                <button class="btn btn-danger" disabled="@(!IsAgentRunning)" @onclick="HandleStopAgent">
+                                <button class="inline-flex items-center justify-center rounded-md border-[3px] border-red-600 bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-red-700 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" disabled="@(!IsAgentRunning)" @onclick="HandleStopAgent">
                                     Stop Agent
                                 </button>
                             </div>
@@ -358,12 +358,12 @@
                             <!-- Retry agent -->
                             @if (!IsFeature && (CurrentColumn == WorkflowColumn.Build || CurrentColumn == WorkflowColumn.AgentReview))
                             {
-                                <div class="control-row">
-                                    <div class="control-desc">
+                                <div class="flex items-center justify-between gap-4 rounded-md border-[3px] border-slate-200 p-3">
+                                    <div class="min-w-0 flex-1">
                                         <strong>Retry / Restart Agent</strong>
                                         <p>Clears previous failed or stopped runs and requests execution anew.</p>
                                     </div>
-                                    <button class="btn btn-warning" disabled="@IsAgentRunning"
+                                    <button class="inline-flex items-center justify-center rounded-md border-[3px] border-amber-500 bg-amber-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-amber-600 hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" disabled="@IsAgentRunning"
                                             @onclick="HandleRetryAgent">
                                         Retry Agent
                                     </button>
@@ -373,13 +373,13 @@
                             <!-- Discard uncommitted changes -->
                             @if (!string.IsNullOrWhiteSpace(WorktreePath))
                             {
-                                <div class="control-row">
-                                    <div class="control-desc">
+                                <div class="flex items-center justify-between gap-4 rounded-md border-[3px] border-slate-200 p-3">
+                                    <div class="min-w-0 flex-1">
                                         <strong>Discard Uncommitted Changes</strong>
                                         <p>Removes all unstaged and uncommitted changes from the card's git
                                             worktree.</p>
                                     </div>
-                                    <button class="btn btn-outline-danger" @onclick="HandleDiscardUncommitted">
+                                    <button class="inline-flex items-center justify-center rounded-md border-[3px] border-red-600 bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-red-700 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" @onclick="HandleDiscardUncommitted">
                                         Discard Uncommitted Changes
                                     </button>
                                 </div>
@@ -388,12 +388,12 @@
                             <!-- Resume merge -->
                             @if (MergeConflictPending)
                             {
-                                <div class="control-row">
-                                    <div class="control-desc">
+                                <div class="flex items-center justify-between gap-4 rounded-md border-[3px] border-slate-200 p-3">
+                                    <div class="min-w-0 flex-1">
                                         <strong>Resume Merge</strong>
                                         <p>Commits resolved merge conflicts and finalizes the transition to Done.</p>
                                     </div>
-                                    <button class="btn btn-success" @onclick="HandleResumeMerge">
+                                    <button class="inline-flex items-center justify-center rounded-md border-[3px] border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-emerald-700 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" @onclick="HandleResumeMerge">
                                         Resume Merge
                                     </button>
                                 </div>
@@ -403,31 +403,31 @@
                 }
                 else if (_activeTab == "usage")
                 {
-                    <div class="tab-panel">
-                        <div class="usage-stats-grid">
-                            <div class="usage-stat-card">
-                                <span class="usage-label">Agent Review Failures</span>
-                                <span class="usage-number text-danger">@AgentReviewFailCount</span>
+                    <div class="space-y-4">
+                        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                            <div class="grid gap-1 rounded-lg border-[3px] border-slate-200 bg-slate-50 p-4">
+                                <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Agent Review Failures</span>
+                                <span class="text-2xl font-bold text-red-600">@AgentReviewFailCount</span>
                             </div>
-                            <div class="usage-stat-card">
-                                <span class="usage-label">Human Review Failures</span>
-                                <span class="usage-number text-warning">@HumanReviewFailCount</span>
+                            <div class="grid gap-1 rounded-lg border-[3px] border-slate-200 bg-slate-50 p-4">
+                                <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Human Review Failures</span>
+                                <span class="text-2xl font-bold text-amber-600">@HumanReviewFailCount</span>
                             </div>
-                            <div class="usage-stat-card">
-                                <span class="usage-label">Tokens Used</span>
-                                <span class="usage-number">@FormatTokens(TokensUsed)</span>
+                            <div class="grid gap-1 rounded-lg border-[3px] border-slate-200 bg-slate-50 p-4">
+                                <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Tokens Used</span>
+                                <span class="text-2xl font-bold text-slate-800">@FormatTokens(TokensUsed)</span>
                             </div>
-                            <div class="usage-stat-card">
-                                <span class="usage-label">Time Spent</span>
-                                <span class="usage-number">@FormatDuration(TimeSpent)</span>
+                            <div class="grid gap-1 rounded-lg border-[3px] border-slate-200 bg-slate-50 p-4">
+                                <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Time Spent</span>
+                                <span class="text-2xl font-bold text-slate-800">@FormatDuration(TimeSpent)</span>
                             </div>
                         </div>
 
                         @if (_qualitySignals != null)
                         {
-                            <div class="quality-signals-box mt-3">
+                            <div class="mt-3 rounded-lg border-[3px] border-slate-200 bg-slate-50 p-4">
                                 <h5>Quality Signals</h5>
-                                <div class="signals-list">
+                                <div class="grid gap-2 text-sm text-slate-700">
                                     <div><strong>Total Review Failures:</strong> @_qualitySignals.TotalReviewFailures
                                     </div>
                                     <div><strong>Churn Ratio:</strong> @_qualitySignals.ChurnRatio.ToString("F2")</div>
@@ -439,39 +439,39 @@
                 }
                 else if (_activeTab == "comments")
                 {
-                    <div class="tab-panel">
-                        <div class="comments-thread">
+                    <div class="space-y-4">
+                        <div class="grid gap-3">
                             @if (_comments.Count == 0)
                             {
-                                <p class="text-muted">No comments yet. Start a discussion below.</p>
+                            <p class="text-sm text-slate-500">No comments yet. Start a discussion below.</p>
                             }
                             else
                             {
                                 @foreach (var c in _comments)
                                 {
-                                    <div class="comment-bubble">
-                                        <div class="comment-meta">
-                                            <span class="comment-author">@c.Author</span>
+                                    <div class="rounded-lg border-[3px] border-slate-200 bg-slate-50 p-3">
+                                        <div class="mb-1 flex items-center justify-between gap-2 text-xs text-slate-500">
+                                            <span class="font-semibold text-slate-700">@c.Author</span>
                                             <span
-                                                class="comment-date">@c.CreatedAt.LocalDateTime.ToString("MMM d, yyyy h:mm tt")</span>
+                                                >@c.CreatedAt.LocalDateTime.ToString("MMM d, yyyy h:mm tt")</span>
                                         </div>
-                                        <div class="comment-text">@c.Body</div>
+                                        <div class="whitespace-pre-wrap text-sm leading-6 text-slate-700">@c.Body</div>
                                     </div>
                                 }
                             }
                         </div>
 
-                        <div class="add-comment-box">
-                            <div class="input-row">
-                                <input class="form-control author-input" placeholder="Your name"
+                        <div class="mt-4 rounded-lg border-[3px] border-slate-200 bg-slate-50 p-4">
+                            <div>
+                                <input class="mt-1 block w-full rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Your name"
                                        @bind="_newCommentAuthor"/>
                             </div>
-                            <div class="input-row mt-2">
-                                <textarea class="form-control" rows="3" placeholder="Write a comment..."
+                            <div class="mt-2">
+                                <textarea class="mt-1 block w-full rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" rows="3" placeholder="Write a comment..."
                                           @bind="_newCommentBody"></textarea>
                             </div>
                             <div class="mt-2 text-end">
-                                <button class="btn btn-primary" @onclick="AddComment"
+                                <button class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" @onclick="AddComment"
                                         disabled="@(string.IsNullOrWhiteSpace(_newCommentBody))">
                                     Add Comment
                                 </button>
@@ -481,507 +481,12 @@
                 }
             </div>
 
-            <footer class="popup-footer">
-                <button class="btn btn-secondary" @onclick="Close">Close</button>
+            <footer class="flex justify-end border-t border-slate-200 bg-slate-50 px-6 py-4">
+                <button class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" @onclick="Close">Close</button>
             </footer>
         }
     </div>
 </div>
-
-<style>
-    .popup-backdrop {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
-        background: rgba(15, 23, 42, 0.6);
-        backdrop-filter: blur(2px);
-        z-index: 1050;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 20px;
-    }
-
-    .popup-container {
-        background: #ffffff;
-        border-radius: 12px;
-        width: 100%;
-        max-width: 680px;
-        max-height: 90vh;
-        display: flex;
-        flex-direction: column;
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-        overflow: hidden;
-    }
-
-    .popup-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        padding: 18px 24px;
-        border-bottom: 1px solid #e2e8f0;
-        background: #f8fafc;
-    }
-
-    .header-main {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        flex: 1;
-        min-width: 0;
-    }
-
-    .header-meta {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-    }
-
-    .type-pill {
-        font-size: 0.72rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        padding: 2px 8px;
-        border-radius: 4px;
-        align-self: flex-start;
-    }
-
-    .pill-feature {
-        background: #e0f2fe;
-        color: #0369a1;
-    }
-
-    .pill-step {
-        background: #f3e8ff;
-        color: #7e22ce;
-    }
-
-    .popup-title {
-        font-size: 1.25rem;
-        font-weight: 700;
-        color: #0f172a;
-        margin: 0;
-        word-break: break-word;
-    }
-
-    .header-actions {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-left: 12px;
-    }
-
-    .column-badge {
-        font-size: 0.8rem;
-        font-weight: 600;
-        padding: 2px 8px;
-        background: #e2e8f0;
-        color: #334155;
-        border-radius: 6px;
-    }
-
-    .btn-close {
-        background: none;
-        border: none;
-        font-size: 1.5rem;
-        cursor: pointer;
-        color: #64748b;
-        padding: 0;
-        line-height: 1;
-    }
-
-    .btn-close:hover {
-        color: #0f172a;
-    }
-
-    .popup-nav-tabs {
-        display: flex;
-        border-bottom: 1px solid #e2e8f0;
-        background: #f8fafc;
-        padding: 0 16px;
-        gap: 4px;
-    }
-
-    .nav-tab {
-        background: none;
-        border: none;
-        padding: 10px 14px;
-        font-size: 0.85rem;
-        font-weight: 600;
-        color: #64748b;
-        cursor: pointer;
-        border-bottom: 2px solid transparent;
-        transition: all 0.15s;
-    }
-
-    .nav-tab:hover {
-        color: #0f172a;
-    }
-
-    .nav-tab.active {
-        color: #2563eb;
-        border-bottom-color: #2563eb;
-        background: #ffffff;
-    }
-
-    .popup-content {
-        padding: 20px 24px;
-        overflow-y: auto;
-        flex: 1;
-    }
-
-    .tab-subtitle {
-        font-size: 0.88rem;
-        color: #64748b;
-        margin-bottom: 16px;
-    }
-
-    .status-explanation-card {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 12px 14px;
-        margin-bottom: 18px;
-    }
-
-    .current-status-banner {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        padding-bottom: 10px;
-        border-bottom: 1px solid #e2e8f0;
-    }
-
-    .status-banner-left {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    .status-banner-title {
-        font-size: 0.9rem;
-        color: #0f172a;
-    }
-
-    .status-banner-desc {
-        font-size: 0.82rem;
-        color: #475569;
-        margin-left: 20px;
-    }
-
-    .status-legend-section {
-        padding-top: 8px;
-    }
-
-    .legend-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        cursor: pointer;
-        user-select: none;
-    }
-
-    .legend-title {
-        font-size: 0.78rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: #64748b;
-    }
-
-    .legend-toggle {
-        font-size: 0.75rem;
-        font-weight: 600;
-        color: #2563eb;
-    }
-
-    .status-legend-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px 12px;
-        margin-top: 10px;
-        padding-top: 6px;
-    }
-
-    .legend-item {
-        display: flex;
-        align-items: flex-start;
-        gap: 8px;
-        font-size: 0.78rem;
-        color: #334155;
-        line-height: 1.35;
-    }
-
-    .detail-group {
-        margin-bottom: 16px;
-    }
-
-    .detail-group label {
-        display: block;
-        font-size: 0.8rem;
-        font-weight: 600;
-        color: #475569;
-        margin-bottom: 4px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-    }
-
-    .text-block {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 6px;
-        padding: 10px 12px;
-        font-size: 0.9rem;
-        color: #1e293b;
-        white-space: pre-wrap;
-    }
-
-    .detail-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
-        margin: 16px 0;
-    }
-
-    .detail-item {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-    }
-
-    .detail-label {
-        font-size: 0.75rem;
-        color: #64748b;
-        font-weight: 600;
-    }
-
-    .detail-val {
-        font-family: monospace;
-        font-size: 0.82rem;
-        color: #334155;
-        word-break: break-all;
-    }
-
-    .toggle-group {
-        margin-top: 16px;
-        padding: 12px;
-        background: #f1f5f9;
-        border-radius: 6px;
-    }
-
-    .toggle-label {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-size: 0.88rem;
-        font-weight: 500;
-        color: #1e293b;
-        cursor: pointer;
-    }
-
-    .toggle-label input[type="checkbox"] {
-        width: 1.1rem;
-        height: 1.1rem;
-        margin: 0;
-        cursor: pointer;
-        flex-shrink: 0;
-    }
-
-    .agent-running-banner {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        background: #ecfdf5;
-        border-bottom: 1px solid #a7f3d0;
-        padding: 12px 24px;
-    }
-
-    .agent-banner-info {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        flex: 1;
-        font-size: 0.85rem;
-        color: #065f46;
-    }
-
-    .session-link-button {
-        font-weight: 600;
-        color: #047857;
-        text-decoration: underline;
-    }
-
-    .moves-container {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-
-    .backlog-move-group {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 10px;
-        background: #fffbeb;
-        border-radius: 6px;
-        border: 1px solid #fef3c7;
-    }
-
-    .move-target-label {
-        font-weight: 600;
-        font-size: 0.88rem;
-        color: #92400e;
-    }
-
-    .controls-list {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-    }
-
-    .control-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        padding: 14px;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-    }
-
-    .control-desc strong {
-        display: block;
-        font-size: 0.9rem;
-        color: #0f172a;
-    }
-
-    .control-desc p {
-        margin: 4px 0 0;
-        font-size: 0.8rem;
-        color: #64748b;
-    }
-
-    .usage-stats-grid {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 14px;
-    }
-
-    .usage-stat-card {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 14px;
-        text-align: center;
-    }
-
-    .usage-label {
-        display: block;
-        font-size: 0.78rem;
-        font-weight: 600;
-        color: #64748b;
-        margin-bottom: 6px;
-        text-transform: uppercase;
-    }
-
-    .usage-number {
-        font-size: 1.3rem;
-        font-weight: 700;
-        color: #0f172a;
-    }
-
-    .comments-thread {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        max-height: 250px;
-        overflow-y: auto;
-        margin-bottom: 16px;
-        padding-right: 4px;
-    }
-
-    .comment-bubble {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 10px 12px;
-    }
-
-    .comment-meta {
-        display: flex;
-        justify-content: space-between;
-        font-size: 0.75rem;
-        margin-bottom: 4px;
-    }
-
-    .comment-author {
-        font-weight: 600;
-        color: #2563eb;
-    }
-
-    .comment-date {
-        color: #94a3b8;
-    }
-
-    .comment-text {
-        font-size: 0.88rem;
-        color: #1e293b;
-        white-space: pre-wrap;
-    }
-
-    .author-input {
-        max-width: 200px;
-    }
-
-    .popup-footer {
-        display: flex;
-        justify-content: flex-end;
-        padding: 14px 24px;
-        border-top: 1px solid #e2e8f0;
-        background: #f8fafc;
-    }
-
-    .alert {
-        padding: 10px 14px;
-        font-size: 0.85rem;
-        border-radius: 6px;
-        margin: 10px 24px 0;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    }
-
-    .alert-danger {
-        background: #fef2f2;
-        border: 1px solid #fee2e2;
-        color: #991b1b;
-    }
-
-    .alert-warning {
-        background: #fffbeb;
-        border: 1px solid #fef3c7;
-        color: #92400e;
-    }
-
-    .alert-success {
-        background: #ecfdf5;
-        border: 1px solid #d1fae5;
-        color: #065f46;
-    }
-
-    .btn-dismiss {
-        background: none;
-        border: none;
-        font-size: 1.1rem;
-        cursor: pointer;
-        color: inherit;
-    }
-</style>
 
 @code {
     [Parameter] public Feature? Feature { get; set; }

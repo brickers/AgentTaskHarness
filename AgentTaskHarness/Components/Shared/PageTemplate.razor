@@ -1,0 +1,26 @@
+<div class="mt-6 flex flex-col gap-6">
+    @if (Actions is null)
+    {
+        <PageHeader Title="@Title" Eyebrow="@Eyebrow" Description="@Description"/>
+    }
+    else
+    {
+        <PageHeader Title="@Title" Eyebrow="@Eyebrow" Description="@Description">
+            <Actions>
+                @Actions
+            </Actions>
+        </PageHeader>
+    }
+
+    <main class="min-w-0">
+        @ChildContent
+    </main>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public string Eyebrow { get; set; } = string.Empty;
+    [Parameter] public string Description { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? Actions { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

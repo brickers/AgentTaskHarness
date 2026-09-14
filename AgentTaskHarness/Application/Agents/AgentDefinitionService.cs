@@ -6,18 +6,15 @@ namespace AgentTaskHarness.Application.Agents;
 
 public class AgentDefinitionService(AppDbContext dbContext, IAgentDefinitionFolderWriter? legacyFolderWriter = null)
 {
-	public Task<AgentDefinition> CreateAsync(Guid boardId, string name, CancellationToken cancellationToken = default)
-		=> CreateAsync(boardId, name, string.Empty, string.Empty, string.Empty, cancellationToken);
+	public Task<AgentDefinition> CreateAsync(string name, CancellationToken cancellationToken = default)
+		=> CreateAsync(name, string.Empty, string.Empty, string.Empty, cancellationToken);
 
-	public async Task<AgentDefinition> CreateAsync(Guid boardId, string name, string prompt, string instructions,
+	public async Task<AgentDefinition> CreateAsync(string name, string prompt, string instructions,
 		string toolConfiguration, CancellationToken cancellationToken = default)
 	{
 		ValidateName(name);
-		if (!await dbContext.Boards.AnyAsync(board => board.Id == boardId, cancellationToken))
-			throw new KeyNotFoundException($"Board '{boardId}' was not found.");
 		var definition = new AgentDefinition
 		{
-			BoardId = boardId,
 			Name = name.Trim(),
 			Prompt = prompt ?? string.Empty,
 			Instructions = instructions ?? string.Empty,
@@ -28,19 +25,14 @@ public class AgentDefinitionService(AppDbContext dbContext, IAgentDefinitionFold
 		return definition;
 	}
 
-	[Obsolete("Use the database-backed overload without a folder path.")]
-	public async Task<AgentDefinition> CreateAsync(Guid boardId, string name, string legacyFolderPath,
+	[Obsolete("Agent definitions are global; use CreateAsync(string, ...) instead.")]
+	public Task<AgentDefinition> CreateAsync(Guid _, string name, string __,
 		CancellationToken cancellationToken = default)
-	{
-		var definition = await CreateAsync(boardId, name, string.Empty, string.Empty, string.Empty, cancellationToken);
-		definition.FolderPath = legacyFolderPath;
-		return definition;
-	}
+		=> CreateAsync(name, cancellationToken);
 
-	public Task<List<AgentDefinition>> GetForBoardAsync(Guid boardId, CancellationToken cancellationToken = default)
+	public Task<List<AgentDefinition>> GetAllAsync(CancellationToken cancellationToken = default)
 	{
-		return dbContext.AgentDefinitions.AsNoTracking().Where(definition => definition.BoardId == boardId)
-			.OrderBy(definition => definition.Name).ToListAsync(cancellationToken);
+		return dbContext.AgentDefinitions.AsNoTracking().OrderBy(definition => definition.Name).ToListAsync(cancellationToken);
 	}
 
 	public Task<AgentDefinition?> GetByIdAsync(Guid definitionId, CancellationToken cancellationToken = default)
@@ -64,10 +56,6 @@ public class AgentDefinitionService(AppDbContext dbContext, IAgentDefinitionFold
 		return definition;
 	}
 
-	[Obsolete("Use the database-backed overload without a folder path.")]
-	public Task<AgentDefinition> UpdateAsync(Guid definitionId, string name, string legacyFolderPath,
-		CancellationToken cancellationToken = default)
-		=> UpdateAsync(definitionId, name, string.Empty, string.Empty, string.Empty, cancellationToken);
 
 	public async Task<AgentDefinition> SaveAsync(Guid definitionId, string name, string prompt, string instructions,
 		string toolConfiguration, IReadOnlyList<Guid> componentIds, CancellationToken cancellationToken = default)
@@ -84,17 +72,6 @@ public class AgentDefinitionService(AppDbContext dbContext, IAgentDefinitionFold
 		return definition;
 	}
 
-	[Obsolete("Use the database-backed overload without a folder path.")]
-	public async Task<AgentDefinition> SaveAsync(Guid definitionId, string name, string legacyFolderPath,
-		IReadOnlyList<Guid> componentIds, CancellationToken cancellationToken = default)
-	{
-		var definition = await SaveAsync(definitionId, name, string.Empty, string.Empty, string.Empty, componentIds,
-			cancellationToken);
-		definition.FolderPath = legacyFolderPath;
-		if (legacyFolderWriter is not null)
-			await legacyFolderWriter.WriteAsync(definition, cancellationToken);
-		return definition;
-	}
 
 	public Task<List<AgentComponent>> GetComponentsAsync(CancellationToken cancellationToken = default)
 	{

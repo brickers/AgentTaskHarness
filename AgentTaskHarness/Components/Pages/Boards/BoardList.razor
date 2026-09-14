@@ -4,85 +4,116 @@
 @inject BoardService BoardService
 @inject NavigationManager Navigation
 
-<PageTitle>Boards</PageTitle>
+<PageTitle>Projects</PageTitle>
 
-<section class="page-intro">
-    <div>
-        <p class="eyebrow">Workspace</p>
-        <h1>Boards</h1>
-        <p>Set up a repository workspace, then shape the flow of work around it.</p>
-    </div>
-    <button class="button-primary" @onclick="OpenCreateDialog">New board</button>
-</section>
-
-@if (!string.IsNullOrWhiteSpace(_message))
-{
-    <div class="toast" role="alert" @key="_messageVersion"><span>@_message</span>
-        <button class="icon-button" type="button" aria-label="Dismiss notification" @onclick="DismissMessage">×</button>
-    </div>
-}
-
-@if (_isCreating)
-{
-    <div class="modal-backdrop" role="presentation">
-        <section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-board-title">
-            <div class="modal-heading">
-                <div>
-                    <p class="eyebrow">New workspace</p>
-                    <h2 id="new-board-title">Create board</h2>
-                </div>
-                <button class="icon-button" type="button" aria-label="Close" @onclick="CloseCreateDialog">×</button>
-            </div>
-            <form class="form-panel" @onsubmit="CreateAsync" @onsubmit:preventDefault>
-                <label>Name <input @bind="_newName" placeholder="Product workspace"/></label>
-                <div class="field-group">
-                    <label for="new-repository-path">Repository path</label>
-                    <input id="new-repository-path" @bind="_newRepoPath" placeholder="/path/to/repository"/>
-                    <small>Enter the server-visible path to an existing Git repository.</small>
-                </div>
-                <label>Agent concurrency <input type="number" min="1" @bind="_newConcurrencyLimit"/></label>
-                <label class="checkbox-label"><input type="checkbox" @bind="_newSkipFeatureHumanReview"/> Skip Feature
-                    Human Review</label>
-                <label class="checkbox-label"><input type="checkbox" @bind="_newSkipStepHumanReview"/> Skip Step Human
-                    Review</label>
-                <div class="modal-actions">
-                    <button class="button-quiet" type="button" @onclick="CloseCreateDialog">Cancel</button>
-                    <button class="button-primary" type="submit">Create board</button>
-                </div>
-            </form>
-        </section>
-    </div>
-}
-
-@if (_boards.Count == 0)
-{
-    <section class="empty-state">
-        <p class="eyebrow">No boards yet</p>
-        <h2>Start with a repository</h2>
-        <p>Create a board to begin managing work.</p>
-        <button class="button-primary" @onclick="OpenCreateDialog">Create your first board</button>
-    </section>
-}
-else
-{
-    <ul class="board-list">
-        @foreach (var board in _boards)
+<PageTemplate Title="Projects" Eyebrow="Workspace"
+              Description="Set up a repository workspace, then shape the flow of work around it.">
+    <Actions>
+        <button
+            class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            @onclick="OpenCreateDialog">New project
+        </button>
+    </Actions>
+    <ChildContent>
+        @if (!string.IsNullOrWhiteSpace(_message))
         {
-            <li>
-                <div>
-                    <a href="@($"/boards/{board.Id}")">@board.Name</a>
-                    <span>@board.RepoPath</span>
-                </div>
-                <div class="board-list-actions">
-                    <a class="button-quiet" href="@($"/boards/{board.Id}")">Board</a>
-                    <a class="button-quiet" href="@($"/boards/{board.Id}/roadmap")">Roadmap</a>
-                    <a class="button-quiet" href="@($"/boards/{board.Id}/agents")">Agents</a>
-                    <button class="button-danger" @onclick="() => DeleteAsync(board.Id)">Delete</button>
-                </div>
-            </li>
+            <div
+                class="fixed right-6 top-6 z-30 flex max-w-lg items-center justify-between gap-3 rounded-lg border-[3px] border-amber-300 bg-amber-50 px-4 py-2 text-amber-900 shadow-lg"
+                role="alert" @key="_messageVersion"><span>@_message</span>
+                <button
+                    class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-200 bg-slate-100 px-2 py-1 text-xl leading-none text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                    type="button" aria-label="Dismiss notification" @onclick="DismissMessage">×
+                </button>
+            </div>
         }
-    </ul>
-}
+
+        @if (_isCreating)
+        {
+            <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+                 role="presentation">
+                <section
+                    class="max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-y-auto rounded-xl border-[3px] border-slate-200 bg-white p-6 shadow-2xl"
+                    role="dialog" aria-modal="true" aria-labelledby="new-board-title">
+                    <div class="mb-5 flex items-start justify-between">
+                        <div>
+                            <p class="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">New
+                                project</p>
+                            <h2 id="new-board-title">Create project</h2>
+                        </div>
+                        <button
+                            class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-200 bg-slate-100 px-2 py-1 text-xl leading-none text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                            type="button" aria-label="Close" @onclick="CloseCreateDialog">×
+                        </button>
+                    </div>
+                    <form class="grid gap-4" @onsubmit="CreateAsync" @onsubmit:preventDefault>
+                        <label>Name <input @bind="_newName" placeholder="Product workspace"/></label>
+                        <div class="grid gap-1 text-sm font-semibold text-slate-700">
+                            <label for="new-repository-path">Repository path</label>
+                            <input id="new-repository-path" @bind="_newRepoPath" placeholder="/path/to/repository"/>
+                            <small>Enter the server-visible path to an existing Git repository.</small>
+                        </div>
+                        <label>Agent concurrency <input type="number" min="1" @bind="_newConcurrencyLimit"/></label>
+                        <label class="checkbox-label"><input type="checkbox" @bind="_newSkipFeatureHumanReview"/> Skip
+                            Feature
+                            Human Review</label>
+                        <label class="checkbox-label"><input type="checkbox" @bind="_newSkipStepHumanReview"/> Skip Step
+                            Human
+                            Review</label>
+                        <div class="mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 pt-4">
+                            <button
+                                class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                type="button" @onclick="CloseCreateDialog">Cancel
+                            </button>
+                            <button
+                                class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                type="submit">Create project
+                            </button>
+                        </div>
+                    </form>
+                </section>
+            </div>
+        }
+
+        @if (_boards.Count == 0)
+        {
+            <section class="mt-8 max-w-xl rounded-xl border-[3px] border-dashed border-slate-300 bg-white p-8">
+                <p class="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">No projects yet</p>
+                <h2 class="text-xl font-semibold text-slate-900">Start with a repository</h2>
+                <p class="my-2 text-slate-600">Create a project to begin managing work.</p>
+                <button class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        @onclick="OpenCreateDialog">Create your first project
+                </button>
+            </section>
+        }
+        else
+        {
+            <ul class="grid max-w-5xl list-none gap-3 p-0">
+                @foreach (var board in _boards)
+                {
+                    <li class="flex flex-col justify-between gap-4 rounded-xl border-[3px] border-slate-200 bg-white p-4 sm:flex-row sm:items-center">
+                        <div>
+                            <a class="mb-1 block font-semibold text-slate-900 no-underline hover:underline"
+                               href="@($"/boards/{board.Id}")">@board.Name</a>
+                            <span class="block truncate font-mono text-xs text-slate-500">@board.RepoPath</span>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <a class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                               href="@($"/boards/{board.Id}")">Open</a>
+                            <a class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                               href="@($"/boards/{board.Id}/roadmap")">Roadmap</a>
+                            <a class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                               href="@($"/boards/{board.Id}/settings")">Settings</a>
+                            <button
+                                class="inline-flex items-center justify-center rounded-md border-[3px] border-red-600 bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-red-700 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                @onclick="() => DeleteAsync(board.Id)">Delete
+                            </button>
+                        </div>
+                    </li>
+                }
+            </ul>
+        }
+    </ChildContent>
+</PageTemplate>
 
 @code {
     private List<BoardEntity> _boards = [];

@@ -29,7 +29,7 @@ public class PersistenceServicesTests : IAsyncLifetime
 		_boards = new BoardService(_dbContext);
 		_features = new FeatureService(_dbContext);
 		_steps = new StepService(_dbContext);
-		_agentDefinitions = new AgentDefinitionService(_dbContext, new AgentDefinitionFolderWriter());
+		_agentDefinitions = new AgentDefinitionService(_dbContext);
 	}
 
 	public async Task DisposeAsync()
@@ -306,15 +306,14 @@ public class PersistenceServicesTests : IAsyncLifetime
 	[Fact]
 	public async Task AgentDefinitionAsync_SupportsCreateUpdateAndDelete()
 	{
-		var board = await _boards.CreateAsync("Harness", "/repos/harness");
-		var definition = await _agentDefinitions.CreateAsync(board.Id, "Implementer", "/agents/implementer");
+		var definition = await _agentDefinitions.CreateAsync("Implementer", "Prompt", "Instructions", "Tools");
 
-		await _agentDefinitions.UpdateAsync(definition.Id, "Reviewer", "/agents/reviewer");
-		var boardDefinitions = await _agentDefinitions.GetForBoardAsync(board.Id);
-		Assert.Single(boardDefinitions);
-		Assert.Equal("Reviewer", boardDefinitions[0].Name);
+		await _agentDefinitions.UpdateAsync(definition.Id, "Reviewer", "Updated prompt", "Updated instructions", "Updated tools");
+		var definitions = await _agentDefinitions.GetAllAsync();
+		Assert.Single(definitions);
+		Assert.Equal("Reviewer", definitions[0].Name);
 
 		await _agentDefinitions.DeleteAsync(definition.Id);
-		Assert.Empty(await _agentDefinitions.GetForBoardAsync(board.Id));
+		Assert.Empty(await _agentDefinitions.GetAllAsync());
 	}
 }

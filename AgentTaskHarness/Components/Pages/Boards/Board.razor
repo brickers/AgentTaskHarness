@@ -13,7 +13,6 @@
 @inject IAgentScheduler AgentScheduler
 @inject ReviewOutcomeService ReviewOutcomeService
 @inject UsageTrackingService UsageService
-@inject AgentMatchingService AgentMatchingService
 @inject AppDbContext DbContext
 @inject NavigationManager Navigation
 
@@ -25,330 +24,271 @@
 }
 else
 {
-    <div class="board-container">
-        <!-- Top Bar & Workspace Info -->
-        <header class="board-header">
-            <div>
-                <p class="breadcrumb"><a href="/boards">Boards</a> <span>/</span> @_board.Name</p>
-                <h1 class="board-title">@_board.Name</h1>
-                <div class="board-settings-summary">
-                    <span class="tag">Concurrency: @_board.ConcurrencyLimit</span>
-                    <span
-                        class="tag">Feature Review: @(_board.SkipFeatureHumanReview ? "Skip Human" : "Require Human")</span>
-                    <span class="tag">Step Review: @(_board.SkipStepHumanReview ? "Skip Human" : "Require Human")</span>
-                    <span class="tag">Agent Fail Limit: @_board.AgentReviewFailThreshold</span>
-                    <span class="tag">Human Fail Limit: @_board.HumanReviewFailThreshold</span>
-                </div>
-            </div>
-            <div class="header-actions">
-                <a class="btn btn-outline-primary" href="@($"/boards/{BoardId}/roadmap")">Roadmap</a>
-                <a class="btn btn-outline-secondary" href="@($"/boards/{BoardId}/agents")">Agents</a>
-                <button class="btn btn-outline-secondary" @onclick="OpenBoardEditor">Settings</button>
-                <button class="btn btn-primary" @onclick="OpenFeatureCreator">+ New Feature</button>
-            </div>
-        </header>
-
-        @if (!string.IsNullOrWhiteSpace(_notificationMessage))
-        {
-            <div class="toast-alert @(_isNotificationError ? "toast-error" : "toast-info")" role="alert">
-                <span>@_notificationMessage</span>
-                <button type="button" class="btn-close" aria-label="Dismiss"
-                        @onclick="() => _notificationMessage = null"></button>
-            </div>
-        }
-
-        <!-- Row 1: Features Kanban Grid -->
-        <section class="tier-section">
-            <div class="tier-header">
-                <div class="tier-title-area">
-                    <h2 class="tier-title">Features</h2>
-                    <span class="tier-subtitle">(@_features.Count total)</span>
-                </div>
-                <div class="tier-actions">
-                    <button class="btn btn-sm btn-outline-primary" @onclick="OpenFeatureCreator">+ Add Feature</button>
-                </div>
-            </div>
-
-            <div class="kanban-grid">
-                @foreach (var column in _columns)
+    <PageTemplate Title="Board" Eyebrow="@_board.Name"
+                  Description="Manage features and development steps across the workflow.">
+        <Actions>
+            <button class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    @onclick="OpenFeatureCreator">New feature
+            </button>
+        </Actions>
+        <ChildContent>
+            <div class="flex max-w-full flex-col gap-6 font-sans">
+                @if (!string.IsNullOrWhiteSpace(_notificationMessage))
                 {
-                    var columnFeatures = _features.Where(f => f.WorkflowColumn == column).ToList();
-                    var isValidTarget = _draggedCardType == CardType.Feature && _currentAllowedDropColumns.Contains(column);
-                    var isInvalidTarget = _draggedCardType == CardType.Feature && !_currentAllowedDropColumns.Contains(column);
-                    var isOver = _draggedOverColumn == column && _draggedCardType == CardType.Feature;
-
-                    <div
-                        class="kanban-column @(isValidTarget ? "drop-target-valid" : "") @(isInvalidTarget ? "drop-target-invalid" : "") @(isOver ? "drop-over-active" : "")"
-                        @ondragover:preventDefault="true"
-                        @ondragenter="() => HandleDragEnter(column, CardType.Feature)"
-                        @ondragleave="() => HandleDragLeave(column)"
-                        @ondrop="() => HandleFeatureDrop(column)">
-
-                        <div class="column-header">
-                            <div><h3>@column</h3>
-                                @if (GetColumnScope(column, CardType.Feature) is ColumnScope featureScope)
-                                {
-                                    <select class="column-agent-select" aria-label="Agent for @column features"
-                                            value="@GetAssignedAgentId(featureScope)"
-                                            @onchange="e => AssignAgentAsync(featureScope, e.Value?.ToString())">
-                                        <option value="">No agent</option>
-                                        @foreach (var agent in _agentDefinitions) { <option value="@agent.Id">@agent.Name</option> }
-                                    </select>
-                                }
-                            </div>
-                            <span class="column-count">@columnFeatures.Count</span>
-                        </div>
-
-                        <div class="column-cards">
-                            @foreach (var feature in columnFeatures)
-                            {
-                                var run = _featureRuns.GetValueOrDefault(feature.Id);
-                                var stepStatuses = _featureStepStatuses.GetValueOrDefault(feature.Id, []);
-                                var isSelected = _selectedFeatureId == feature.Id;
-
-                                <FeatureCard Feature="@feature"
-                                             Board="@_board"
-                                             CurrentRun="@run"
-                                             ChildStepStatuses="@stepStatuses"
-                                             IsSelected="@isSelected"
-                                             OnSelect="HandleFeatureSelected"
-                                             OnOpenDetails="OpenFeaturePopup"
-                                             OnDragStart="HandleFeatureDragStart"
-                                             OnDragEnd="HandleDragEnd"/>
-                            }
-                        </div>
+                    <div class="rounded-md border-[3px] p-3 text-sm @(_isNotificationError ? "border-red-200 bg-red-50 text-red-700" : "border-blue-200 bg-blue-50 text-blue-700")" role="alert">
+                        <span>@_notificationMessage</span>
+                        <button type="button" class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-200 bg-slate-100 px-2 py-1 text-xl leading-none text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" aria-label="Dismiss"
+                                @onclick="() => _notificationMessage = null"></button>
                     </div>
                 }
-            </div>
-        </section>
 
-        <!-- Row 2: Steps Kanban Grid (Filtered by Selected Feature or Showing All Steps) -->
-        <section class="tier-section">
-            <div class="tier-header">
-                <div class="tier-title-area">
-                    <h2 class="tier-title">
-                        @if (_selectedFeature != null)
-                        {
-                            <span>Steps for: <strong>@_selectedFeature.Title</strong></span>
-                        }
-                        else
-                        {
-                            <span>Steps (All Features)</span>
-                        }
-                    </h2>
-                    <span class="tier-subtitle">(@_selectedFeatureSteps.Count dev plan steps)</span>
-                    @if (_selectedFeature != null)
-                    {
-                        <button class="clear-filter-btn" @onclick="ClearFeatureFilter"
-                                title="Unselect feature and show all steps">
-                            ✕ Clear Filter
-                        </button>
-                    }
-                </div>
-                <div class="tier-actions">
-                    <button class="btn btn-sm btn-outline-primary" @onclick="OpenStepCreator">+ Add Step</button>
-                </div>
-            </div>
-
-            <div class="kanban-grid">
-                @foreach (var column in _columns)
-                {
-                    var columnSteps = _selectedFeatureSteps.Where(s => s.WorkflowColumn == column).ToList();
-                    var isValidTarget = _draggedCardType == CardType.Step && _currentAllowedDropColumns.Contains(column);
-                    var isInvalidTarget = _draggedCardType == CardType.Step && !_currentAllowedDropColumns.Contains(column);
-                    var isOver = _draggedOverColumn == column && _draggedCardType == CardType.Step;
-
-                    <div
-                        class="kanban-column @(isValidTarget ? "drop-target-valid" : "") @(isInvalidTarget ? "drop-target-invalid" : "") @(isOver ? "drop-over-active" : "")"
-                        @ondragover:preventDefault="true"
-                        @ondragenter="() => HandleDragEnter(column, CardType.Step)"
-                        @ondragleave="() => HandleDragLeave(column)"
-                        @ondrop="() => HandleStepDrop(column)">
-
-                        <div class="column-header">
-                            <div><h3>@column</h3>
-                                @if (GetColumnScope(column, CardType.Step) is ColumnScope stepScope)
-                                {
-                                    <select class="column-agent-select" aria-label="Agent for @column steps"
-                                            value="@GetAssignedAgentId(stepScope)"
-                                            @onchange="e => AssignAgentAsync(stepScope, e.Value?.ToString())">
-                                        <option value="">No agent</option>
-                                        @foreach (var agent in _agentDefinitions) { <option value="@agent.Id">@agent.Name</option> }
-                                    </select>
-                                }
-                            </div>
-                            <span class="column-count">@columnSteps.Count</span>
+                <!-- Row 1: Features Kanban Grid -->
+                <section class="flex flex-col gap-2.5">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <h2 class="m-0 text-lg font-bold text-slate-800">Features</h2>
+                            <span class="text-sm text-slate-500">(@_features.Count total)</span>
                         </div>
-
-                        <div class="column-cards">
-                            @foreach (var step in columnSteps)
-                            {
-                                var run = _stepRuns.GetValueOrDefault(step.Id);
-
-                                <StepCard Step="@step"
-                                          Board="@_board"
-                                          CurrentRun="@run"
-                                          OnOpenDetails="OpenStepPopup"
-                                          OnDragStart="HandleStepDragStart"
-                                          OnDragEnd="HandleDragEnd"/>
-                            }
-                        </div>
-                    </div>
-                }
-            </div>
-        </section>
-
-        <!-- Card Details & Actions Popup Modal -->
-        @if (_popupFeature != null || _popupStep != null)
-        {
-            <CardPopup Feature="@_popupFeature"
-                       Step="@_popupStep"
-                       Board="@_board"
-                       CurrentRun="@(_popupFeature != null ? _featureRuns.GetValueOrDefault(_popupFeature.Id) : _stepRuns.GetValueOrDefault(_popupStep!.Id))"
-                       OnClose="CloseCardPopup"
-                       OnChanged="HandleCardChanged"/>
-        }
-
-        <!-- Board Settings Modal -->
-        @if (_isEditingBoard)
-        {
-            <div class="modal-backdrop" @onclick="CloseBoardEditor">
-                <div class="modal-content" @onclick:stopPropagation="true">
-                    <div class="modal-header">
-                        <h2>Edit Board Settings</h2>
-                        <button class="btn-close" @onclick="CloseBoardEditor"></button>
-                    </div>
-                    <form @onsubmit="SaveBoardAsync" @onsubmit:preventDefault>
-                        <div class="form-group">
-                            <label>Board Name</label>
-                            <input class="form-control" @bind="_boardName"/>
-                        </div>
-                        <div class="form-group">
-                            <label>Repository Path</label>
-                            <input class="form-control" @bind="_repoPath"/>
-                        </div>
-                        <div class="form-group">
-                            <label>Agent Concurrency Limit</label>
-                            <input type="number" min="1" class="form-control" @bind="_concurrencyLimit"/>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input type="checkbox" class="form-check-input" id="skipFeatureReview"
-                                   @bind="_skipFeatureHumanReview"/>
-                            <label class="form-check-label" for="skipFeatureReview">Skip Feature Human Review</label>
-                        </div>
-                        <div class="form-check mb-3">
-                            <input type="checkbox" class="form-check-input" id="skipStepReview"
-                                   @bind="_skipStepHumanReview"/>
-                            <label class="form-check-label" for="skipStepReview">Skip Step Human Review</label>
-                        </div>
-                        <div class="form-group">
-                            <label>Agent Review Fail Threshold</label>
-                            <input type="number" min="0" class="form-control" @bind="_agentReviewFailThreshold"/>
-                        </div>
-                        <div class="form-group">
-                            <label>Human Review Fail Threshold</label>
-                            <input type="number" min="0" class="form-control" @bind="_humanReviewFailThreshold"/>
-                        </div>
-                        <div class="form-actions">
-                            <button type="button" class="btn btn-secondary" @onclick="CloseBoardEditor">Cancel</button>
-                            <button type="submit" class="btn btn-primary">Save Changes</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        }
-
-        <!-- New Feature Modal -->
-        @if (_isCreatingFeature)
-        {
-            <div class="modal-backdrop" @onclick="CloseFeatureCreator">
-                <div class="modal-content" @onclick:stopPropagation="true">
-                    <div class="modal-header">
-                        <h2>Create Feature</h2>
-                        <button class="btn-close" @onclick="CloseFeatureCreator"></button>
-                    </div>
-                    <form @onsubmit="CreateFeatureAsync" @onsubmit:preventDefault>
-                        <div class="form-group">
-                            <label>Title</label>
-                            <input class="form-control" @bind="_newFeatureTitle" placeholder="Feature title" required/>
-                        </div>
-                        <div class="form-group">
-                            <label>Requirements</label>
-                            <textarea class="form-control" rows="3" @bind="_newFeatureRequirements"
-                                      placeholder="Requirements"></textarea>
-                        </div>
-                        <div class="form-group">
-                            <label>Acceptance Criteria</label>
-                            <textarea class="form-control" rows="3" @bind="_newFeatureAcceptanceCriteria"
-                                      placeholder="Acceptance criteria"></textarea>
-                        </div>
-                        <div class="form-group">
-                            <label>Suggested Solution</label>
-                            <textarea class="form-control" rows="2" @bind="_newFeatureSuggestedSolution"
-                                      placeholder="Suggested solution notes"></textarea>
-                        </div>
-                        <div class="form-check mb-3">
-                            <input type="checkbox" class="form-check-input" id="featAlwaysReview"
-                                   @bind="_newFeatureAlwaysHumanReview"/>
-                            <label class="form-check-label" for="featAlwaysReview">Always require Human Review</label>
-                        </div>
-                        <div class="form-actions">
-                            <button type="button" class="btn btn-secondary" @onclick="CloseFeatureCreator">Cancel
+                        <div class="flex gap-2">
+                            <button class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" @onclick="OpenFeatureCreator">+ Add Feature
                             </button>
-                            <button type="submit" class="btn btn-primary">Create Feature</button>
                         </div>
-                    </form>
-                </div>
-            </div>
-        }
-
-        <!-- New Step Modal -->
-        @if (_isCreatingStep)
-        {
-            <div class="modal-backdrop" @onclick="CloseStepCreator">
-                <div class="modal-content" @onclick:stopPropagation="true">
-                    <div class="modal-header">
-                        <h2>Add Step</h2>
-                        <button class="btn-close" @onclick="CloseStepCreator"></button>
                     </div>
-                    <form @onsubmit="CreateStepAsync" @onsubmit:preventDefault>
-                        <div class="form-group">
-                            <label>Feature</label>
-                            <select class="form-control" @bind="_newStepFeatureId" required>
-                                @foreach (var feat in _features)
+
+                    <div class="flex items-stretch gap-6 overflow-x-auto pb-2">
+                        @foreach (var column in _columns)
+                        {
+                            var columnFeatures = _features.Where(f => f.WorkflowColumn == column).ToList();
+                            var isValidTarget = _draggedCardType == CardType.Feature && _currentAllowedDropColumns.Contains(column);
+                            var isInvalidTarget = _draggedCardType == CardType.Feature && !_currentAllowedDropColumns.Contains(column);
+                            var isOver = _draggedOverColumn == column && _draggedCardType == CardType.Feature;
+
+                            <div
+                                 class="flex min-h-60 min-w-0 max-h-[520px] flex-[0_0_190px] flex-col rounded-lg border-[3px] border-slate-400 bg-slate-50 transition-all"
+                                @ondragover:preventDefault="true"
+                                @ondragenter="() => HandleDragEnter(column, CardType.Feature)"
+                                @ondragleave="() => HandleDragLeave(column)"
+                                @ondrop="() => HandleFeatureDrop(column)">
+
+                                 <div class="flex items-center justify-between rounded-none border-0 bg-slate-400 px-3.5 py-2.5">
+                                    <div><h3>@column</h3></div>
+                                    <span class="rounded-full bg-slate-200 px-1.5 py-0.5 text-xs font-bold text-slate-600">@columnFeatures.Count</span>
+                                </div>
+
+                                 <div class="flex flex-1 flex-col overflow-y-auto p-2.5">
+                                    @foreach (var feature in columnFeatures)
+                                    {
+                                        var run = _featureRuns.GetValueOrDefault(feature.Id);
+                                        var stepStatuses = _featureStepStatuses.GetValueOrDefault(feature.Id, []);
+                                        var isSelected = _selectedFeatureId == feature.Id;
+
+                                        <FeatureCard Feature="@feature"
+                                                     Board="@_board"
+                                                     CurrentRun="@run"
+                                                     ChildStepStatuses="@stepStatuses"
+                                                     IsSelected="@isSelected"
+                                                     OnSelect="HandleFeatureSelected"
+                                                     OnOpenDetails="OpenFeaturePopup"
+                                                     OnDragStart="HandleFeatureDragStart"
+                                                     OnDragEnd="HandleDragEnd"/>
+                                    }
+                                 </div>
+                             </div>
+
+                             @if (column is WorkflowColumn.Ready or WorkflowColumn.AgentReview)
+                             {
+                                 <div class="flex shrink-0 self-stretch border-l-[3px] border-dashed border-slate-400" aria-hidden="true"></div>
+                             }
+                         }
+                    </div>
+                </section>
+
+                <!-- Row 2: Steps Kanban Grid (Filtered by Selected Feature or Showing All Steps) -->
+                <section class="flex flex-col gap-2.5">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <h2 class="m-0 text-lg font-bold text-slate-800">
+                                @if (_selectedFeature != null)
                                 {
-                                    <option value="@feat.Id">@feat.Title</option>
+                                    <span>Steps for: <strong>@_selectedFeature.Title</strong></span>
                                 }
-                            </select>
+                                else
+                                {
+                                    <span>Steps (All Features)</span>
+                                }
+                            </h2>
+                            <span class="text-sm text-slate-500">(@_selectedFeatureSteps.Count dev plan steps)</span>
+                            @if (_selectedFeature != null)
+                            {
+                                <button class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" @onclick="ClearFeatureFilter"
+                                        title="Unselect feature and show all steps">
+                                    ✕ Clear Filter
+                                </button>
+                            }
                         </div>
-                        <div class="form-group">
-                            <label>Title</label>
-                            <input class="form-control" @bind="_newStepTitle" placeholder="Step title" required/>
+                        <div class="flex gap-2">
+                            <button class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" @onclick="OpenStepCreator">+ Add Step
+                            </button>
                         </div>
-                        <div class="form-group">
-                            <label>Description</label>
-                            <textarea class="form-control" rows="3" @bind="_newStepDescription"
-                                      placeholder="Step description"></textarea>
+                    </div>
+
+                    <div class="flex items-stretch gap-6 overflow-x-auto pb-2">
+                        @foreach (var column in _columns)
+                        {
+                            var columnSteps = _selectedFeatureSteps.Where(s => s.WorkflowColumn == column).ToList();
+                            var isValidTarget = _draggedCardType == CardType.Step && _currentAllowedDropColumns.Contains(column);
+                            var isInvalidTarget = _draggedCardType == CardType.Step && !_currentAllowedDropColumns.Contains(column);
+                            var isOver = _draggedOverColumn == column && _draggedCardType == CardType.Step;
+
+                            <div
+                                 class="flex min-h-60 min-w-0 max-h-[520px] flex-[0_0_190px] flex-col rounded-lg border-[3px] border-slate-400 bg-slate-50 transition-all"
+                                @ondragover:preventDefault="true"
+                                @ondragenter="() => HandleDragEnter(column, CardType.Step)"
+                                @ondragleave="() => HandleDragLeave(column)"
+                                @ondrop="() => HandleStepDrop(column)">
+
+                                <div class="flex items-center justify-between rounded-none border-0 bg-slate-400 px-3.5 py-2.5">
+                                    <div><h3>@column</h3></div>
+                                    <span class="rounded-full bg-slate-200 px-1.5 py-0.5 text-xs font-bold text-slate-600">@columnSteps.Count</span>
+                                </div>
+
+                                 <div class="flex flex-1 flex-col overflow-y-auto p-2.5">
+                                    @foreach (var step in columnSteps)
+                                    {
+                                        var run = _stepRuns.GetValueOrDefault(step.Id);
+
+                                        <StepCard Step="@step"
+                                                  Board="@_board"
+                                                  CurrentRun="@run"
+                                                  OnOpenDetails="OpenStepPopup"
+                                                  OnDragStart="HandleStepDragStart"
+                                                  OnDragEnd="HandleDragEnd"/>
+                                    }
+                                 </div>
+                             </div>
+
+                             @if (column is WorkflowColumn.Ready or WorkflowColumn.AgentReview)
+                             {
+                                 <div class="flex shrink-0 self-stretch border-l-[3px] border-dashed border-slate-400" aria-hidden="true"></div>
+                             }
+                         }
+                    </div>
+                </section>
+
+                <!-- Card Details & Actions Popup Modal -->
+                @if (_popupFeature != null || _popupStep != null)
+                {
+                    <CardPopup Feature="@_popupFeature"
+                               Step="@_popupStep"
+                               Board="@_board"
+                               CurrentRun="@(_popupFeature != null ? _featureRuns.GetValueOrDefault(_popupFeature.Id) : _stepRuns.GetValueOrDefault(_popupStep!.Id))"
+                               OnClose="CloseCardPopup"
+                               OnChanged="HandleCardChanged"/>
+                }
+
+                <!-- New Feature Modal -->
+                @if (_isCreatingFeature)
+                {
+                    <div
+                        class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+                        @onclick="CloseFeatureCreator">
+                        <div class="w-full max-w-xl rounded-xl bg-white p-6 shadow-2xl" @onclick:stopPropagation="true">
+                            <div class="mb-4 flex items-center justify-between">
+                                <h2>Create Feature</h2>
+                                <button class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-200 bg-slate-100 px-2 py-1 text-xl leading-none text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" @onclick="CloseFeatureCreator"></button>
+                            </div>
+                            <form @onsubmit="CreateFeatureAsync" @onsubmit:preventDefault>
+                                <div class="mb-3.5">
+                                    <label>Title</label>
+                                    <input class="mt-1 block w-full rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" @bind="_newFeatureTitle" placeholder="Feature title"
+                                           required/>
+                                </div>
+                                <div class="mb-3.5">
+                                    <label>Requirements</label>
+                                    <textarea class="mt-1 block w-full rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" rows="3" @bind="_newFeatureRequirements"
+                                              placeholder="Requirements"></textarea>
+                                </div>
+                                <div class="mb-3.5">
+                                    <label>Acceptance Criteria</label>
+                                    <textarea class="mt-1 block w-full rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" rows="3" @bind="_newFeatureAcceptanceCriteria"
+                                              placeholder="Acceptance criteria"></textarea>
+                                </div>
+                                <div class="mb-3.5">
+                                    <label>Suggested Solution</label>
+                                    <textarea class="mt-1 block w-full rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" rows="2" @bind="_newFeatureSuggestedSolution"
+                                              placeholder="Suggested solution notes"></textarea>
+                                </div>
+                                <div class="mb-3 flex items-center gap-2">
+                                    <input type="checkbox" class="h-4 w-4 shrink-0 cursor-pointer" id="featAlwaysReview"
+                                           @bind="_newFeatureAlwaysHumanReview"/>
+                                    <label class="cursor-pointer text-sm font-medium text-slate-700" for="featAlwaysReview">Always require Human
+                                        Review</label>
+                                </div>
+                                <div class="mt-5 flex justify-end gap-2.5">
+                                    <button type="button" class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" @onclick="CloseFeatureCreator">
+                                        Cancel
+                                    </button>
+                                    <button type="submit" class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">Create Feature</button>
+                                </div>
+                            </form>
                         </div>
-                        <div class="form-group">
-                            <label>Guidance Notes for Agent</label>
-                            <textarea class="form-control" rows="2" @bind="_newStepGuidanceNotes"
-                                      placeholder="Guidance notes"></textarea>
+                    </div>
+                }
+
+                <!-- New Step Modal -->
+                @if (_isCreatingStep)
+                {
+                    <div
+                        class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+                        @onclick="CloseStepCreator">
+                        <div class="w-full max-w-xl rounded-xl bg-white p-6 shadow-2xl" @onclick:stopPropagation="true">
+                            <div class="mb-4 flex items-center justify-between">
+                                <h2>Add Step</h2>
+                                <button class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-200 bg-slate-100 px-2 py-1 text-xl leading-none text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" @onclick="CloseStepCreator"></button>
+                            </div>
+                            <form @onsubmit="CreateStepAsync" @onsubmit:preventDefault>
+                                <div class="mb-3.5">
+                                    <label>Feature</label>
+                                    <select class="mt-1 block w-full rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" @bind="_newStepFeatureId" required>
+                                        @foreach (var feat in _features)
+                                        {
+                                            <option value="@feat.Id">@feat.Title</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="mb-3.5">
+                                    <label>Title</label>
+                                    <input class="mt-1 block w-full rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" @bind="_newStepTitle" placeholder="Step title"
+                                           required/>
+                                </div>
+                                <div class="mb-3.5">
+                                    <label>Description</label>
+                                    <textarea class="mt-1 block w-full rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" rows="3" @bind="_newStepDescription"
+                                              placeholder="Step description"></textarea>
+                                </div>
+                                <div class="mb-3.5">
+                                    <label>Guidance Notes for Agent</label>
+                                    <textarea class="mt-1 block w-full rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" rows="2" @bind="_newStepGuidanceNotes"
+                                              placeholder="Guidance notes"></textarea>
+                                </div>
+                                <div class="mb-3 flex items-center gap-2">
+                                    <input type="checkbox" class="h-4 w-4 shrink-0 cursor-pointer" id="stepAlwaysReview"
+                                           @bind="_newStepAlwaysHumanReview"/>
+                                    <label class="cursor-pointer text-sm font-medium text-slate-700" for="stepAlwaysReview">Always require Human
+                                        Review</label>
+                                </div>
+                                <div class="mt-5 flex justify-end gap-2.5">
+                                    <button type="button" class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" @onclick="CloseStepCreator">Cancel
+                                    </button>
+                                    <button type="submit" class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">Create Step</button>
+                                </div>
+                            </form>
                         </div>
-                        <div class="form-check mb-3">
-                            <input type="checkbox" class="form-check-input" id="stepAlwaysReview"
-                                   @bind="_newStepAlwaysHumanReview"/>
-                            <label class="form-check-label" for="stepAlwaysReview">Always require Human Review</label>
-                        </div>
-                        <div class="form-actions">
-                            <button type="button" class="btn btn-secondary" @onclick="CloseStepCreator">Cancel</button>
-                            <button type="submit" class="btn btn-primary">Create Step</button>
-                        </div>
-                    </form>
-                </div>
+                    </div>
+                }
             </div>
-        }
-    </div>
+        </ChildContent>
+    </PageTemplate>
 }
 
 @code {
@@ -373,8 +313,6 @@ else
     private Dictionary<Guid, AgentRun> _featureRuns = [];
     private Dictionary<Guid, AgentRun> _stepRuns = [];
     private Dictionary<Guid, List<AgentRunStatus?>> _featureStepStatuses = [];
-    private List<AgentDefinition> _agentDefinitions = [];
-    private List<AgentColumnAssignment> _agentAssignments = [];
 
     // Popup state
     private Feature? _popupFeature;
@@ -386,16 +324,6 @@ else
     private Step? _draggedStep;
     private List<WorkflowColumn> _currentAllowedDropColumns = [];
     private WorkflowColumn? _draggedOverColumn;
-
-    // Board editing state
-    private bool _isEditingBoard;
-    private string _boardName = "";
-    private string _repoPath = "";
-    private int _concurrencyLimit = 1;
-    private bool _skipFeatureHumanReview;
-    private bool _skipStepHumanReview;
-    private int _agentReviewFailThreshold;
-    private int _humanReviewFailThreshold;
 
     // Feature creation state
     private bool _isCreatingFeature;
@@ -427,37 +355,6 @@ else
         await LoadBoardDataAsync();
     }
 
-    private static ColumnScope? GetColumnScope(WorkflowColumn column, CardType cardType)
-    {
-        return (cardType, column) switch
-        {
-            (CardType.Step, WorkflowColumn.Build) => ColumnScope.StepBuild,
-            (CardType.Step, WorkflowColumn.AgentReview) => ColumnScope.StepAgentReview,
-            (CardType.Feature, WorkflowColumn.AgentReview) => ColumnScope.FeatureAgentReview,
-            _ => null
-        };
-    }
-
-    private string GetAssignedAgentId(ColumnScope scope)
-        => _agentAssignments.FirstOrDefault(assignment => assignment.ColumnScope == scope)?.AgentDefinitionId.ToString() ?? string.Empty;
-
-    private async Task AssignAgentAsync(ColumnScope scope, string? value)
-    {
-        if (!Guid.TryParse(value, out var agentId))
-        {
-            var existing = _agentAssignments.FirstOrDefault(assignment => assignment.ColumnScope == scope);
-            if (existing is not null) await AgentMatchingService.DeleteAssignmentAsync(existing.Id);
-        }
-        else
-        {
-            var existing = _agentAssignments.FirstOrDefault(assignment => assignment.ColumnScope == scope);
-            if (existing is null) await AgentMatchingService.AssignAgentAsync(BoardId, scope, agentId);
-            else await AgentMatchingService.UpdateAssignmentAsync(existing.Id, agentId);
-        }
-
-        _agentAssignments = await AgentMatchingService.GetAssignmentsAsync(BoardId);
-    }
-
     private async Task LoadBoardDataAsync()
     {
         _board = await BoardService.GetByIdAsync(BoardId);
@@ -466,17 +363,6 @@ else
             Navigation.NavigateTo("/boards");
             return;
         }
-
-        _boardName = _board.Name;
-        _repoPath = _board.RepoPath;
-        _concurrencyLimit = _board.ConcurrencyLimit;
-        _skipFeatureHumanReview = _board.SkipFeatureHumanReview;
-        _skipStepHumanReview = _board.SkipStepHumanReview;
-        _agentReviewFailThreshold = _board.AgentReviewFailThreshold;
-        _humanReviewFailThreshold = _board.HumanReviewFailThreshold;
-        _agentDefinitions = await DbContext.AgentDefinitions.AsNoTracking()
-            .Where(agent => agent.BoardId == BoardId).OrderBy(agent => agent.Name).ToListAsync();
-        _agentAssignments = await AgentMatchingService.GetAssignmentsAsync(BoardId);
 
         _features = await FeatureService.GetForBoardAsync(BoardId);
 
@@ -702,32 +588,6 @@ else
         finally
         {
             HandleDragEnd();
-        }
-    }
-
-    // Board Editor
-    private void OpenBoardEditor()
-    {
-        _isEditingBoard = true;
-    }
-
-    private void CloseBoardEditor()
-    {
-        _isEditingBoard = false;
-    }
-
-    private async Task SaveBoardAsync()
-    {
-        try
-        {
-            await BoardService.UpdateAsync(BoardId, _boardName, _repoPath, _concurrencyLimit, _skipFeatureHumanReview, _skipStepHumanReview, _agentReviewFailThreshold, _humanReviewFailThreshold);
-            CloseBoardEditor();
-            Notify("Board updated.", false);
-            await LoadBoardDataAsync();
-        }
-        catch (Exception ex)
-        {
-            Notify(ex.Message, true);
         }
     }
 

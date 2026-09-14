@@ -103,11 +103,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 			entity.Property(definition => definition.Prompt).IsRequired();
 			entity.Property(definition => definition.Instructions).IsRequired();
 			entity.Property(definition => definition.ToolConfiguration).IsRequired();
-			entity.HasIndex(definition => new { definition.BoardId, definition.Name }).IsUnique();
-			entity.HasOne(definition => definition.Board)
-				.WithMany(board => board.AgentDefinitions)
-				.HasForeignKey(definition => definition.BoardId)
-				.OnDelete(DeleteBehavior.Cascade);
+			entity.HasIndex(definition => definition.Name);
 		});
 
 		modelBuilder.Entity<AgentComponent>(entity =>

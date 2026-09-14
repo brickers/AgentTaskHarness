@@ -11,574 +11,245 @@
 
 <PageTitle>@(_board?.Name ?? "Roadmap") - Roadmap</PageTitle>
 
-<div class="roadmap-page">
-    <header class="roadmap-header">
-        <div class="header-left">
-            <a href="@($"/boards/{BoardId}")" class="back-link">&larr; Back to Board</a>
-            <h1 class="page-title">Roadmap: @(_board?.Name ?? "Loading...")</h1>
-            <p class="page-desc">Computed dependency tree and delivery plan for features on this board.</p>
-        </div>
-        <div class="header-right">
-            <button class="btn btn-primary" @onclick="OpenFeatureCreator">+ New Feature</button>
-            <button class="btn btn-outline-primary" @onclick="ToggleGraphView">@(_showGraph ? "Card View" : "Graph View")</button>
-            <a href="@($"/boards/{BoardId}")" class="btn btn-primary">Kanban Board</a>
-            <a href="@($"/boards/{BoardId}/agents")" class="btn btn-outline-secondary">Agents</a>
-        </div>
-    </header>
-
-    @if (!string.IsNullOrEmpty(_errorMessage))
-    {
-        <div class="alert alert-danger" role="alert">
-            @_errorMessage
-            <button type="button" class="btn-dismiss" @onclick="() => _errorMessage = null">&times;</button>
-        </div>
-    }
-
-    @if (!string.IsNullOrEmpty(_successMessage))
-    {
-        <div class="alert alert-success" role="alert">
-            @_successMessage
-            <button type="button" class="btn-dismiss" @onclick="() => _successMessage = null">&times;</button>
-        </div>
-    }
-
-    @if (_board == null)
-    {
-        <div class="loading-state">Loading board roadmap...</div>
-    }
-    else if (_features.Count == 0)
-    {
-        <div class="empty-state">
-            <h3>No features created yet</h3>
-            <p>Create features on the <a href="@($"/boards/{BoardId}")">Board</a> to view their roadmap plan and
-                dependencies here.</p>
-        </div>
-    }
-    else if (_showGraph)
-    {
-        <div class="graph-scroll">
-            <svg class="feature-graph" viewBox="0 0 @_graphLayout.Width @_graphLayout.Height" role="img" aria-label="Feature dependency graph">
-                <defs>
-                    <marker id="dependency-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-                        <path d="M0,0 L8,4 L0,8 z" fill="#64748b" />
-                    </marker>
-                </defs>
-                @foreach (var edge in _graphLayout.Edges)
-                {
-                    <path class="graph-edge" d="@edge.Path" marker-end="url(#dependency-arrow)" />
-                }
-                @foreach (var node in _graphLayout.Nodes)
-                {
-                    <a href="@($"/boards/{BoardId}")" class="graph-node">
-                        <rect x="@node.X" y="@node.Y" width="@FeatureGraphLayout.NodeWidth" height="@FeatureGraphLayout.NodeHeight" rx="8" />
-                        <text x="@(node.X + 12)" y="@(node.Y + 28)">@node.Feature.Title</text>
-                        <text class="graph-status" x="@(node.X + 12)" y="@(node.Y + 52)">@node.Feature.WorkflowColumn</text>
-                    </a>
-                }
-            </svg>
-        </div>
-    }
-    else
-    {
-        <div class="roadmap-grid">
-            @foreach (var feature in _features)
+<PageTemplate Title="Roadmap" Eyebrow="@(_board?.Name ?? "Project")"
+              Description="Computed dependency tree and delivery plan for project features.">
+    <Actions>
+        <button class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                @onclick="OpenFeatureCreator">New feature
+        </button>
+    </Actions>
+    <ChildContent>
+        <div class="mx-auto">
+            @if (!string.IsNullOrEmpty(_errorMessage))
             {
-                var isUnmet = _unmetDependencyMap.GetValueOrDefault(feature.Id, false);
-                var deps = _dependencyMap.GetValueOrDefault(feature.Id, []);
-                var dependedOnBy = _dependedOnByMap.GetValueOrDefault(feature.Id, []);
-                var run = _agentRuns.GetValueOrDefault(feature.Id);
-                var isRework = feature.WorkflowColumn == WorkflowColumn.Build && ReviewOutcomeService.IsRework(feature);
-                var hasIssue = ReviewOutcomeService.HasIssue(feature, _board);
+                <div class="flex items-center justify-between gap-3 border-[3px] border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
+                    @_errorMessage
+                    <button type="button" class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-200 bg-slate-100 px-2 py-1 text-xl leading-none text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" @onclick="() => _errorMessage = null">&times;</button>
+                </div>
+            }
 
-                <div class="feature-node-card @(feature.WorkflowColumn == WorkflowColumn.Done ? "feature-done" : "")">
-                    <div class="feature-node-header">
-                        <div class="feature-title-area">
-                            <StatusIcon Status="@run?.Status"/>
-                            <h3 class="feature-title">@feature.Title</h3>
-                        </div>
-                        <div class="feature-badges">
-                            <span
-                                class="column-pill pill-@feature.WorkflowColumn.ToString().ToLower()">@feature.WorkflowColumn</span>
-                            @if (isRework)
-                            {
-                                <span class="badge badge-rework">Rework</span>
-                            }
-                            @if (hasIssue)
-                            {
-                                <span class="badge badge-issue">Issue</span>
-                            }
-                        </div>
-                    </div>
+            @if (!string.IsNullOrEmpty(_successMessage))
+            {
+                <div class="flex items-center justify-between gap-3 border-[3px] border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700" role="alert">
+                    @_successMessage
+                    <button type="button" class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-200 bg-slate-100 px-2 py-1 text-xl leading-none text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" @onclick="() => _successMessage = null">&times;</button>
+                </div>
+            }
 
-                    @if (!string.IsNullOrWhiteSpace(feature.Requirements))
+            @if (_board == null)
+            {
+                <div class="rounded-lg border-[3px] border-slate-200 bg-white p-8 text-center text-slate-500">Loading board roadmap...</div>
+            }
+            else if (_features.Count == 0)
+            {
+                <div class="rounded-lg border-[3px] border-dashed border-slate-300 bg-white p-8 text-center text-slate-600">
+                    <h3>No features created yet</h3>
+                    <p>Create features on the <a href="@($"/boards/{BoardId}")">Board</a> to view their roadmap plan and
+                        dependencies here.</p>
+                </div>
+            }
+            else if (_showGraph)
+            {
+                <div class="overflow-auto rounded-lg border-[3px] border-slate-200 bg-slate-50 p-3">
+                    <svg class="min-h-[420px] min-w-full" viewBox="0 0 @_graphLayout.Width @_graphLayout.Height" role="img"
+                         aria-label="Feature dependency graph">
+                        <defs>
+                            <marker id="dependency-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4"
+                                    orient="auto">
+                                <path d="M0,0 L8,4 L0,8 z" fill="#64748b"/>
+                            </marker>
+                        </defs>
+                        @foreach (var edge in _graphLayout.Edges)
+                        {
+                            <path class="fill-none stroke-slate-500 [stroke-width:2]" d="@edge.Path" marker-end="url(#dependency-arrow)"/>
+                        }
+                        @foreach (var node in _graphLayout.Nodes)
+                        {
+                            <a href="@($"/boards/{BoardId}")" class="fill-white text-slate-800">
+                                <rect x="@node.X" y="@node.Y" width="@FeatureGraphLayout.NodeWidth"
+                                      height="@FeatureGraphLayout.NodeHeight" rx="8"/>
+                                <text x="@(node.X + 12)" y="@(node.Y + 28)">@node.Feature.Title</text>
+                                <text class="fill-slate-500 text-xs" x="@(node.X + 12)"
+                                      y="@(node.Y + 52)">@node.Feature.WorkflowColumn</text>
+                            </a>
+                        }
+                    </svg>
+                </div>
+            }
+            else
+            {
+                <div class="grid gap-5 sm:grid-cols-2">
+                    @foreach (var feature in _features)
                     {
-                        <p class="feature-requirements">@feature.Requirements</p>
-                    }
+                        var isUnmet = _unmetDependencyMap.GetValueOrDefault(feature.Id, false);
+                        var deps = _dependencyMap.GetValueOrDefault(feature.Id, []);
+                        var dependedOnBy = _dependedOnByMap.GetValueOrDefault(feature.Id, []);
+                        var run = _agentRuns.GetValueOrDefault(feature.Id);
+                        var isRework = feature.WorkflowColumn == WorkflowColumn.Build && ReviewOutcomeService.IsRework(feature);
+                        var hasIssue = ReviewOutcomeService.HasIssue(feature, _board);
 
-                    <!-- Dependencies Section -->
-                    <div class="dependency-block">
-                        <div class="dependency-header">
-                            <span class="dependency-title">Dependencies (@deps.Count)</span>
-                            @if (feature.WorkflowColumn == WorkflowColumn.Backlog)
-                            {
-                                <button class="btn btn-sm btn-outline-primary"
-                                        @onclick="() => ToggleAddDependencyForm(feature.Id)">
-                                    @(_activeAddDepFeatureId == feature.Id ? "Cancel" : "+ Add Dependency")
-                                </button>
-                            }
-                        </div>
-
-                        @if (_activeAddDepFeatureId == feature.Id)
-                        {
-                            <div class="add-dep-form">
-                                <select class="form-select form-select-sm" @bind="_selectedDependsOnFeatureId">
-                                    <option value="">Select feature this depends on...</option>
-                                    @foreach (var candidate in _features.Where(f => f.Id != feature.Id && !deps.Any(d => d.DependsOnFeatureId == f.Id)))
+                        <div
+                            class="flex flex-col gap-3 rounded-lg border-[3px] border-slate-200 bg-white p-4 shadow-sm @(feature.WorkflowColumn == WorkflowColumn.Done ? "border-emerald-300" : "")">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="flex min-w-0 flex-1 items-center gap-2">
+                                    <StatusIcon Status="@run?.Status"/>
+                                    <h3 class="truncate text-base font-semibold text-slate-800">@feature.Title</h3>
+                                </div>
+                                <div class="flex shrink-0 items-center gap-1.5">
+                            <span
+                                class="rounded bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700">@feature.WorkflowColumn</span>
+                                    @if (isRework)
                                     {
-                                        <option value="@candidate.Id">@candidate.Title (@candidate.WorkflowColumn)
-                                        </option>
+                                        <span class="rounded bg-orange-100 px-1.5 py-0.5 text-xs font-bold text-orange-700">Rework</span>
                                     }
-                                </select>
-                                <button class="btn btn-sm btn-success" @onclick="() => SaveDependency(feature.Id)"
-                                        disabled="@(_selectedDependsOnFeatureId == Guid.Empty)">
-                                    Add
-                                </button>
-                            </div>
-                        }
-
-                        @if (deps.Count == 0)
-                        {
-                            <span class="text-muted small">No prerequisites (root feature)</span>
-                        }
-                        else
-                        {
-                            <div class="dep-list">
-                                @foreach (var d in deps)
-                                {
-                                    var depFeat = _features.FirstOrDefault(f => f.Id == d.DependsOnFeatureId);
-                                    <div
-                                        class="dep-item @(depFeat?.WorkflowColumn == WorkflowColumn.Done ? "dep-satisfied" : "dep-pending")">
-                                        <span class="dep-dot"></span>
-                                        <span class="dep-name">@(depFeat?.Title ?? "Unknown")</span>
-                                        <span
-                                            class="dep-status">(@(depFeat?.WorkflowColumn.ToString() ?? "Unknown"))</span>
-
-                                        @if (feature.WorkflowColumn == WorkflowColumn.Backlog)
-                                        {
-                                            <button class="btn-remove-dep" title="Remove dependency"
-                                                    @onclick="() => RemoveDependency(feature.Id, d.DependsOnFeatureId)">
-                                                &times;
-                                            </button>
-                                        }
-                                    </div>
-                                }
-                            </div>
-                        }
-
-                        @if (dependedOnBy.Count > 0)
-                        {
-                            <div class="depended-by-section mt-2">
-                                <span class="dependency-title text-muted">Blocks:</span>
-                                <div class="dep-list">
-                                    @foreach (var blocker in dependedOnBy)
+                                    @if (hasIssue)
                                     {
-                                        <span class="dep-badge">@blocker.Title</span>
+                                        <span class="rounded bg-red-100 px-1.5 py-0.5 text-xs font-bold text-red-700">Issue</span>
                                     }
                                 </div>
                             </div>
-                        }
-                    </div>
 
-                    <!-- Dev Plan Steps Section -->
-                    @if (feature.Steps.Count > 0)
-                    {
-                        <div class="steps-plan-block">
-                            <div class="steps-header">
-                                <span
-                                    class="steps-count">Dev Plan: @feature.Steps.Count(s => s.WorkflowColumn == WorkflowColumn.Done) / @feature.Steps.Count completed</span>
-                            </div>
-                            <div class="steps-progress-bar">
-                                @{
-                                    var pct = feature.Steps.Count > 0 ? feature.Steps.Count(s => s.WorkflowColumn == WorkflowColumn.Done) * 100 / feature.Steps.Count : 0;
-                                }
-                                <div class="progress-fill" style="width: @pct%"></div>
-                            </div>
-                            <div class="nested-steps-list">
-                                @foreach (var step in feature.Steps.OrderBy(s => s.CreatedAt))
+                            @if (!string.IsNullOrWhiteSpace(feature.Requirements))
+                            {
+                                <p class="text-sm leading-6 text-slate-600">@feature.Requirements</p>
+                            }
+
+                            <!-- Dependencies Section -->
+                            <div class="rounded-md border-[3px] border-slate-200 bg-slate-50 p-3">
+                                <div class="flex items-center justify-between gap-3">
+                                    <span class="text-xs font-bold uppercase tracking-wide text-slate-500">Dependencies (@deps.Count)</span>
+                                    @if (feature.WorkflowColumn == WorkflowColumn.Backlog)
+                                    {
+                                        <button class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                                @onclick="() => ToggleAddDependencyForm(feature.Id)">
+                                            @(_activeAddDepFeatureId == feature.Id ? "Cancel" : "+ Add Dependency")
+                                        </button>
+                                    }
+                                </div>
+
+                                @if (_activeAddDepFeatureId == feature.Id)
                                 {
-                                    var stepRun = _stepRuns.GetValueOrDefault(step.Id);
-                                    <div class="nested-step-item">
-                                        <StatusIcon Status="@stepRun?.Status" IsMini="true"/>
-                                        <span class="nested-step-title">@step.Title</span>
-                                        <span class="nested-step-pill">@step.WorkflowColumn</span>
+                                    <div class="mt-3 flex items-center gap-2">
+                                        <select class="block w-full rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" @bind="_selectedDependsOnFeatureId">
+                                            <option value="">Select feature this depends on...</option>
+                                            @foreach (var candidate in _features.Where(f => f.Id != feature.Id && !deps.Any(d => d.DependsOnFeatureId == f.Id)))
+                                            {
+                                                <option
+                                                    value="@candidate.Id">@candidate.Title (@candidate.WorkflowColumn)
+                                                </option>
+                                            }
+                                        </select>
+                                        <button class="inline-flex items-center justify-center rounded-md border-[3px] border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-emerald-700 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                                @onclick="() => SaveDependency(feature.Id)"
+                                                disabled="@(_selectedDependsOnFeatureId == Guid.Empty)">
+                                            Add
+                                        </button>
+                                    </div>
+                                }
+
+                                @if (deps.Count == 0)
+                                {
+                                    <span class="text-xs text-slate-500">No prerequisites (root feature)</span>
+                                }
+                                else
+                                {
+                                        <div class="flex flex-wrap gap-2">
+                                        @foreach (var d in deps)
+                                        {
+                                            var depFeat = _features.FirstOrDefault(f => f.Id == d.DependsOnFeatureId);
+                                            <div
+                                                class="flex items-center gap-1.5 text-sm @(depFeat?.WorkflowColumn == WorkflowColumn.Done ? "text-emerald-700" : "text-amber-700")">
+                                                <span class="h-1.5 w-1.5 rounded-full bg-amber-400"></span>
+                                                <span class="font-medium text-slate-800">@(depFeat?.Title ?? "Unknown")</span>
+                                                <span
+                                                    class="text-xs text-slate-500">(@(depFeat?.WorkflowColumn.ToString() ?? "Unknown"))</span>
+
+                                                @if (feature.WorkflowColumn == WorkflowColumn.Backlog)
+                                                {
+                                                    <button class="inline-flex items-center justify-center rounded-md border-[3px] border-red-600 bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-red-700 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" title="Remove dependency"
+                                                            @onclick="() => RemoveDependency(feature.Id, d.DependsOnFeatureId)">
+                                                        &times;
+                                                    </button>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+
+                                @if (dependedOnBy.Count > 0)
+                                {
+                                    <div class="mt-2 grid gap-2">
+                                        <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Blocks:</span>
+                                        <div class="grid gap-2">
+                                            @foreach (var blocker in dependedOnBy)
+                                            {
+                                                <span class="inline-block rounded bg-slate-200 px-1.5 py-0.5 text-xs text-slate-700">@blocker.Title</span>
+                                            }
+                                        </div>
                                     </div>
                                 }
                             </div>
+
+                            <!-- Dev Plan Steps Section -->
+                            @if (feature.Steps.Count > 0)
+                            {
+                                <div class="border-t border-slate-200 pt-3">
+                                    <div class="mb-1 text-xs font-semibold text-slate-500">
+                                <span
+                                    class="text-xs text-slate-500">Dev Plan: @feature.Steps.Count(s => s.WorkflowColumn == WorkflowColumn.Done) / @feature.Steps.Count completed</span>
+                                    </div>
+                                    <div class="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                                        @{
+                                            var pct = feature.Steps.Count > 0 ? feature.Steps.Count(s => s.WorkflowColumn == WorkflowColumn.Done) * 100 / feature.Steps.Count : 0;
+                                        }
+                                        <div class="h-full rounded-full bg-emerald-500" style="width: @pct%"></div>
+                                    </div>
+                                    <div class="flex flex-col gap-1">
+                                        @foreach (var step in feature.Steps.OrderBy(s => s.CreatedAt))
+                                        {
+                                            var stepRun = _stepRuns.GetValueOrDefault(step.Id);
+                                            <div class="flex items-center gap-2 text-sm text-slate-700">
+                                                <StatusIcon Status="@stepRun?.Status" IsMini="true"/>
+                                                <span class="min-w-0 flex-1 truncate">@step.Title</span>
+                                                <span class="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">@step.WorkflowColumn</span>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
                         </div>
                     }
                 </div>
             }
+
+            @if (_isCreatingFeature)
+            {
+                <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+                     @onclick="CloseFeatureCreator">
+                    <div class="w-full max-w-2xl rounded-xl bg-white p-6 shadow-2xl" @onclick:stopPropagation="true">
+                        <div class="mb-4 flex items-center justify-between"><h2 class="text-xl font-semibold text-slate-900">New Feature</h2>
+                            <button class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-200 bg-slate-100 px-2 py-1 text-xl leading-none text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" @onclick="CloseFeatureCreator">&times;</button>
+                        </div>
+                        <form @onsubmit="CreateFeatureAsync" @onsubmit:preventDefault>
+                            <label>Title<input class="mt-1 block w-full rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" required @bind="_newFeatureTitle"/></label>
+                            <label>Requirements<textarea class="mt-1 block w-full rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" rows="3"
+                                                         @bind="_newFeatureRequirements"></textarea></label>
+                            <label>Acceptance criteria<textarea class="mt-1 block w-full rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" rows="3"
+                                                                @bind="_newFeatureAcceptanceCriteria"></textarea></label>
+                            <label>Solution notes<textarea class="mt-1 block w-full rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" rows="3"
+                                                           @bind="_newFeatureSuggestedSolution"></textarea></label>
+                            <div class="mt-5 flex justify-end gap-2.5">
+                                <button type="button" class="inline-flex items-center justify-center rounded-md border-[3px] border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" @onclick="CloseFeatureCreator">Cancel
+                                </button>
+                                <button class="inline-flex items-center justify-center rounded-md border-[3px] border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" type="submit">Create Feature</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            }
         </div>
-    }
-
-    @if (_isCreatingFeature)
-    {
-        <div class="modal-backdrop" @onclick="CloseFeatureCreator">
-            <div class="feature-modal" @onclick:stopPropagation="true">
-                <div class="dependency-header"><h2>New Feature</h2><button class="btn-dismiss" @onclick="CloseFeatureCreator">&times;</button></div>
-                <form @onsubmit="CreateFeatureAsync" @onsubmit:preventDefault>
-                    <label>Title<input class="form-control" required @bind="_newFeatureTitle" /></label>
-                    <label>Requirements<textarea class="form-control" rows="3" @bind="_newFeatureRequirements"></textarea></label>
-                    <label>Acceptance criteria<textarea class="form-control" rows="3" @bind="_newFeatureAcceptanceCriteria"></textarea></label>
-                    <label>Solution notes<textarea class="form-control" rows="3" @bind="_newFeatureSuggestedSolution"></textarea></label>
-                    <div class="form-actions"><button type="button" class="btn btn-secondary" @onclick="CloseFeatureCreator">Cancel</button><button class="btn btn-primary" type="submit">Create Feature</button></div>
-                </form>
-            </div>
-        </div>
-    }
-</div>
-
-<style>
-    .roadmap-page {
-        padding: 24px;
-        max-width: 1200px;
-        margin: 0 auto;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
-
-    .roadmap-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        margin-bottom: 24px;
-        border-bottom: 1px solid #e2e8f0;
-        padding-bottom: 16px;
-    }
-
-    .back-link {
-        display: inline-block;
-        font-size: 0.85rem;
-        color: #2563eb;
-        text-decoration: none;
-        margin-bottom: 6px;
-    }
-
-    .back-link:hover {
-        text-decoration: underline;
-    }
-
-    .page-title {
-        font-size: 1.75rem;
-        font-weight: 700;
-        color: #0f172a;
-        margin: 0;
-    }
-
-    .page-desc {
-        font-size: 0.9rem;
-        color: #64748b;
-        margin: 4px 0 0;
-    }
-
-    .header-right {
-        display: flex;
-        gap: 10px;
-    }
-
-    .roadmap-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-        gap: 20px;
-    }
-
-    .feature-node-card {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 16px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-    }
-
-    .feature-node-card.feature-done {
-        border-left: 4px solid #10b981;
-        background: #fbfdfc;
-    }
-
-    .feature-node-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        gap: 10px;
-    }
-
-    .feature-title-area {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex: 1;
-    }
-
-    .feature-title {
-        font-size: 1.05rem;
-        font-weight: 600;
-        color: #1e293b;
-        margin: 0;
-    }
-
-    .feature-badges {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-
-    .column-pill {
-        font-size: 0.72rem;
-        font-weight: 600;
-        padding: 2px 8px;
-        border-radius: 4px;
-        background: #e2e8f0;
-        color: #334155;
-    }
-
-    .pill-backlog {
-        background: #f1f5f9;
-        color: #475569;
-    }
-
-    .pill-ready {
-        background: #dbeafe;
-        color: #1d4ed8;
-    }
-
-    .pill-build {
-        background: #fef3c7;
-        color: #b45309;
-    }
-
-    .pill-agentreview {
-        background: #ede9fe;
-        color: #6d28d9;
-    }
-
-    .pill-humanreview {
-        background: #fae8ff;
-        color: #86198f;
-    }
-
-    .pill-done {
-        background: #dcfce7;
-        color: #15803d;
-    }
-
-    .badge {
-        font-size: 0.7rem;
-        font-weight: 700;
-        padding: 2px 6px;
-        border-radius: 4px;
-    }
-
-    .badge-rework {
-        background: #ffedd5;
-        color: #c2410c;
-    }
-
-    .badge-issue {
-        background: #fee2e2;
-        color: #b91c1c;
-    }
-
-    .feature-requirements {
-        font-size: 0.85rem;
-        color: #475569;
-        margin: 0;
-        line-height: 1.4;
-    }
-
-    .dependency-block {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 6px;
-        padding: 10px 12px;
-    }
-
-    .dependency-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 6px;
-    }
-
-    .dependency-title {
-        font-size: 0.78rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        color: #64748b;
-    }
-
-    .add-dep-form {
-        display: flex;
-        gap: 6px;
-        margin-bottom: 8px;
-    }
-
-    .dep-list {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-    }
-
-    .dep-item {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 0.82rem;
-    }
-
-    .dep-dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-    }
-
-    .dep-satisfied .dep-dot {
-        background: #10b981;
-    }
-
-    .dep-pending .dep-dot {
-        background: #f59e0b;
-    }
-
-    .dep-name {
-        font-weight: 500;
-        color: #1e293b;
-    }
-
-    .dep-status {
-        color: #64748b;
-        font-size: 0.75rem;
-    }
-
-    .btn-remove-dep {
-        background: none;
-        border: none;
-        color: #ef4444;
-        font-size: 1rem;
-        cursor: pointer;
-        margin-left: auto;
-        line-height: 1;
-    }
-
-    .dep-badge {
-        display: inline-block;
-        background: #e2e8f0;
-        color: #334155;
-        font-size: 0.75rem;
-        padding: 2px 6px;
-        border-radius: 4px;
-        margin-right: 4px;
-    }
-
-    .steps-plan-block {
-        border-top: 1px solid #e2e8f0;
-        padding-top: 10px;
-    }
-
-    .steps-header {
-        font-size: 0.78rem;
-        font-weight: 600;
-        color: #64748b;
-        margin-bottom: 4px;
-    }
-
-    .steps-progress-bar {
-        width: 100%;
-        height: 6px;
-        background: #e2e8f0;
-        border-radius: 3px;
-        overflow: hidden;
-        margin-bottom: 8px;
-    }
-
-    .progress-fill {
-        height: 100%;
-        background: #22c55e;
-        border-radius: 3px;
-    }
-
-    .nested-steps-list {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-    }
-
-    .nested-step-item {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 0.8rem;
-        color: #334155;
-    }
-
-    .nested-step-title {
-        flex: 1;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .nested-step-pill {
-        font-size: 0.7rem;
-        color: #64748b;
-        background: #f1f5f9;
-        padding: 1px 5px;
-        border-radius: 3px;
-    }
-
-    .alert {
-        padding: 10px 14px;
-        font-size: 0.85rem;
-        border-radius: 6px;
-        margin-bottom: 16px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    }
-
-    .alert-danger {
-        background: #fef2f2;
-        border: 1px solid #fee2e2;
-        color: #991b1b;
-    }
-
-    .alert-success {
-        background: #ecfdf5;
-        border: 1px solid #d1fae5;
-        color: #065f46;
-    }
-
-    .btn-dismiss {
-        background: none;
-        border: none;
-        font-size: 1.1rem;
-        cursor: pointer;
-        color: inherit;
-    }
-
-    .graph-scroll { overflow: auto; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; padding: 12px; }
-    .feature-graph { min-width: 100%; min-height: 420px; }
-    .graph-edge { fill: none; stroke: #64748b; stroke-width: 2; }
-    .graph-node rect { fill: white; stroke: #94a3b8; stroke-width: 2; }
-    .graph-node text { fill: #1e293b; font-size: 14px; font-weight: 600; }
-    .graph-node .graph-status { fill: #64748b; font-size: 11px; font-weight: 400; }
-    .modal-backdrop { position: fixed; inset: 0; z-index: 1100; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(15,23,42,.6); }
-    .feature-modal { width: min(620px, 100%); background: white; border-radius: 12px; padding: 22px; box-shadow: 0 20px 40px rgba(15,23,42,.2); }
-    .feature-modal form { display: grid; gap: 12px; }
-    .feature-modal label { display: grid; gap: 5px; font-weight: 600; color: #334155; }
-    .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
-</style>
+    </ChildContent>
+</PageTemplate>
 
 @code {
     [Parameter] public Guid BoardId { get; set; }
@@ -604,6 +275,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _showGraph = Navigation.Uri.Contains("view=graph", StringComparison.OrdinalIgnoreCase);
         await LoadRoadmapAsync();
     }
 

@@ -72,9 +72,6 @@ namespace AgentTaskHarness.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid>("BoardId")
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("Instructions")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -94,8 +91,7 @@ namespace AgentTaskHarness.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("BoardId", "Name")
-                        .IsUnique();
+                    b.HasIndex("Name");
 
                     b.ToTable("AgentDefinitions");
                 });
@@ -409,17 +405,6 @@ namespace AgentTaskHarness.Infrastructure.Persistence.Migrations
                     b.Navigation("Board");
                 });
 
-            modelBuilder.Entity("AgentTaskHarness.Domain.Entities.AgentDefinition", b =>
-                {
-                    b.HasOne("AgentTaskHarness.Domain.Entities.Board", "Board")
-                        .WithMany("AgentDefinitions")
-                        .HasForeignKey("BoardId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Board");
-                });
-
             modelBuilder.Entity("AgentTaskHarness.Domain.Entities.AgentDefinitionComponent", b =>
                 {
                     b.HasOne("AgentTaskHarness.Domain.Entities.AgentDefinition", "AgentDefinition")
@@ -513,8 +498,6 @@ namespace AgentTaskHarness.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("AgentTaskHarness.Domain.Entities.Board", b =>
                 {
-                    b.Navigation("AgentDefinitions");
-
                     b.Navigation("ColumnAssignments");
 
                     b.Navigation("Features");
