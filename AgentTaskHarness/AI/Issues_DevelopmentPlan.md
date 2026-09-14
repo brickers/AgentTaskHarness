@@ -19,11 +19,11 @@ This plan breaks down the 15 issues from `Issues.md` into logical, manageable ph
 | **Phase 3: Validation, Paths & Drag-and-Drop** | 1. Fix Browser Folder Selection | **Completed** | Removed the browser-only folder picker; users enter the server-visible repository path directly. |
 | | 2. Git Repository Validation | **Completed** | Board creation and updates reject paths that are not existing valid Git repositories. |
 | | 3. Kanban Drag and Drop | **Completed** | HTML5 drag-and-drop with valid/invalid destination highlights. |
-| **Phase 4: Roadmap & Dependencies** | 1. Create Features on Roadmap | **Not Completed** | No "Create Feature" button or form on `Roadmap.razor`. |
-| | 2. Feature Dependencies (Backend & UI) | **Partially Completed** | Backend & Roadmap UI done; missing on `CardPopup.razor`. |
-| | 3. Dependency Graph/Visualization | **Partially Completed** | `FeatureGraphLayout.cs` drafted, but not wired into `Roadmap.razor`. |
-| **Phase 5: Agent Automation & OS Integrations** | 1. Workflow Pipeline Triggers | **Partially Completed** | Moving Steps to Build queues agents; Feature to Build does not auto-advance Steps. |
-| | 2. OS Copilot Integration & Window Links | **Not Completed** | Registered as `NoOpAgentProcessRunner`; no macOS/AppleScript trigger or window links. |
+| **Phase 4: Roadmap & Dependencies** | 1. Create Features on Roadmap | **Completed** | Roadmap includes a feature creation modal with title, requirements, acceptance criteria, and solution notes. |
+| | 2. Feature Dependencies (Backend & UI) | **Completed** | Dependency management is available in both the roadmap cards and feature details popup. |
+| | 3. Dependency Graph/Visualization | **Completed** | Roadmap renders the `FeatureGraphLayout` SVG DAG and supports Graph/Card view toggling. |
+| **Phase 5: Agent Automation & OS Integrations** | 1. Workflow Pipeline Triggers | **Completed** | Feature-to-Build now advances the first dependency-ready Step and queues it; a hosted worker continuously processes queues with the real runner. |
+| | 2. OS Copilot Integration & Window Links | **Completed** | Uses the Copilot CLI runner by default, supports macOS Terminal/AppleScript launching, and exposes a `copilot://` agent-window link. |
 
 ---
 
@@ -112,7 +112,7 @@ This plan breaks down the 15 issues from `Issues.md` into logical, manageable ph
 
 ---
 
-## Phase 4: Roadmap & Dependencies (Partially Completed)
+## Phase 4: Roadmap & Dependencies (Completed)
 
 *Adding higher-level project management features.*
 
@@ -147,29 +147,20 @@ This plan breaks down the 15 issues from `Issues.md` into logical, manageable ph
 
 ---
 
-## Phase 5: Agent Automation & OS Integrations (Incomplete)
+## Phase 5: Agent Automation & OS Integrations (Completed)
 
 *Completing the closed loop with the physical OS agents.*
 
 1. **Workflow Pipeline Triggers**
-    - **Status**: **Partially Completed**
+    - **Status**: **Completed**
     - **Target**: Stage transition services (`StepTransitionOrchestrator.cs`, `FeatureTransitionOrchestrator.cs`).
     - **Action**: Wire up the logic so that moving a feature and its steps into 'Ready' -> 'Build' triggers the assigned agent automatically in the backend worker process. The UI should reflect the status change visually (e.g., "Queued" -> "Agent Working...").
-    - **Current State**:
-        - Moving a Step into `Build` or `AgentReview` triggers `AgentScheduler.RequestStartAsync`, and moving the first step into Build auto-advances the Feature from `Ready` to `Build`. The UI displays status dots ("Queued", "Working").
-        - Moving a Feature into `Build` does not automatically transition its child steps into `Build` or trigger their agents.
-        - Background execution uses `NoOpAgentProcessRunner`, so tasks transition to "Working" without executing real work.
-    - **Remaining Work**:
-        - Support auto-advancing the first eligible Step when a Feature is moved to `Build`.
-        - Connect real agent process runners to the background scheduler loop.
+    - **Implementation**: Feature transitions to `Build` now advance the first dependency-ready `Ready` step to `Build` and request its assigned agent. `AgentSchedulerWorker` re-evaluates every board queue on a five-second interval, while direct step transitions continue to start work immediately. Failed process launches are recorded as failed runs instead of falsely showing as working.
+
 
 2. **OS Copilot Integration & Window Links**
-    - **Status**: **Not Completed**
+    - **Status**: **Completed**
     - **Target**: Agent execution handler (`CopilotCliProcessRunner.cs`) & UI bindings (`StepCard.razor`).
     - **Action**: Use local OS scripting (e.g., AppleScript / external process triggers via `.NET` `Process.Start()`) or the assigned MCP tools to physically trigger the copilot application in macOS.
     - **Action**: Render an "Open Agent Window" link on the task card in the UI when an agent claims a task.
-    - **Current State**: `Program.cs` registers `NoOpAgentProcessRunner`. `CopilotCliProcessRunner` starts copilot CLI headlessly (`CreateNoWindow = true`) without OS application integration or AppleScript terminal spawning. The "Live CLI" link in `StepCard.razor` checks `CurrentRun.SessionLink`, which is null by default.
-    - **Remaining Work**:
-        - Implement macOS process spawning (e.g., via AppleScript `tell application "Terminal" to do script ...` or opening the desktop copilot GUI app).
-        - Expose a real session URL or OS deep-link in `AgentRun.SessionLink`.
-        - Update `StepCard.razor` and `FeatureCard.razor` with an "Open Agent Window" link.
+    - **Implementation**: `Program.cs` registers `CopilotCliProcessRunner` as the default runner. It launches the CLI headlessly by default with safe `ArgumentList` handling, and on macOS launches a Terminal window when `AGENT_TASK_HARNESS_OPEN_TERMINAL=true`. Runs expose a `copilot://session/{id}` deep link, rendered as **Open Agent Window** on step, feature, and popup views.

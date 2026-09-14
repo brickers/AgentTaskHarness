@@ -4,6 +4,7 @@
 
 @inject AppDbContext DbContext
 @inject FeatureDependencyService FeatureDependencyService
+@inject FeatureService FeatureService
 @inject ReviewOutcomeService ReviewOutcomeService
 @inject IAgentScheduler AgentScheduler
 @inject NavigationManager Navigation
@@ -18,6 +19,8 @@
             <p class="page-desc">Computed dependency tree and delivery plan for features on this board.</p>
         </div>
         <div class="header-right">
+            <button class="btn btn-primary" @onclick="OpenFeatureCreator">+ New Feature</button>
+            <button class="btn btn-outline-primary" @onclick="ToggleGraphView">@(_showGraph ? "Card View" : "Graph View")</button>
             <a href="@($"/boards/{BoardId}")" class="btn btn-primary">Kanban Board</a>
             <a href="@($"/boards/{BoardId}/agents")" class="btn btn-outline-secondary">Agents</a>
         </div>
@@ -49,6 +52,30 @@
             <h3>No features created yet</h3>
             <p>Create features on the <a href="@($"/boards/{BoardId}")">Board</a> to view their roadmap plan and
                 dependencies here.</p>
+        </div>
+    }
+    else if (_showGraph)
+    {
+        <div class="graph-scroll">
+            <svg class="feature-graph" viewBox="0 0 @_graphLayout.Width @_graphLayout.Height" role="img" aria-label="Feature dependency graph">
+                <defs>
+                    <marker id="dependency-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                        <path d="M0,0 L8,4 L0,8 z" fill="#64748b" />
+                    </marker>
+                </defs>
+                @foreach (var edge in _graphLayout.Edges)
+                {
+                    <path class="graph-edge" d="@edge.Path" marker-end="url(#dependency-arrow)" />
+                }
+                @foreach (var node in _graphLayout.Nodes)
+                {
+                    <a href="@($"/boards/{BoardId}")" class="graph-node">
+                        <rect x="@node.X" y="@node.Y" width="@FeatureGraphLayout.NodeWidth" height="@FeatureGraphLayout.NodeHeight" rx="8" />
+                        <text x="@(node.X + 12)" y="@(node.Y + 28)">@node.Feature.Title</text>
+                        <text class="graph-status" x="@(node.X + 12)" y="@(node.Y + 52)">@node.Feature.WorkflowColumn</text>
+                    </a>
+                }
+            </svg>
         </div>
     }
     else
@@ -191,6 +218,22 @@
                     }
                 </div>
             }
+        </div>
+    }
+
+    @if (_isCreatingFeature)
+    {
+        <div class="modal-backdrop" @onclick="CloseFeatureCreator">
+            <div class="feature-modal" @onclick:stopPropagation="true">
+                <div class="dependency-header"><h2>New Feature</h2><button class="btn-dismiss" @onclick="CloseFeatureCreator">&times;</button></div>
+                <form @onsubmit="CreateFeatureAsync" @onsubmit:preventDefault>
+                    <label>Title<input class="form-control" required @bind="_newFeatureTitle" /></label>
+                    <label>Requirements<textarea class="form-control" rows="3" @bind="_newFeatureRequirements"></textarea></label>
+                    <label>Acceptance criteria<textarea class="form-control" rows="3" @bind="_newFeatureAcceptanceCriteria"></textarea></label>
+                    <label>Solution notes<textarea class="form-control" rows="3" @bind="_newFeatureSuggestedSolution"></textarea></label>
+                    <div class="form-actions"><button type="button" class="btn btn-secondary" @onclick="CloseFeatureCreator">Cancel</button><button class="btn btn-primary" type="submit">Create Feature</button></div>
+                </form>
+            </div>
         </div>
     }
 </div>
@@ -523,6 +566,18 @@
         cursor: pointer;
         color: inherit;
     }
+
+    .graph-scroll { overflow: auto; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; padding: 12px; }
+    .feature-graph { min-width: 100%; min-height: 420px; }
+    .graph-edge { fill: none; stroke: #64748b; stroke-width: 2; }
+    .graph-node rect { fill: white; stroke: #94a3b8; stroke-width: 2; }
+    .graph-node text { fill: #1e293b; font-size: 14px; font-weight: 600; }
+    .graph-node .graph-status { fill: #64748b; font-size: 11px; font-weight: 400; }
+    .modal-backdrop { position: fixed; inset: 0; z-index: 1100; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(15,23,42,.6); }
+    .feature-modal { width: min(620px, 100%); background: white; border-radius: 12px; padding: 22px; box-shadow: 0 20px 40px rgba(15,23,42,.2); }
+    .feature-modal form { display: grid; gap: 12px; }
+    .feature-modal label { display: grid; gap: 5px; font-weight: 600; color: #334155; }
+    .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 </style>
 
 @code {
@@ -535,6 +590,13 @@
     private Dictionary<Guid, bool> _unmetDependencyMap = [];
     private Dictionary<Guid, AgentRun> _agentRuns = [];
     private Dictionary<Guid, AgentRun> _stepRuns = [];
+    private FeatureGraphLayout _graphLayout = FeatureGraphLayout.Create([], []);
+    private bool _showGraph;
+    private bool _isCreatingFeature;
+    private string _newFeatureTitle = "";
+    private string _newFeatureRequirements = "";
+    private string _newFeatureAcceptanceCriteria = "";
+    private string _newFeatureSuggestedSolution = "";
     private string? _errorMessage;
     private string? _successMessage;
     private Guid? _activeAddDepFeatureId;
@@ -575,6 +637,7 @@
             _dependencyMap = allDependencies
                 .GroupBy(d => d.FeatureId)
                 .ToDictionary(g => g.Key, g => g.ToList());
+            _graphLayout = FeatureGraphLayout.Create(_features, allDependencies);
 
             _dependedOnByMap = featureIds.ToDictionary(
                 fId => fId,
@@ -606,6 +669,29 @@
                 .Where(r => r.CardType == CardType.Step)
                 .GroupBy(r => r.CardId)
                 .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.StartedAt).First());
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private void OpenFeatureCreator() => _isCreatingFeature = true;
+
+    private void CloseFeatureCreator() => _isCreatingFeature = false;
+
+    private void ToggleGraphView() => _showGraph = !_showGraph;
+
+    private async Task CreateFeatureAsync()
+    {
+        try
+        {
+            await FeatureService.CreateAsync(BoardId, _newFeatureTitle, _newFeatureRequirements,
+                _newFeatureAcceptanceCriteria, _newFeatureSuggestedSolution);
+            _newFeatureTitle = _newFeatureRequirements = _newFeatureAcceptanceCriteria = _newFeatureSuggestedSolution = "";
+            CloseFeatureCreator();
+            _successMessage = "Feature created.";
+            await LoadRoadmapAsync();
         }
         catch (Exception ex)
         {

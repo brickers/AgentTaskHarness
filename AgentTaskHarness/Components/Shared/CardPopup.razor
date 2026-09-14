@@ -1,4 +1,5 @@
 @using AgentTaskHarness.Infrastructure.Persistence
+@using Microsoft.EntityFrameworkCore
 @inject AppDbContext DbContext
 @inject FeatureTransitionOrchestrator FeatureOrchestrator
 @inject StepTransitionOrchestrator StepOrchestrator
@@ -6,6 +7,7 @@
 @inject ReviewOutcomeService ReviewOutcomeService
 @inject UsageTrackingService UsageTrackingService
 @inject CommentService CommentService
+@inject FeatureDependencyService FeatureDependencyService
 
 <div class="popup-backdrop" @onclick="HandleBackdropClick">
     <div class="popup-container" @onclick:stopPropagation="true">
@@ -85,7 +87,7 @@
                         {
                             <a href="@CurrentRun.SessionLink" target="_blank" rel="noreferrer noopener"
                                class="session-link-button">
-                                Open Live Copilot CLI Session &nearr;
+                                Open Agent Window &nearr;
                             </a>
                         }
                     </div>
@@ -96,6 +98,10 @@
                 <button class="nav-tab @(_activeTab == "details" ? "active" : "")"
                         @onclick='() => _activeTab = "details"'>Details
                 </button>
+                @if (IsFeature)
+                {
+                    <button class="nav-tab @(_activeTab == "dependencies" ? "active" : "")" @onclick='() => _activeTab = "dependencies"'>Dependencies</button>
+                }
                 <button class="nav-tab @(_activeTab == "moves" ? "active" : "")" @onclick='() => _activeTab = "moves"'>
                     Available Moves
                 </button>
@@ -237,6 +243,39 @@
                                 <span>Always require human review (overrides board-level skip)</span>
                             </label>
                         </div>
+                    </div>
+                }
+                else if (_activeTab == "dependencies")
+                {
+                    <div class="tab-panel">
+                        <p class="tab-subtitle">Prerequisites for this feature. Dependencies can only be changed while it is in Backlog.</p>
+                        @if (_featureDependencies.Count == 0)
+                        {
+                            <p class="text-muted">No dependencies.</p>
+                        }
+                        else
+                        {
+                            <div class="dep-list">
+                                @foreach (var dependency in _featureDependencies)
+                                {
+                                    <div class="dep-item"><span>@dependency.DependsOnFeature.Title</span><span class="dep-status">(@dependency.DependsOnFeature.WorkflowColumn)</span>
+                                        @if (CurrentColumn == WorkflowColumn.Backlog)
+                                        { <button class="btn-remove-dep" @onclick="() => RemoveFeatureDependency(dependency.DependsOnFeatureId)">&times;</button> }
+                                    </div>
+                                }
+                            </div>
+                        }
+                        @if (CurrentColumn == WorkflowColumn.Backlog)
+                        {
+                            <div class="add-dep-form mt-3">
+                                <select class="form-select" @bind="_selectedDependencyId">
+                                    <option value="">Select prerequisite...</option>
+                                    @foreach (var candidate in _dependencyCandidates)
+                                    { <option value="@candidate.Id">@candidate.Title (@candidate.WorkflowColumn)</option> }
+                                </select>
+                                <button class="btn btn-primary" disabled="@(_selectedDependencyId == Guid.Empty)" @onclick="AddFeatureDependency">Add</button>
+                            </div>
+                        }
                     </div>
                 }
                 else if (_activeTab == "moves")
@@ -958,6 +997,9 @@
     private string? _successMessage;
     private List<WorkflowColumn> _allowedMoves = [];
     private List<Comment> _comments = [];
+    private List<FeatureDependency> _featureDependencies = [];
+    private List<Feature> _dependencyCandidates = [];
+    private Guid _selectedDependencyId;
     private QualitySignals? _qualitySignals;
     private string _newCommentAuthor = "User";
     private string _newCommentBody = "";
@@ -1004,6 +1046,11 @@
             // Load allowed moves
             if (IsFeature)
             {
+                _featureDependencies = await FeatureDependencyService.GetForFeatureAsync(Feature!.Id);
+                var existingIds = _featureDependencies.Select(d => d.DependsOnFeatureId).ToHashSet();
+                _dependencyCandidates = await DbContext.Features.AsNoTracking()
+                    .Where(f => f.BoardId == Feature.BoardId && f.Id != Feature.Id && !existingIds.Contains(f.Id))
+                    .OrderBy(f => f.Title).ToListAsync();
                 var moves = await FeatureOrchestrator.GetAllowedMovesAsync(Feature!.Id);
                 _allowedMoves = moves.ToList();
                 _featureSummary = await UsageTrackingService.GetFeatureSummaryAsync(Feature.Id);
@@ -1149,6 +1196,33 @@
 
         await DbContext.SaveChangesAsync();
         await OnChanged.InvokeAsync();
+    }
+
+    private async Task AddFeatureDependency()
+    {
+        if (!IsFeature || _selectedDependencyId == Guid.Empty) return;
+        try
+        {
+            await FeatureDependencyService.AddAsync(Feature!.Id, _selectedDependencyId);
+            _selectedDependencyId = Guid.Empty;
+            _successMessage = "Dependency added.";
+            await RefreshDataAsync();
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { _errorMessage = ex.Message; }
+    }
+
+    private async Task RemoveFeatureDependency(Guid dependencyId)
+    {
+        if (!IsFeature) return;
+        try
+        {
+            await FeatureDependencyService.RemoveAsync(Feature!.Id, dependencyId);
+            _successMessage = "Dependency removed.";
+            await RefreshDataAsync();
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { _errorMessage = ex.Message; }
     }
 
     private async Task AddComment()

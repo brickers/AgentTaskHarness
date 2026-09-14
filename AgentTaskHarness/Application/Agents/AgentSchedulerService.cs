@@ -269,10 +269,18 @@ public class AgentSchedulerService(
 		foreach (var candidate in toStart)
 		{
 			var result = await processRunner.StartAsync(candidate.Step, candidate.AgentDef, cancellationToken);
-			candidate.Run.Status = AgentRunStatus.Working;
 			candidate.Run.ProcessId = result.ProcessId;
 			candidate.Run.SessionLink = result.SessionLink;
 			candidate.Run.StartedAt = DateTimeOffset.UtcNow;
+			if (result.ProcessId.HasValue)
+			{
+				candidate.Run.Status = AgentRunStatus.Working;
+			}
+			else
+			{
+				candidate.Run.Status = AgentRunStatus.Failed;
+				candidate.Run.EndedAt = DateTimeOffset.UtcNow;
+			}
 		}
 
 		await dbContext.SaveChangesAsync(cancellationToken);

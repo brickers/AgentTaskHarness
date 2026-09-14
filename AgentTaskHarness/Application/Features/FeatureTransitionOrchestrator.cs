@@ -1,5 +1,7 @@
 using AgentTaskHarness.Application.Abstractions;
+using AgentTaskHarness.Application.Agents;
 using AgentTaskHarness.Application.Reviews;
+using AgentTaskHarness.Application.Steps;
 using AgentTaskHarness.Application.Workflow;
 using AgentTaskHarness.Domain.Entities;
 using AgentTaskHarness.Domain.Enums;
@@ -14,7 +16,9 @@ public class FeatureTransitionOrchestrator(
 	WorkflowTransitionRules rules,
 	FeatureDependencyService dependencyService,
 	ReviewOutcomeService reviewOutcomeService,
-	IGitWorktreeService? gitWorktrees = null)
+	IGitWorktreeService? gitWorktrees = null,
+	IAgentScheduler? agentScheduler = null,
+	StepDependencyService? stepDependencyService = null)
 {
 	private readonly IGitWorktreeService _gitWorktrees = gitWorktrees ?? new NoOpGitWorktreeService();
 
@@ -110,6 +114,26 @@ public class FeatureTransitionOrchestrator(
 
 		reviewOutcomeService.HandleTransition(feature, previousColumn, effectiveTarget);
 
+		var stepsToStart = new List<Guid>();
+		if (effectiveTarget == WorkflowColumn.Build && agentScheduler is not null)
+		{
+			var eligibleSteps = await dbContext.Steps
+				.Where(s => s.FeatureId == featureId && s.WorkflowColumn == WorkflowColumn.Ready)
+				.OrderBy(s => s.CreatedAt)
+				.ToListAsync(cancellationToken);
+
+			foreach (var step in eligibleSteps)
+			{
+				if (stepDependencyService is not null &&
+					!await stepDependencyService.AreDependenciesMetAsync(step.Id, cancellationToken))
+					continue;
+
+				step.WorkflowColumn = WorkflowColumn.Build;
+				stepsToStart.Add(step.Id);
+				break;
+			}
+		}
+
 		// Once a Feature successfully moves to Ready, all of its Steps are moved to Ready together as one batch
 		if (previousColumn == WorkflowColumn.Backlog && effectiveTarget == WorkflowColumn.Ready)
 		{
@@ -130,6 +154,10 @@ public class FeatureTransitionOrchestrator(
 			});
 
 		await dbContext.SaveChangesAsync(cancellationToken);
+
+		foreach (var stepId in stepsToStart)
+			await agentScheduler!.RequestStartAsync(stepId, cancellationToken);
+
 		return feature;
 	}
 

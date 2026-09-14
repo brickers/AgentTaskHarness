@@ -36,18 +36,15 @@ public class CopilotCliProcessRunner(GitGuardShimWriter shimWriter) : IAgentProc
 
 		var process = new Process();
 		var sessionId = Guid.NewGuid().ToString("N");
-		var sessionLink = $"http://localhost:5000/sessions/{sessionId}";
+		var sessionLink = $"copilot://session/{sessionId}";
+		var prompt = BuildAgentPrompt(definition);
+		var useTerminalApp = OperatingSystem.IsMacOS() &&
+		                     string.Equals(Environment.GetEnvironmentVariable("AGENT_TASK_HARNESS_OPEN_TERMINAL"), "true",
+			                     StringComparison.OrdinalIgnoreCase);
 
-		process.StartInfo = new ProcessStartInfo
-		{
-			FileName = "copilot",
-			Arguments = $"--prompt {QuoteArgument(BuildAgentPrompt(definition))} --worktree {QuoteArgument(workingDirectory)} --session {sessionId}",
-			WorkingDirectory = workingDirectory,
-			UseShellExecute = false,
-			RedirectStandardOutput = true,
-			RedirectStandardError = true,
-			CreateNoWindow = true
-		};
+		process.StartInfo = useTerminalApp
+			? BuildTerminalStartInfo(prompt, workingDirectory, sessionId, shimDir)
+			: BuildHeadlessStartInfo(prompt, workingDirectory, sessionId);
 
 		// Prepend git guard shim directory to PATH
 		var existingPath = Environment.GetEnvironmentVariable("PATH") ?? "";
@@ -79,6 +76,42 @@ public class CopilotCliProcessRunner(GitGuardShimWriter shimWriter) : IAgentProc
 		return Task.FromResult(new AgentProcessResult(processId, sessionLink));
 	}
 
+	private static ProcessStartInfo BuildHeadlessStartInfo(string prompt, string workingDirectory, string sessionId)
+	{
+		var startInfo = new ProcessStartInfo
+		{
+			FileName = "copilot",
+			WorkingDirectory = workingDirectory,
+			UseShellExecute = false,
+			RedirectStandardOutput = true,
+			RedirectStandardError = true,
+			CreateNoWindow = true
+		};
+		startInfo.ArgumentList.Add("--prompt");
+		startInfo.ArgumentList.Add(prompt);
+		startInfo.ArgumentList.Add("--worktree");
+		startInfo.ArgumentList.Add(workingDirectory);
+		startInfo.ArgumentList.Add("--session");
+		startInfo.ArgumentList.Add(sessionId);
+		return startInfo;
+	}
+
+	private static ProcessStartInfo BuildTerminalStartInfo(string prompt, string workingDirectory, string sessionId,
+		string shimDir)
+	{
+		var command = $"export PATH={ShellQuote(shimDir)}:$PATH && cd {ShellQuote(workingDirectory)} && copilot --prompt {ShellQuote(prompt)} --worktree {ShellQuote(workingDirectory)} --session {ShellQuote(sessionId)}";
+		var script = $"tell application \"Terminal\" to do script \"{AppleScriptQuote(command)}\"";
+		var startInfo = new ProcessStartInfo
+		{
+			FileName = "osascript",
+			UseShellExecute = false,
+			CreateNoWindow = true
+		};
+		startInfo.ArgumentList.Add("-e");
+		startInfo.ArgumentList.Add(script);
+		return startInfo;
+	}
+
 	private static string BuildAgentPrompt(AgentDefinition definition)
 	{
 		var parts = new[] { definition.Prompt, definition.Instructions, definition.ToolConfiguration }
@@ -86,7 +119,8 @@ public class CopilotCliProcessRunner(GitGuardShimWriter shimWriter) : IAgentProc
 		return string.Join(Environment.NewLine + Environment.NewLine, parts);
 	}
 
-	private static string QuoteArgument(string value) => $"\\\"{value.Replace("\\\"", "\\\\\\\"")}\\\"";
+	private static string ShellQuote(string value) => $"'{value.Replace("'", "'\\\"'\\\"'")}'";
+	private static string AppleScriptQuote(string value) => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
 	public Task StopAsync(int processId, CancellationToken cancellationToken = default)
 	{

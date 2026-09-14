@@ -37,9 +37,9 @@ builder.Services.AddScoped<AgentDefinitionService>();
 builder.Services.AddScoped<AgentMatchingService>();
 builder.Services.AddScoped<IGitWorktreeService, LibGit2WorktreeService>();
 builder.Services.AddSingleton<GitGuardShimWriter>();
-builder.Services.AddScoped<CopilotCliProcessRunner>();
-builder.Services.AddScoped<IAgentProcessRunner, NoOpAgentProcessRunner>();
+builder.Services.AddScoped<IAgentProcessRunner, CopilotCliProcessRunner>();
 builder.Services.AddScoped<IAgentScheduler, AgentSchedulerService>();
+builder.Services.AddHostedService<AgentSchedulerWorker>();
 builder.Services.AddScoped<UsageTrackingService>();
 
 builder.Services.AddScoped<BoardMcpTools>();
