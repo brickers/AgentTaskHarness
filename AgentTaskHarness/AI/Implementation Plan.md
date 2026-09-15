@@ -1,404 +1,491 @@
-# Agent Task Harness Implementation Plan
-
-# Requirements
-
-Requirements are available in the [Solution Design](Solution%20Design.md) document. This implementation plan is a
-step-by-step guide to building the system described there.
-
-# Technical Design
-
-### Current State
-
-Delivery Steps 1–14 below are ✅ **Completed** — they shipped EF Core+SQLite persistence for the original generic
-`Board`/`Column`/`TaskItem` model (+ CRUD services), the Kanban UI with a generic column-transition orchestrator, a
-single-level LibGit2Sharp worktree/merge lifecycle, and agent-definition composition with an on-save folder writer.
-`Solution Design.md` has since been substantially expanded (Roadmap → Board → Feature → Step hierarchy, a fixed
-non-configurable six-column workflow, Feature/Step dependency scoping, review-outcome counters/thresholds, comments,
-agent matching criteria, a Step-only scheduler with prioritization, curated MCP named actions, cost/quality tracking,
-and a combined drag-and-drop UI). The original Steps 5–6 (generic agent scheduler + generic MCP move/get-allowed-moves)
-were never implemented; Delivery Steps 5–14 below replace them wholesale and carry the system the rest of the way to the
-current Solution Design. The configurable `Column` entity and flat `TaskItem`/`TaskDependency` built in Steps 1–2 are
-retired as part of Step 5 (see the superseded-by notes on those steps).
-
-### Key Decisions (confirmed with stakeholder)
-
-1. **Persistence: EF Core + SQLite** (code-first models + migrations) — chosen over Dapper/raw ADO.NET for easiest
-   schema evolution and clean DI integration; unchanged by the hierarchy redesign.
-2. **Git operations: LibGit2Sharp** — a managed .NET API for branch/worktree creation, commit, and merge; reworked in
-   Step 9 for two-level branching (Feature off `main`, Step off its Feature's branch) but the library choice is
-   unchanged.
-3. **MCP implementation: official ModelContextProtocol C# SDK**, hosted **in-process** in the same ASP.NET Core app as
-   the Blazor UI — both surfaces call the same application services, guaranteeing one consistent set of business rules
-   and avoiding multi-process SQLite contention.
-4. **Cross-module wiring: explicit orchestrators, not a pub/sub event bus.** Retained principle from the original
-   design; now split into `FeatureTransitionOrchestrator`/`StepTransitionOrchestrator`, each calling
-   `IGitWorktreeService`, `IAgentScheduler` (Step only), and persistence directly and in a defined order, while both are
-   composed around a shared `WorkflowTransitionRules` service (see decision 5) rather than inheriting from a common
-   base.
-5. **Feature/Step modeling — composition over inheritance.** `Feature` and `Step` are separate entities/tables (no
-   shared base class or interface hierarchy). Shared concerns are expressed as reusable, composed pieces: a
-   `WorkflowColumn` enum property on each, a shared `Comment` table keyed by `(CardType, CardId)`, and the stateless
-   `WorkflowTransitionRules` service that both orchestrators call into (composed via DI).
-6. **Fixed workflow — hardcoded enum, not a table.** The configurable `Column` entity from Step 1 is retired entirely;
-   `Feature`/`Step` get a `WorkflowColumn` enum (`Backlog, Ready, Build, AgentReview, HumanReview, Done`). This matches
-   "columns cannot be created/removed/reordered" exactly and removes the column-CRUD UI built in Step 2.
-7. **Agent assignment moves from Column FK to column-scope + criteria.**
-   `AgentColumnAssignment(BoardId, ColumnScope, AgentDefinitionId, MatchCriteria)` replaces the old
-   `Column.AgentDefinitionId`, where `ColumnScope ∈ {StepBuild, StepAgentReview, FeatureAgentReview}` — a Feature's
-   Build column can never be assigned.
-8. **Scheduler only ever starts Steps.** `AgentSchedulerService` (superseding the original dedicated-scheduler decision)
-   picks and starts eligible Steps (Ready + dependencies met) using a simple, tunable prioritization score (progress,
-   remaining work, age); a Feature entering Build/Agent Review is always a side effect of its Steps, driven by
-   `StepTransitionOrchestrator` calling into `FeatureTransitionOrchestrator`, never scheduler-initiated.
-9. **MCP exposes curated named actions, not raw moves.** `start_build`, `submit_for_review`, `approve_review`,
-   `fail_review`, `send_to_backlog` each map to one orchestrator call (with `fail_review` also incrementing the relevant
-   counter); MCP-driven column changes use the soft "blocked: previous agent still active" flag, while the UI
-   hard-blocks moving a card whose agent is running — this asymmetry is intentional.
-
-### Proposed Architecture
-
-Layered, single-project structure (matches the existing single `.csproj`):
-
-- **Domain**: plain entities/enums, no framework dependencies. `Roadmap` is a computed view over a board's Features (no
-  dedicated table).
-- **Application**: `FeatureService`/`StepService`, `FeatureTransitionOrchestrator`/`StepTransitionOrchestrator` composed
-  around shared `WorkflowTransitionRules`, `FeatureDependencyService`/`StepDependencyService`, `CommentService`,
-  `ReviewOutcomeService`, `AgentMatchingService`, reworked `AgentSchedulerService`, `UsageTrackingService`.
-- **Infrastructure**: EF Core `AppDbContext`, `LibGit2WorktreeService` reworked for two-level branching, `copilot` CLI
-  process runner, `BoardMcpTools` (curated actions) — implements the Application-layer abstractions.
-- **Web (Components)**: Roadmap view, combined Feature/Step board (top row Features, bottom row filtered Steps), card
-  popup (details/moves/comments/counters/cost/session link), drag-and-drop (Blazor Server already runs server-side, so
-  no separate API layer is needed).
-
-### Data Model
-
--
-
-`Board(Id, Name, RepoPath, ConcurrencyLimit, SkipFeatureHumanReview, SkipStepHumanReview, AgentReviewFailThreshold, HumanReviewFailThreshold)`
--
-`Feature(Id, BoardId, Title, Requirements, AcceptanceCriteria, SuggestedSolution, WorkflowColumn, AlwaysRequireHumanReview, AgentReviewFailCount, HumanReviewFailCount, BranchName?, WorktreePath?)`
--
-`Step(Id, FeatureId, Title, Description, GuidanceNotes, WorkflowColumn, AlwaysRequireHumanReview, AgentReviewFailCount, HumanReviewFailCount, BranchName?, WorktreePath?, TokensUsed, TimeSpent)`
-
-- `FeatureDependency(FeatureId, DependsOnFeatureId)` / `StepDependency(StepId, DependsOnStepId)`
-- `Comment(Id, CardType, CardId, Author, Body, CreatedAt)`
-- `AgentColumnAssignment(BoardId, ColumnScope, AgentDefinitionId, MatchCriteria)` (replaces `Column.AgentDefinitionId`)
-- `AgentDefinition(Id, Name, FolderPath)` with ordered `AgentDefinitionComponent(AgentDefinitionId, ComponentId, Order)`
-- `AgentComponent(Id, Name, ConfigContent)`
-- `AgentRun(Id, CardType, CardId, ProcessId?, Status, SessionLink?, StartedAt, EndedAt?, TokensUsed, TimeSpent)`
-  (replaces `TaskId`/`ColumnId`) — `Status` covers Queued/Working/WaitingForInput/Completed/Failed/Blocked/Stopped.
-- **Retired**: `Column`, `TaskItem`, `TaskDependency` (from Step 1) — superseded by the above.
-
-### Components
-
-- `FeatureTransitionOrchestrator` / `StepTransitionOrchestrator` (Application) — composed around shared
-  `WorkflowTransitionRules`; implement the move state machine per level: allowed-transition check, dependency gating,
-  worktree create/reuse, auto-commit, merge-on-Done, scheduler hand-off (Step only), review-counter increment,
-  skip-human-review auto-advance.
-- `WorkflowTransitionRules` (Application) — stateless rules engine shared by both orchestrators (composition over
-  inheritance).
-- `FeatureDependencyService` / `StepDependencyService` (Application) — dependency validation/gating, same-board-only
-  (Feature) and same-feature/cross-feature (Step) rules.
-- `CommentService` (Application) — CRUD over the shared `Comment` table keyed by `(CardType, CardId)`.
-- `ReviewOutcomeService` (Application) — increments `AgentReviewFailCount`/`HumanReviewFailCount`, compares against
-  board thresholds, raises rework/issue indicators.
-- `AgentMatchingService` (Application) — resolves an `AgentColumnAssignment` + `MatchCriteria` to a concrete
-  `AgentDefinition` for a given card/column-scope.
-- `IAgentScheduler` / `AgentSchedulerService` (Application/Infrastructure, reworked) — Step-only `RequestStart`,
-  prioritization scoring (progress, remaining work, age), per-board concurrency queueing, failure-threshold skip,
-  `OnAgentFinished(stepId)` re-checks the queue.
-- `UsageTrackingService` (Application) — aggregates `AgentRun.TokensUsed`/`TimeSpent` into `GetFeatureSummary`.
-- `IGitWorktreeService` / `LibGit2WorktreeService` (Infrastructure, reworked) — two-level branch/worktree
-  create/reuse/pause/discard (Feature off `main`, Step off its Feature branch), commit, merge with conflict detection at
-  both levels, resume-merge, discard-uncommitted-changes.
-- `IAgentProcessRunner` / `CopilotCliProcessRunner` (Infrastructure) — launches `copilot` CLI in the card's worktree
-  path, generates a per-OS "git guard" shim on `PATH` that allow-lists only read-only git subcommands (`diff`, `log`,
-  `status`, etc.) for that process, exposes kill and live-session-link.
-- `AgentDefinitionService` + `AgentDefinitionFolderWriter` (Application/Infrastructure) — component add/remove/reorder,
-  on-save folder generation.
-- `BoardMcpTools` (Infrastructure, official SDK) — curated named actions (`start_build`, `submit_for_review`,
-  `approve_review`, `fail_review`, `send_to_backlog`) plus `get_card_details`/`get_available_actions`/comment
-  read-write, replacing the old generic MCP tool handlers.
-- Blazor components: Roadmap view, combined `Board.razor` (Feature row + filtered Step row), `FeatureCard.razor`/
-  `StepCard.razor`, card popup (details/moves/comments/counters/cost/session link), `AgentDefinitionEditor.razor`,
-  `StatusIcon.razor`, drag-and-drop.
-
-### File Structure
-
-```
-AgentTaskHarness/
-  Domain/
-    Entities/ (Board.cs, Feature.cs, Step.cs, FeatureDependency.cs, StepDependency.cs, Comment.cs, AgentColumnAssignment.cs, AgentDefinition.cs, AgentComponent.cs, AgentRun.cs)
-    Enums/ (WorkflowColumn.cs, ColumnScope.cs, CardType.cs, AgentRunStatus.cs)
-  Application/
-    Boards/BoardService.cs
-    Features/FeatureService.cs, FeatureDependencyService.cs, FeatureTransitionOrchestrator.cs
-    Steps/StepService.cs, StepDependencyService.cs, StepTransitionOrchestrator.cs
-    Workflow/WorkflowTransitionRules.cs
-    Comments/CommentService.cs
-    Reviews/ReviewOutcomeService.cs
-    Agents/AgentDefinitionService.cs, AgentMatchingService.cs, IAgentScheduler.cs, AgentSchedulerService.cs
-    Usage/UsageTrackingService.cs
-    Abstractions/IGitWorktreeService.cs, IAgentProcessRunner.cs
-  Infrastructure/
-    Persistence/AppDbContext.cs, Migrations/
-    Git/LibGit2WorktreeService.cs, GitGuardShimWriter.cs
-    Agents/CopilotCliProcessRunner.cs, AgentDefinitionFolderWriter.cs
-    Mcp/BoardMcpTools.cs
-  Components/
-    Pages/Roadmap/... Pages/Boards/... Pages/Agents/...
-    Shared/StatusIcon.razor, FeatureCard.razor, StepCard.razor, CardPopup.razor
-  Program.cs (DI registration, DbContext, MapMcp, migrations-on-startup)
-```
-
-### Architecture Diagram
-
-```mermaid
-graph TD
-  UI[Blazor UI: Roadmap, combined board, card popup] --> AppServices
-  MCP[MCP curated named actions] --> AppServices
-  subgraph AppServices[Application Services]
-    FeatureSvc[FeatureService]
-    StepSvc[StepService]
-    FeatureOrch[FeatureTransitionOrchestrator]
-    StepOrch[StepTransitionOrchestrator]
-    Rules[WorkflowTransitionRules]
-    CommentSvc[CommentService]
-    ReviewSvc[ReviewOutcomeService]
-    MatchSvc[AgentMatchingService]
-    Scheduler[AgentSchedulerService]
-    UsageSvc[UsageTrackingService]
-  end
-  FeatureOrch --> Rules
-  StepOrch --> Rules
-  StepOrch -->|first Step to Build / all Steps Done| FeatureOrch
-  FeatureOrch --> GitSvc[IGitWorktreeService]
-  StepOrch --> GitSvc
-  StepOrch --> Scheduler
-  Scheduler --> MatchSvc
-  Scheduler --> Runner[CopilotCliProcessRunner]
-  Runner --> CLI[copilot CLI in card worktree]
-  FeatureOrch --> DbContext[(AppDbContext)]
-  StepOrch --> DbContext
-  CommentSvc --> DbContext
-  ReviewSvc --> DbContext
-  UsageSvc --> DbContext
-  GitSvc --> Repo[(Board git repo + Feature/Step worktrees)]
-  DbContext --> SQLite[(SQLite)]
-```
-
-### Risks
-
-- **Two-level git branching**: Step→Feature and Feature→main merges both need independent "conflict pending" state and
-  resume-merge handling; mitigated by extending the conflict-pending design already built in Step 3 to both levels
-  explicitly.
-- **Prioritization algorithm scope creep**: the Solution Design explicitly leaves exact weighting open; mitigated by
-  shipping a small, clearly-tunable scoring function rather than trying to finalize weights now.
-- **UI-vs-MCP move asymmetry**: easy to accidentally apply the same hard-block rule to both surfaces; mitigated by
-  keeping the block-vs-flag decision in one place (`AgentSchedulerService`/orchestrators) rather than duplicating it per
-  caller.
-- **Document consistency**: renaming `TaskItem`→`Feature`/`Step` and `Column`→`WorkflowColumn` touches many
-  cross-references in the plan and codebase; mitigated by a final proofreading pass across both the Technical Design and
-  Delivery Steps sections (Step 14).
-- ~~Git guard shim~~ / ~~process lifetime tracking~~: resolved in Steps 4–5; the per-OS shim and process-exit tracking
-  are unaffected by the hierarchy redesign.
-
-# Delivery Steps
-
-### ✅ Step 1: Domain model and EF Core persistence foundation — Completed
-
-The app has a working SQLite-backed data layer with CRUD services for boards, columns, tasks, dependencies, and agent
-definitions, exercised by unit tests (no UI yet).
-
-- Add EF Core + SQLite provider packages to `AgentTaskHarness.csproj`.
-- Create `Domain/Entities` for `Board`, `Column`, `TaskItem`, `TaskDependency`, `AgentDefinition`, `AgentComponent`,
-  `AgentRun`, plus `TaskStatus`/`AgentRunStatus` enums.
-- Create `Infrastructure/Persistence/AppDbContext.cs` with fluent configuration (board isolation via `BoardId` FKs,
-  cascade rules) and an initial EF Core migration.
-- Implement `Application` CRUD services: `BoardService`, `ColumnService` (including allowed-transition edges,
-  backlog/terminal column flags), `TaskService` (task creation restricted to backlog column), `TaskDependencyService`
-  (same-board-only dependency validation).
-- Register `AppDbContext` and services in `Program.cs`; apply migrations on startup.
-
-> **Superseded by Step 5**: the configurable `Column` entity and flat `TaskItem`/`TaskDependency` built here are retired
-> in Step 5, replaced by the fixed `WorkflowColumn` enum on the new `Feature`/`Step` entities.
-
-### ✅ Step 2: Kanban board UI and column-transition state machine — Completed
-
-Users can manage boards/columns/tasks and move tasks through the board via the web UI, with all business rules enforced
-except git/agent side effects.
-
-- Build Blazor pages: board list/detail, column configuration (create/reorder/allowed-transitions), and full task CRUD.
-- Implement `TaskTransitionOrchestrator.MoveTask(taskId, targetColumnId)` enforcing: allowed-transition check,
-  dependency-complete gating to leave backlog, dependency-list lock once started, delete-guard for tasks with a running
-  agent.
-- Wire `IGitWorktreeService` and `IAgentScheduler` as no-op stub implementations for this stage so the orchestrator's
-  control flow and validations are fully testable before real side effects exist.
-- Add UI feedback for disallowed moves (e.g., unmet dependencies, active agent).
-
-> **Superseded by Steps 5–7**: the column-configuration UI (create/reorder/allowed-transitions) built here is removed
-> since columns are now a fixed, non-configurable enum; `TaskTransitionOrchestrator` is superseded by the composed
-> `FeatureTransitionOrchestrator`/`StepTransitionOrchestrator` (Step 6).
-
-### ✅ Step 3: Git worktree and merge lifecycle — Completed
-
-Column transitions now drive real per-task branches/worktrees, auto-commits, and Done-column merges, with conflict
-recovery and pause/resume/discard controls.
-
-- Implement `Infrastructure/Git/LibGit2WorktreeService` (`IGitWorktreeService`): create branch+worktree named after the
-  task id on first backlog exit, auto-commit pending changes on every transition, merge-to-main and delete worktree on
-  reaching Done.
-- Add conflict detection: persist a "merge conflict pending" state on the task and expose a "resume merge" action that
-  re-attempts the merge after manual external resolution.
-- Implement backlog-return flow: prompt to discard or pause the worktree; resuming a paused task reuses the same
-  branch/worktree instead of creating a new one.
-- Add a "discard uncommitted changes" UI action wired to the git service.
-- Replace the stub `IGitWorktreeService` from the previous stage with this real implementation in DI.
-
-### ✅ Step 4: Agent definition composition — Completed
-
-Users can compose an agent from reusable components in the UI, and saving generates the on-disk definition folder used
-at execution time.
-
-- Build `AgentDefinitionService` supporting add/remove/reorder of `AgentComponent` references within an
-  `AgentDefinition`.
-- Implement `Infrastructure/Agents/AgentDefinitionFolderWriter` that serializes the composed, ordered component
-  configuration into a definition folder on disk when saved.
-- Build the `AgentDefinitionEditor.razor` UI (component picker, ordering, save) and column configuration UI for
-  assigning an agent definition to a non-backlog, non-terminal column.
-
-> **Steps 5–14 replace the original Steps 5–6** (never implemented) with the more granular sequence below, covering the
-> rest of `Solution Design.md`.
-
-### ✅ Step 5: Hierarchical domain and persistence rework — Completed
-
-The database schema matches the Roadmap/Feature/Step hierarchy, with the old generic model retired.
-
-- Retire `Column`, `TaskItem`, `TaskDependency` entities, DbSets, and their EF Core configuration.
-- Add `Domain/Entities`: `Feature`, `Step`, `FeatureDependency`, `StepDependency`, `Comment`, plus `WorkflowColumn` and
-  `CardType` enums.
-- Add `Board.SkipFeatureHumanReview`, `Board.SkipStepHumanReview`, `Board.AgentReviewFailThreshold`,
-  `Board.HumanReviewFailThreshold`.
-- Update `AppDbContext` fluent configuration (FKs, cascade rules for `Feature`→`Step`, `Comment` keyed by
-  `(CardType, CardId)`) and add a new EF Core migration.
-- Implement `Application` CRUD services: `FeatureService`, `StepService`.
-
-### ✅ Step 6: Shared workflow transition rules and dependency gating — Completed
-
-A shared rules engine and dependency services back both Feature and Step transitions, ready to be driven by
-orchestrators in the next step.
-
-- Implement `Application/Workflow/WorkflowTransitionRules`: a stateless service encoding the fixed `WorkflowColumn`
-  sequence and which moves are legal.
-- Implement `FeatureDependencyService`/`StepDependencyService`: same-board (Feature) and same-feature/cross-feature
-  (Step) dependency validation and "all dependencies Done" gating.
-- Implement `FeatureTransitionOrchestrator`/`StepTransitionOrchestrator` composed around `WorkflowTransitionRules` and
-  the dependency services, exposing a `MoveAsync(cardId, targetColumn)` that enforces allowed-transition + dependency
-  gating (git/scheduler/review side effects land in later steps).
-- Unit-test the rules engine and both orchestrators' gating logic in isolation.
-
-### ✅ Step 7: Automatic Feature lifecycle and skip-human-review behavior — Completed
-
-Feature cards automatically track their Steps' progress, and boards/cards can skip human review per the configured
-toggles.
-
-- Wire `StepTransitionOrchestrator` to call into `FeatureTransitionOrchestrator` on two triggers: first Step entering
-  Build (Feature Ready→Build) and all Steps reaching Done (Feature Build→AgentReview).
-- Implement skip-human-review auto-advance: when `Board.SkipFeatureHumanReview`/`SkipStepHumanReview` is set and the
-  card's `AlwaysRequireHumanReview` override is false, `AgentReview`→`Done` happens automatically instead of stopping at
-  `HumanReview`.
-- Add UI controls for the per-board toggles and the per-card `AlwaysRequireHumanReview` override.
-
-### ✅ Step 8: Comments and review-outcome counters — Completed
-
-Cards carry a comment thread and review-outcome counters that drive derived rework/issue indicators.
-
-- Implement `CommentService`: add/list comments for a `(CardType, CardId)`, ordered by `CreatedAt`.
-- Implement `ReviewOutcomeService`: increments `AgentReviewFailCount`/`HumanReviewFailCount` on a failed review,
-  compares against the board's thresholds, and exposes a derived "rework"/"issue" indicator once a threshold is crossed.
-- Wire `FeatureTransitionOrchestrator`/`StepTransitionOrchestrator` to call `ReviewOutcomeService` whenever a card is
-  sent back from a review column.
-- Add a comments panel and counter/indicator display to the card UI (basic list view is enough here; full popup styling
-  lands in Step 14).
-
-### ✅ Step 9: Two-level git worktree and merge lifecycle — Completed
-
-Feature and Step transitions now drive real two-level branches/worktrees, auto-commits, and Done-column merges at both
-levels, with conflict recovery and pause/resume/discard controls.
-
-- Rework `Infrastructure/Git/LibGit2WorktreeService` (`IGitWorktreeService`) for two-level branching: a Feature branch
-  created off `main` on its first Step entering Build, and each Step branch created off its Feature's branch on first
-  Build entry.
-- Implement merge-on-Done at both levels: a Step merges into its Feature branch on Step Done; a Feature merges into
-  `main` and deletes both worktrees on Feature Done.
-- Extend the existing "conflict pending" persisted state and resume-merge action to track conflicts independently per
-  level (Step→Feature vs Feature→main).
-- Implement backlog-return flow (discard or pause the worktree) and a "discard uncommitted changes" UI action for both
-  Feature and Step cards.
-- Replace the single-level `IGitWorktreeService` implementation from Step 3 with this reworked one in DI.
-
-### ✅ Step 10: Agent matching criteria and column-scope assignment — Completed
-
-Boards assign agent definitions to eligible column-scopes with matching criteria instead of a single per-column FK.
-
-- Add `Domain/Entities/AgentColumnAssignment(BoardId, ColumnScope, AgentDefinitionId, MatchCriteria)` and the
-  `ColumnScope` enum (`StepBuild, StepAgentReview, FeatureAgentReview`); retire `Column.AgentDefinitionId`.
-- Implement `AgentMatchingService`: given a card and its column-scope, evaluates `MatchCriteria` across the board's
-  `AgentColumnAssignment`s and resolves the concrete `AgentDefinition` to run.
-- Update `AgentDefinitionEditor.razor`'s column-configuration UI to assign definitions + criteria per column-scope,
-  restricted to the three eligible scopes (Feature Build is never assignable).
-
-### ✅ Step 11: Step-only agent scheduler rework — Completed
-
-The scheduler starts only Steps, using a tunable prioritization score, and distinguishes the soft blocked-flag from the
-UI's hard block.
-
-- Rework `AgentSchedulerService` (`IAgentScheduler`) to accept only Step start requests; a Feature never triggers
-  `RequestStart` directly (that stays a side effect of its Steps per Step 7).
-- Implement a prioritization score (progress, remaining work, age) used to order the per-board queue when the
-  `Board.ConcurrencyLimit` is reached; document the weighting as a tunable constant, explicitly left open per the
-  Solution Design.
-- Implement the failure-threshold skip: a Step whose counters have crossed the board's fail threshold is left
-  queued/flagged rather than auto-started.
-- Wire `StepTransitionOrchestrator` to call `AgentScheduler.RequestStart` after a successful Build/AgentReview column
-  entry, setting the soft "blocked: previous agent still active" status for MCP-driven moves while the UI keeps
-  hard-blocking such moves (asymmetry from Key Decision 9).
-
-### ✅ Step 12: MCP curated named actions — Completed
-
-Agents interact with boards over MCP using curated named actions instead of raw column moves, running in-process with
-the Blazor app.
-
-- Add the official ModelContextProtocol C# SDK and map its endpoint in `Program.cs` alongside `MapRazorComponents`
-  (superseding the plan for a generic `TaskMcpTools`).
-- Implement `Infrastructure/Mcp/BoardMcpTools` exposing named actions `start_build`, `submit_for_review`,
-  `approve_review`, `fail_review`, `send_to_backlog`, each delegating to one `FeatureTransitionOrchestrator`/
-  `StepTransitionOrchestrator` call; `fail_review` also calls `ReviewOutcomeService` to increment the relevant counter.
-- Add `get_card_details`, `get_available_actions`, and comment read/write (`CommentService`) tools.
-- Ensure MCP-driven actions apply the soft "blocked: previous agent still active" flag rather than the UI's hard block,
-  per the documented asymmetry (Step 11).
-
-### ✅ Step 13: Cost and usage tracking — Completed
-
-Token/time usage is captured per agent run and rolled up to the Feature level for display.
-
-- Add `TokensUsed`/`TimeSpent` capture to `AgentRun` at process completion (`CopilotCliProcessRunner`/
-  `AgentSchedulerService`) and to `Step.TokensUsed`/`Step.TimeSpent`.
-- Implement `UsageTrackingService.GetFeatureSummary(featureId)` aggregating token/time totals across a Feature's Steps.
-- Add a minimal cost display to the card UI (basic totals are enough here; full popup styling lands in Step 14).
-- Document quality-signal metrics (beyond cost) as an open extension point, per the Solution Design's explicit deferral.
-
-### ✅ Step 14: Combined board UI, card popup, and final proofread — Completed
-
-The full Roadmap/Board/Feature/Step experience is available end-to-end through a combined drag-and-drop UI, and the
-document is internally consistent.
-
-- Build the Roadmap view (computed list of a board's Features) and the combined `Board.razor` (Feature row on top,
-  filtered Step row underneath for the selected/expanded Feature).
-- Build the card popup: details, available moves, comments (Step 8), review counters/indicators (Step 8), cost summary
-  (Step 13), live session link, and manual controls (stop/retry/discard).
-- Implement drag-and-drop for both Feature and Step cards, with the UI hard-block on dragging a card whose agent is
-  currently running (Step 11).
-- Add status/rework/issue indicators to the card visuals, driven by `ReviewOutcomeService`'s derived state (Step 8).
-- Proofread the full document for consistent entity/service naming between the Technical Design and Delivery Steps
-  sections.
+# Agent Task Harness - Issues 2 Comprehensive Implementation Plan
+
+This development plan translates all requirements from `issues2.md`, user feedback, and the updated `Solution Design.md` into an actionable, phased engineering roadmap. It identifies what has been completed, specifies all new features and changes, and details acceptance criteria and implementation guidance for every task.
+
+---
+
+## 1. Executive Summary & Requirement Matrix
+
+| # | Requirement from `issues2.md` & Design Updates | Target Area | Status | Implementation Phase |
+| :--- | :--- | :--- | :---: | :--- |
+| **1** | Agents defined at top level globally, decoupled from boards | Domain, EF, App | **Completed** | **Phase 1** (Committed in `33de5a8`) |
+| **2** | Dedicated Board Settings page (`/boards/{id}/settings`) | Board UI & Routing | **Completed** | **Phase 1** (Committed in `33de5a8`) |
+| **3** | Unified Breadcrumb component structure | Layout Components | **Partially Done** | **Phase 1: Navigation & Clean-up** |
+| **4** | Fix Agents page breadcrumb (`Agents`, not `Projects / Agents`) | Shared Components | **Pending** | **Phase 1: Navigation & Clean-up** |
+| **5** | Remove "Agent Task Harness" from top right | Layout & Navbar | **Pending** | **Phase 1: Navigation & Clean-up** |
+| **6** | Decommission Roadmap view completely (graph & plan views) | Pages, Routes, Nav | **Pending** | **Phase 1: Navigation & Clean-up** |
+| **7** | Board header clean-up: remove "New feature" button and item count text | Board View UI | **Pending** | **Phase 1: Navigation & Clean-up** |
+| **8** | Add "+ Add Ticket" button inside Backlog column header | Board Kanban View | **Pending** | **Phase 1: Navigation & Clean-up** |
+| **9** | Reusable `<AppButton>` component with Tailwind styles and properties | Design System | **Pending** | **Phase 2: Design System & Buttons** |
+| **10** | Restore Kanban drag-and-drop outline highlight styles | Board CSS / HTML | **Pending** | **Phase 2: Design System & Buttons** |
+| **11** | Universal Toast Notification system (bottom of screen) | UI Infrastructure | **Pending** | **Phase 3: Toast System** |
+| **12** | Silence notifications on column transitions (no toast on drag/drop) | Orchestrators & UI | **Pending** | **Phase 3: Toast System** |
+| **13** | Symmetrical bidirectional dependency editing (view both sides) | Services & Shared UI | **Pending** | **Phase 4: Universal Dependencies** |
+| **14** | Set dependencies directly in Ticket and Task creation dialogs | Creation Modals | **Pending** | **Phase 4: Universal Dependencies** |
+| **15** | Tasks have full dependency parity with tickets using shared logic/UI | Domain, App, UI | **Pending** | **Phase 4: Universal Dependencies** |
+| **16** | Single status in popup; status legend on board (closed by default) | CardPopup & Board | **Pending** | **Phase 5: Popup & Board Polish** |
+| **17** | Tickets and tasks editable in popup unless agent actively working | CardPopup UI & App | **Pending** | **Phase 5: Popup & Board Polish** |
+| **18** | Copilot agent structure: frontmatter fields & prompt component insertion | Domain, App, UI | **Pending** | **Phase 6: Copilot Agent Structure** |
+| **19** | Embedded Harness System Prompt (MCP actions protocol & user clarification) | Process Runner & Prompts | **Pending** | **Phase 6: Copilot Agent Structure** |
+| **20** | Agent Setup & Execution Context Folder Generation (`.agent-context/`) | Agent Infrastructure | **Pending** | **Phase 6: Copilot Agent Structure** |
+| **21** | Global Task Workflow Editor (`/workflows`) with named transitions & assigned agents | Domain, DB, UI | **Pending** | **Phase 7: Task Workflow Engine** |
+| **22** | Ticket 4-stage lifecycle (`Backlog > Build > HR > Done`); tasks availability on Build | Orchestrators & Rules | **Pending** | **Phase 7: Task Workflow Engine** |
+| **23** | Backlog return worktree pause/delete confirmation dialog | Git & Board UI | **Pending** | **Phase 7: Task Workflow Engine** |
+| **24** | MCP agent tool integration returning transition action names | MCP Tools & App | **Pending** | **Phase 7: Task Workflow Engine** |
+| **25** | Scheduler Prioritization: StartedAt -> Dep Count -> Random tie-breaker (non-HR/Done) | Scheduler Service | **Pending** | **Phase 7: Task Workflow Engine** |
+| **26** | Reactive agent pickup when agent assigned to column with existing cards | Scheduler Worker | **Pending** | **Phase 8: Agent Execution & Terminal** |
+| **27** | Interactive in-app terminal (bi-directional stdin/stdout, tool approvals & chat) | Process Runner & UI | **Pending** | **Phase 8: Agent Execution & Terminal** |
+
+---
+
+## Phase 1: Global Navigation, Breadcrumbs & Decommissioning Roadmap
+
+### 1.1 Remove Roadmap Completely (Graph & Plan Views)
+- **Problem**: Requirement explicitly states *"remove the roadmap completely - grraph and plan view"*. The code still contains `Roadmap.razor`, graph layout helpers, and roadmap navigation links.
+- **Implementation Guidance**:
+    1. Delete `Components/Pages/Roadmap/Roadmap.razor` and `Components/Pages/Roadmap/FeatureGraphLayout.cs`.
+    2. Remove `@page "/boards/{BoardId:guid}/roadmap"` and all references to `/roadmap` in `AppBreadcrumb.razor`, `BoardSettings.razor`, and other components.
+    3. Ensure navigation strictly provides **Projects** (`/boards`), **Agents** (`/agents`), and **Workflows** (`/workflows`).
+- **Acceptance Criteria**:
+    - All `/roadmap` routes are removed and attempting to navigate returns a 404 or redirects to `/boards`.
+    - Breadcrumbs and navigation dropdowns no longer display "Roadmap", "Plan view", or "Graph view".
+    - Codebase contains zero unused roadmap layout files.
+
+### 1.2 Top-Level Navigation & Branding Clean-up
+- **Problem**:
+    - `NavMenu.razor` currently displays *"Agent Task Harness"* in the top right.
+    - The top navigation lacks a direct link to the upcoming global **Workflows** editor.
+- **Implementation Guidance**:
+    1. In `NavMenu.razor`: Remove the top-right text "Agent Task Harness" and dot indicator. Keep top-right clear or dedicated to global status.
+    2. Add **Workflows** (`/workflows`) alongside **Projects** (`/boards`) and **Agents** (`/agents`).
+- **Acceptance Criteria**:
+    - No "Agent Task Harness" branding appears in the top right of the application header.
+    - Top-level menu provides clean links to Projects, Agents, and Workflows.
+
+### 1.3 Universal Breadcrumb Display Fixes
+- **Problem**: When visiting `/agents`, the breadcrumb displays `Projects / Agents` because the root `<details>` is hardcoded to "Projects".
+- **Implementation Guidance**:
+    1. In `Components/Shared/AppBreadcrumb.razor`:
+        - If the route is `/agents` or `/agents/{id}`, the root breadcrumb should render `Agents` directly (or a dropdown allowing switching between Projects, Agents, and Workflows).
+        - If the route is `/workflows` or `/workflows/{id}`, the breadcrumb should render `Workflows`.
+        - When inside a board context (`/boards/{id}/...`), render:
+          `Projects / [Board Name] / Board` or `Projects / [Board Name] / Settings`.
+- **Acceptance Criteria**:
+    - On the Agents page, the breadcrumb displays `Agents` (and `Agents / [Agent Name]` when editing), not `Projects / Agents`.
+    - On the Workflows page, the breadcrumb displays `Workflows`.
+    - On board pages, breadcrumb accurately indicates the current board and view (`Board` or `Settings`).
+
+### 1.4 Board Header Polish & Backlog Ticket Creation
+- **Problem**:
+    - `Board.razor` contains a top action button "New feature" which needs to be removed.
+    - Header text contains item count text `(@_features.Count total)` and `(@_selectedFeatureSteps.Count dev plan steps)` which must be removed.
+    - Users need a designated place to create tickets with dependencies.
+- **Implementation Guidance**:
+    1. In `Board.razor`:
+        - Remove `<Actions><button ...>New feature</button></Actions>` from `<PageTemplate>`.
+        - Remove the item count badges `(@_features.Count total)` and `(@_selectedFeatureSteps.Count dev plan steps)`.
+        - Place a `+ Add Ticket` button directly inside the header of the `Backlog` column for Features.
+        - Keep `+ Add Step` / `+ Add Task` inside the `Not Started` column header or the selected ticket's task section.
+- **Acceptance Criteria**:
+    - The top "New feature" button in the board action bar is gone.
+    - No item count text appears next to section titles.
+    - The Backlog column header contains the "+ Add Ticket" button that opens the ticket creation dialog.
+
+---
+
+## Phase 2: Design System, Reusable Button Component & Drag-and-Drop Outlines
+
+### 2.1 Reusable Button Component (`<AppButton>`)
+- **Problem**: Mismatched button styles across pages (different padding, borders, colors, and raw HTML `<button>` tags).
+- **Implementation Guidance**:
+    1. Create `Components/Shared/AppButton.razor`:
+       ```razor
+       @code {
+           [Parameter] public string Variant { get; set; } = "primary"; // primary, secondary, danger, ghost
+           [Parameter] public string Size { get; set; } = "md"; // sm, md, lg
+           [Parameter] public string? Type { get; set; } = "button";
+           [Parameter] public bool Disabled { get; set; }
+           [Parameter] public bool IsLoading { get; set; }
+           [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
+           [Parameter] public RenderFragment? ChildContent { get; set; }
+           [Parameter] public string? AdditionalClass { get; set; }
+       }
+       ```
+    2. Implement uniform Tailwind styling:
+        - `primary`: `bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-sm`
+        - `secondary`: `bg-white hover:bg-slate-50 text-slate-700 font-medium border-[3px] border-slate-300 shadow-sm`
+        - `danger`: `bg-red-600 hover:bg-red-700 text-white font-medium shadow-sm`
+        - `ghost`: `text-slate-600 hover:bg-slate-100 font-medium`
+        - Sizes: `sm` (`px-2.5 py-1.5 text-xs`), `md` (`px-3.5 py-2 text-sm`), `lg` (`px-4 py-2.5 text-base`).
+    3. Refactor all buttons in `Board.razor`, `BoardSettings.razor`, `AgentDefinitionEditor.razor`, and `CardPopup.razor` to use `<AppButton>`.
+- **Acceptance Criteria**:
+    - All buttons throughout the application share identical Tailwind typography, border radius, padding, focus rings, and hover/active states.
+    - Zero raw `<button class="inline-flex items-center...">` duplicates in page views.
+
+### 2.2 Restore Drag-and-Drop Outline Highlight Styles
+- **Problem**: "Drag and drop outlines are no longer showing" because `isValidTarget`, `isInvalidTarget`, and `isOver` boolean flags in `Board.razor` are not bound to CSS class names.
+- **Implementation Guidance**:
+    1. In `Board.razor`, update the Kanban column container `class` attribute:
+       ```razor
+       var outlineClass = isOver
+           ? (isValidTarget ? "border-emerald-500 ring-2 ring-emerald-300 bg-emerald-50/50" : "border-rose-500 ring-2 ring-rose-300 bg-rose-50/50")
+           : (isValidTarget ? "border-dashed border-indigo-400 bg-indigo-50/20" : (isInvalidTarget ? "border-slate-300 opacity-60" : "border-slate-400 bg-slate-50"));
+       ```
+    2. Ensure smooth CSS transitions (`transition-all duration-150`).
+- **Acceptance Criteria**:
+    - When dragging a card, all valid destination columns display a clear dashed highlight.
+    - Hovering directly over a valid destination column displays an emerald outline and background tint.
+    - Hovering over an invalid column displays a rose/red warning outline.
+
+---
+
+## Phase 3: Universal Toast Notification System
+
+### 3.1 Toast Infrastructure (`IToastService` & `ToastContainer`)
+- **Problem**: Notifications are scattered across top-right banners, inline alerts, and modal messages. Column movements trigger annoying popups.
+- **Implementation Guidance**:
+    1. Create `Application/Notifications/IToastService.cs` and `ToastService.cs`:
+        - Methods: `ShowSuccess(string message)`, `ShowError(string message)`, `ShowInfo(string message)`.
+        - Maintains thread-safe active toast list with 4-second auto-dismiss timers and manual close.
+        - Event `event Action? OnChanged`.
+    2. Register `IToastService` as Scoped in `Program.cs`.
+    3. Create `Components/Shared/ToastContainer.razor` placed in `MainLayout.razor`:
+        - Fixed position at the bottom of the screen: `fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none max-w-md w-full`.
+        - Individual toast: `pointer-events-auto flex items-center justify-between p-4 rounded-lg shadow-xl text-sm font-medium border-[3px] transition-all`.
+        - Success: `bg-emerald-50 text-emerald-900 border-emerald-300`
+        - Error: `bg-rose-50 text-rose-900 border-rose-300`
+        - Info: `bg-sky-50 text-sky-900 border-sky-300`
+- **Acceptance Criteria**:
+    - All actionable notifications (item created, item updated, item deleted, errors) display in a uniform toast at the bottom of the screen.
+    - Toasts automatically dismiss after 4 seconds or when clicking the close button.
+
+### 3.2 Notification Audit & Silencing Column Moves
+- **Problem**: Column drag-and-drop movements currently show notifications like "Moved feature to Build".
+- **Implementation Guidance**:
+    1. In `Board.razor`, in `HandleFeatureDrop` and `HandleStepDrop`:
+        - **Delete** `Notify($"Moved feature to {targetColumn}.", false);` and `Notify($"Moved step to {targetColumn}.", false);`.
+        - Keep `try-catch` reporting errors to `ToastService.ShowError(ex.Message)`.
+    2. Replace all remaining `_notificationMessage` banners in `Board.razor`, `BoardList.razor`, `AgentDefinitionEditor.razor`, and `CardPopup.razor` with `ToastService.ShowSuccess(...)`.
+- **Acceptance Criteria**:
+    - Dragging and dropping a card between columns produces **no toast notification**.
+    - Creation, updating, and deletion of tickets, tasks, and workflows reliably show bottom-screen toasts.
+
+---
+
+## Phase 4: Symmetrical Bidirectional Dependencies & Creation Modals
+
+### 4.1 Bidirectional Dependency Service Operations
+- **Problem**: Dependencies can only be viewed and added from the prerequisite side ("Depends On"). The dependent side ("Depended On By") cannot add or remove links.
+- **Implementation Guidance**:
+    1. `FeatureDependencyService.cs`:
+        - Implement `GetDependentsAsync(Guid featureId)`: Returns features that depend on `featureId` (`Where d.DependsOnFeatureId == featureId`).
+        - Implement `AddDependentAsync(Guid featureId, Guid dependentFeatureId)`: Delegates to `AddAsync(dependentFeatureId, featureId)`.
+        - Implement `RemoveDependentAsync(Guid featureId, Guid dependentFeatureId)`.
+        - Ensure cycle detection checks run identically in both directions.
+    2. `StepDependencyService.cs`:
+        - Implement matching `GetDependentsAsync`, `AddDependentAsync`, and `RemoveDependentAsync`.
+- **Acceptance Criteria**:
+    - Given cards A and B, adding B as a dependent of A creates the exact same relationship as opening B and adding A as a prerequisite.
+    - Cycle detection blocks circular links in either direction.
+
+### 4.2 Symmetrical Dependency Section Component
+- **Problem**: `CardPopup.razor` has no dependency management for Steps and only shows forward dependencies for Features.
+- **Implementation Guidance**:
+    1. Create `Components/Shared/CardDependencySection.razor`:
+        - Reusable for both Tickets and Tasks.
+        - Renders two symmetrical panels:
+            - **Prerequisites (Depends On / Blocked By)**: Cards that must reach Done before this card can proceed.
+            - **Dependents (Blocking / Depended On By)**: Cards waiting for this card to complete.
+        - Each panel has:
+            - Item list showing title, status icon, current column, and a remove button.
+            - Dropdown of candidate cards with an "Add" button.
+        - Disabled/locked when an agent is active on the card or card is in terminal state.
+    2. Embed `<CardDependencySection />` into `CardPopup.razor` for **both** Features and Steps.
+- **Acceptance Criteria**:
+    - Both Tickets and Tasks provide a Dependencies tab in `CardPopup`.
+    - Both sides of a dependency relationship have an identical, symmetrical view.
+    - Dependencies can be added or removed from either side.
+
+### 4.3 Set Dependencies on Ticket & Task Creation
+- **Problem**: Dependencies can currently only be configured after creation.
+- **Implementation Guidance**:
+    1. In `Board.razor` Ticket Creation modal:
+        - Add a multi-select dropdown for "Prerequisite Tickets" populated with existing Backlog/Ready tickets on the board.
+        - On creation, persist the ticket and invoke `FeatureDependencyService.AddAsync` for each selected prerequisite.
+    2. In Task Creation modal:
+        - Add a multi-select dropdown for "Prerequisite Tasks" populated with existing tasks under the same ticket.
+        - On creation, persist the task and invoke `StepDependencyService.AddAsync` for each selected prerequisite.
+- **Acceptance Criteria**:
+    - Creating a ticket allows selecting prerequisite tickets directly in the creation modal.
+    - Creating a task allows selecting prerequisite sibling tasks directly in the creation modal.
+    - Newly created cards show their dependencies immediately.
+
+---
+
+## Phase 5: Popup & Board Polish
+
+### 5.1 Single Status Display & Board Collapsible Legend
+- **Problem**: Status is displayed redundantly in multiple places in `CardPopup.razor` alongside an explanation card, cluttering the view.
+- **Implementation Guidance**:
+    1. In `CardPopup.razor`:
+        - Display the status badge in only one place: in the header next to the title.
+        - Remove the redundant status cards and remove the collapsible status legend from the popup.
+    2. In `Board.razor`:
+        - Create `Components/Shared/StatusLegend.razor`.
+        - Position the legend in a compact drawer in the bottom corner of the board.
+        - **Default state: closed/collapsed**.
+        - Clicking toggles the legend to show status indicators (Working, Waiting for input, Queued, Completed, Failed, Blocked).
+- **Acceptance Criteria**:
+    - The status appears in exactly one place in `CardPopup`.
+    - The status legend is absent from `CardPopup`.
+    - The board contains a collapsible status legend that defaults to closed.
+
+### 5.2 In-Popup Card Editing with Agent Running Lock
+- **Problem**: Card details inside `CardPopup` cannot be edited in place.
+- **Implementation Guidance**:
+    1. In `CardPopup.razor`:
+        - For Tickets: Editable form fields for Title, Requirements, Acceptance Criteria, and Suggested Solution.
+        - For Tasks: Editable form fields for Title, Description, and Guidance Notes.
+        - Provide a "Save Changes" `<AppButton>`.
+        - If an agent is running on the card (`IsAgentRunning == true`):
+            - Disable all input fields (`disabled="@IsAgentRunning"`).
+            - Hide or disable the Save button.
+            - Render a prominent warning banner: *\"Card is locked for editing while an agent is actively running.\"*
+- **Acceptance Criteria**:
+    - Idle tickets and tasks can be edited and saved directly in the popup.
+    - Active cards with running agents strictly lock all editing fields.
+
+---
+
+## Phase 6: Copilot Agent Structure, Context Folder & Embedded Prompts
+
+### 6.1 Copilot Frontmatter Model
+- **Problem**: Agent definitions currently have simple text columns (`Prompt`, `Instructions`, `ToolConfiguration`) and do not follow standard Copilot agent structure.
+- **Implementation Guidance**:
+    1. Update `Domain/Entities/AgentDefinition.cs`:
+        - Add `Description` (string).
+        - Add `Model` (string, e.g. `gpt-4o`, `claude-3.5-sonnet`).
+        - Add `Tools` (string, YAML/JSON formatted tool declarations).
+        - Retain `Prompt` as the main markdown body.
+    2. Create an EF Core migration `UpdateAgentDefinitionCopilotStructure`.
+- **Acceptance Criteria**:
+    - Agent definition entity stores Copilot-compatible frontmatter properties in the database.
+
+### 6.2 Agent Editor with Frontmatter Fields & Component Insertion
+- **Problem**: Users need an authoring experience matching Copilot structure with dedicated fields for frontmatter and prompt body with component insertion.
+- **Implementation Guidance**:
+    1. In `AgentDefinitionEditor.razor`:
+        - Top section: Dedicated form fields for `Name`, `Description`, `Model`, and `Tools`.
+        - Bottom section: Dedicated prompt body textarea.
+        - Provide a component inserter: clicking an available `AgentComponent` inserts its reference or content into the prompt body at cursor position (or appends as a composed block).
+- **Acceptance Criteria**:
+    - Agent definition editor provides dedicated fields for frontmatter and prompt body.
+    - Users can select and insert reusable prompt components into the agent definition.
+
+### 6.3 Embedded Harness System Prompt (MCP Actions Protocol & User Clarification)
+- **Problem**: Agents operating on tasks need standardized operational rules for querying workflow actions and knowing what to do when actions don't match.
+- **Implementation Guidance**:
+    1. Create a system prompt generator in `Application/Agents/AgentPromptComposer.cs`:
+       ```markdown
+       # Agent Task Harness Operational Protocol
+       You are an autonomous agent working on Task ID: {StepId} ("{StepTitle}") of Ticket ID: {FeatureId} ("{FeatureTitle}").
+       You have access to the Agent Task Harness MCP tools, including `get_available_actions`.
+  
+       OPERATIONAL RULES:
+       1. Complete all coding, tests, and verifications required by the task within your dedicated git worktree.
+       2. When your work is finished, you MUST query the harness MCP tool `get_available_actions` for your current task.
+       3. Compare the returned available action names against your assigned task outcome and select the matching action (e.g. SubmitForReview, RequestRework, etc.).
+       4. USER CLARIFICATION RULE: If no available action matches what you have been told to do, or if there is any ambiguity about which action to choose, you MUST pause and ask the user in the chat/terminal window:
+          "My work on this task is complete. The available workflow transitions are: [action list]. Which action should I invoke?"
+       5. Wait for the user's response in the terminal, then invoke the action specified by the user.
+       ```
+    2. Prepend this system prompt into the agent instructions for every executed task.
+- **Acceptance Criteria**:
+    - All agent executions have the Harness System Prompt embedded.
+    - Agent queries available actions on completion and asks the user in the interactive terminal/chat window if no match is found.
+
+### 6.4 Agent Setup & Execution Context Folder Generation (`.agent-context/`)
+- **Problem**: The agent needs an isolated, structured context folder on disk containing its definition file, MCP client settings, task specification, and git guard shim.
+- **Implementation Guidance**:
+    1. Create `Application/Agents/AgentContextFolderService.cs`:
+        - Creates `.agent-context/` inside `step.WorktreePath` (or dedicated execution temp dir).
+        - Generates `copilot-instructions.md` containing:
+            - YAML frontmatter block (`name`, `description`, `model`, `tools`).
+            - Embedded Harness System Prompt.
+            - Composed prompt body (with included `AgentComponent` blocks).
+        - Generates `TASK_CONTEXT.md` containing:
+            - Task Title, Description, Guidance Notes.
+            - Parent Ticket Title, Requirements, Acceptance Criteria, Suggested Solution.
+        - Generates `mcp_config.json` configuring Copilot CLI to connect to the in-process Harness MCP server.
+        - Sets up the Git Guard Shim directory.
+    2. Update `CopilotCliProcessRunner`: Pass arguments pointing to the generated context folder.
+- **Acceptance Criteria**:
+    - Context folder `.agent-context/` is generated automatically before agent process launch.
+    - Contains complete frontmatter instruction file, task context, MCP config, and git guard shim.
+
+---
+
+## Phase 7: Global Task Workflow Editor & Workflow Engine
+
+### 7.1 Workflow Data Model & StartedAt Timestamps
+- **Problem**: The system needs a user-defined task workflow with custom columns, exactly one entry point, assigned agents, named transitions, and `StartedAt` timestamps on Feature and Step.
+- **Implementation Guidance**:
+    1. Update `Domain/Entities/Feature.cs`: Add `DateTimeOffset? StartedAt`.
+    2. Update `Domain/Entities/Step.cs`: Add `DateTimeOffset? StartedAt`.
+    3. Create entities in `Domain/Entities/`:
+        - `WorkflowTemplate`: `(Id, Name, Description, CreatedAt)`.
+        - `WorkflowStage`: `(Id, WorkflowTemplateId, Name, Order, IsEntryPoint, AssignedAgentDefinitionId)`.
+        - `WorkflowTransition`: `(Id, WorkflowTemplateId, FromStageId, ToStageId, ActionName)`.
+    4. Update `Board`: Add `WorkflowTemplateId` (foreign key to `WorkflowTemplate`).
+    5. Update `Step`: Add `CurrentStageId` (referencing `WorkflowStage`, nullable when in `Not Started`, `Human Review`, or `Done`).
+    6. Create EF Core migration `AddTaskWorkflowEngineAndStartedAt`.
+- **Acceptance Criteria**:
+    - Database supports global workflow templates, stages, transitions, and `StartedAt` tracking.
+
+### 7.2 Global Task Workflow Editor (`/workflows`)
+- **Problem**: *"add a task workflow editor. this is the sole place where workflows can be created and edited."*
+- **Implementation Guidance**:
+    1. Create `Components/Pages/Workflows/WorkflowEditor.razor` at `@page "/workflows"` and `@page "/workflows/{WorkflowId:guid}"`.
+    2. Features of the editor:
+        - Manage workflow templates (Create, Rename, Delete).
+        - Column/Stage manager: Add, reorder, delete custom columns.
+        - **Enforce at least one column as the Entry Point** (designated with a distinct badge).
+        - **Enforce exactly one agent assigned per column** (dropdown of global `AgentDefinition`s; match criteria is eliminated).
+        - Transition manager: Define directed transitions between columns and assign each an **Action Name** (e.g. `SubmitForReview`, `RequestRework`, `Approve`).
+- **Acceptance Criteria**:
+    - Workflows are created and edited solely at `/workflows`.
+    - Every column in the user-defined workflow has exactly one assigned agent.
+    - Users can configure transitions with action names between any stages.
+    - Workflow cannot be saved without at least one valid Entry Point column.
+
+### 7.3 Ticket vs. Task Workflow Orchestration & Worktree Choice
+- **Problem**:
+    - Tickets have fixed stages: `Backlog` → `Build` → `Human Review` → `Done`.
+    - When a ticket moves to `Build`, set `Feature.StartedAt = DateTimeOffset.UtcNow`, and make child tasks available.
+    - Moving a ticket from `Build` back to `Backlog` requires prompting whether to delete or pause worktrees.
+    - Tasks have: `Not Started` → `{{User Defined Workflow}}` → `Human Review` → `Done`.
+- **Implementation Guidance**:
+    1. In `FeatureTransitionOrchestrator.cs`:
+        - Restrict Ticket moves to: `Backlog` → `Build` → `Human Review` → `Done`.
+        - When moving to `Build`: set `StartedAt = DateTimeOffset.UtcNow`, create Feature Git branch and worktree, then query child tasks whose dependencies are met and make them eligible for the scheduler.
+        - When moving from `Build` to `Backlog`:
+            - Intercept move in UI (`Board.razor`) and display an interactive modal:
+              *"Do you want to discard and delete the Git branch and worktrees for this ticket and all its child tasks, or pause them for later resumption?"*
+            - Discard: Delete worktrees and branches via `LibGit2WorktreeService`.
+            - Pause: Leave branches intact and mark worktrees paused.
+    2. In `StepTransitionOrchestrator.cs`:
+        - Handle task movement: `Not Started` → Entry Point → Custom Stages → `Human Review` / `Done`.
+        - Set `Step.StartedAt = DateTimeOffset.UtcNow` on initial transition out of `Not Started`.
+        - Forward moves to completion check `SkipStepHumanReview`: route through `Human Review` or straight to `Done`.
+- **Acceptance Criteria**:
+    - Tickets follow the 4-stage lifecycle without running agents.
+    - Moving a ticket to Build unlocks its tasks for the scheduler and records `StartedAt`.
+    - Moving a ticket back to Backlog prompts with a worktree deletion/pause dialog.
+    - Tasks execute across user-defined workflow stages.
+
+### 7.4 MCP Dynamic Workflow Actions
+- **Problem**: Agents need to discover which named actions can be performed on the card's current column.
+- **Implementation Guidance**:
+    1. In `Infrastructure/Mcp/BoardMcpTools.cs`:
+        - Update `get_available_actions(cardType, cardId)`:
+            - If card is a Task: look up its current `WorkflowStageId` and return the list of `ActionName`s configured on its outgoing transitions.
+        - Update action execution tool:
+            - Match the requested action name to the corresponding `WorkflowTransition` and execute the stage move.
+- **Acceptance Criteria**:
+    - Agents querying MCP receive the exact action names configured in the workflow editor for that column.
+    - Invoking an action advances the card along the corresponding transition.
+
+### 7.5 Scheduler Prioritization Algorithm: StartedAt, Dependency Count Fallback & Random Tie-Breaker
+- **Problem**: Scheduler must select the next task to work on using the specified multi-tiered criteria.
+- **Implementation Guidance**:
+    1. Update `AgentSchedulerService.cs`:
+        - **Column Criteria**: Select tasks in **any column that is NOT in `Human Review` and NOT in `Done`** (i.e. `Not Started` or any user-defined workflow stage).
+        - **Agent Running Check**: Must **NOT have an agent currently working on it** (`Status != Working && Status != WaitingForInput`).
+        - **Parent Ticket Check**: Parent ticket must be in `Build`.
+        - **Dependency Check**: All prerequisites for the task within the ticket must be `Done`.
+        - **Failure Threshold Check**: Task has not exceeded review failure threshold.
+        - **Multi-tiered Prioritization Logic**:
+          ```csharp
+          // 1. Group tasks by parent ticket and rank tickets:
+          //    a) Tickets with StartedAt != null ordered ascending by StartedAt.
+          //    b) If StartedAt is null (or tied), ordered descending by number of dependents (DependedOnBy.Count).
+          //    c) If still tied, choose at random (Guid.NewGuid()).
+          // 2. Within the top-ranked ticket, rank eligible tasks:
+          //    a) Tasks with StartedAt != null ordered ascending by StartedAt.
+          //    b) If StartedAt is null (or tied), ordered descending by number of dependents (DependedOnBy.Count).
+          //    c) If still tied, choose at random (Guid.NewGuid()).
+          ```
+        - For each selected task in `Not Started`, transition it to the workflow's Entry Point stage, set `StartedAt = DateTimeOffset.UtcNow`, generate the `.agent-context/` directory, and start the assigned agent.
+- **Acceptance Criteria**:
+    - Scheduler prioritizes tasks by `StartedAt` first.
+    - If `StartedAt` is not available, chooses the item with the highest count of dependencies/dependents.
+    - If tied after dependency count, breaks the tie at random.
+    - Any task not in `Human Review` or `Done` with met dependencies and no active agent is eligible.
+    - Dispatches tasks automatically up to the board's concurrency limit.
+
+---
+
+## Phase 8: Reactive Agent Pickup & Interactive In-App Terminal
+
+### 8.1 Reactive Agent Column Pickup
+- **Problem**: *"if a ticket is already in a column before an agent is selected on the column and then an agent is added, then the ticket should get picked up by the agent if the agent criteria is met and the agent is avialable"*.
+- **Implementation Guidance**:
+    1. In `AgentSchedulerService.cs`:
+        - Add `TriggerPickupForStageAsync(Guid boardId, Guid stageId, CancellationToken cancellationToken)`.
+        - Query all tasks currently in `stageId` without an active or queued `AgentRun`.
+        - Dispatch `RequestStartAsync` for each task up to the board's concurrency limit.
+    2. Wire `TriggerPickupForStageAsync` to fire whenever:
+        - An agent is assigned to a column.
+        - A task enters a column.
+        - An active run finishes and frees a concurrency slot.
+- **Acceptance Criteria**:
+    - Adding or changing an agent on a column with idle tasks immediately triggers the scheduler to start work without manual intervention.
+
+### 8.2 Interactive In-App Terminal (Bi-directional Stdin/Stdout, Tool Approvals & Chat)
+- **Problem**: Process runner opens external macOS Terminal.app or outputs `copilot://` links. Users must be able to interact with the terminal within the app (approving tools, answering prompts, chatting with the agent).
+- **Implementation Guidance**:
+    1. **Process I/O Redirection & Context Injection**:
+        - In `CopilotCliProcessRunner.cs`: Launch processes headlessly with redirected `StandardInput`, `StandardOutput`, and `StandardError`.
+        - Pass `--config-dir` / instructions pointing to the generated `.agent-context/` folder.
+        - Eliminate external AppleScript Terminal.app launch and `copilot://` links.
+        - Store process reference or stream writers in an active runner registry (`ActiveProcessRegistry`).
+    2. **Bi-directional Terminal Streaming Service (`AgentTerminalSessionService`)**:
+        - Output: Streams `stdout` and `stderr` lines/chunks via an event `event Action<Guid, string>? OnOutputReceived`.
+        - Input: Method `Task SendInputAsync(Guid runId, string input)` writes text/keystrokes directly to `process.StandardInput.WriteLine(input)` or raw write.
+    3. **Web Terminal Component (Xterm.js)**:
+        - Add Xterm.js bundle to `wwwroot/` (or via CDN/npm).
+        - In `CardPopup.razor`: Embed the terminal component in a dedicated **Terminal** tab.
+        - Terminal JSInterop:
+            - Mounts interactive terminal emulator in the popup.
+            - Subscribes to backend output events and calls `term.write(data)`.
+            - Listens to terminal keystrokes (`term.onData(...)`) and invokes C# `SendInputAsync`.
+    4. **Tool Approval & Chat Window**:
+        - Tool approval prompts (`[y/n/a]`) emitted by the CLI appear directly in the terminal, and users can approve or reject them directly via keyboard input.
+        - Users can type chat messages directly into the terminal prompt to converse with the agent.
+- **Acceptance Criteria**:
+    - Zero external OS terminal windows open.
+    - Zero `copilot://` links appear.
+    - Users can view live streaming ANSI output inside the web app.
+    - Users can interactively type into the terminal, approve tool runs, and chat with the running agent.
+
+---
+
+## 9. Verification & Testing Plan
+
+1. **Unit & Integration Tests**:
+    - `AgentContextFolderServiceTests`: Verify generation of `.agent-context/` directory with frontmatter YAML `copilot-instructions.md`, `TASK_CONTEXT.md`, `mcp_config.json`, and git shim.
+    - `SchedulerPrioritizationTests`: Verify sorting:
+        - Oldest ticket by `StartedAt`, then oldest task by `StartedAt`.
+        - Fallback: when `StartedAt` is null, sort descending by dependency count (`DependedOnBy.Count`).
+        - Tie-breaker: random selection when dependency counts tie.
+        - Verify filtering tasks in any column not in `HumanReview`/`Done` and having no active agent.
+    - `AgentPromptComposerTests`: Verify embedded harness system prompt generation and MCP instructions.
+    - `FeatureDependencyServiceTests` & `StepDependencyServiceTests`: Verify bidirectional link creation, bidirectional deletion, and cycle prevention.
+    - `WorkflowEngineTests`: Verify 1 Entry Point invariant, named transition routing, and Human Review skipping.
+    - `AgentTerminalSessionTests`: Verify bi-directional I/O pipe between Xterm.js and `process.StandardInput`/`process.StandardOutput`.
+2. **End-to-End User Journeys**:
+    - **Agent Setup**: Create agent definition, move task to execution, inspect generated `.agent-context/` directory on disk.
+    - **Interactive Terminal**: Launch a task agent, observe real-time output in `CardPopup`'s terminal tab, send tool approval (`y`), and verify command execution.
+    - **System Prompt Protocol**: Agent completes task, calls `get_available_actions`, requests user clarification in terminal if ambiguous, and advances task.
+    - **Scheduler Dispatch**: Place multiple tickets and tasks in backlog, move tickets to Build, verify the oldest task of the oldest ticket by `StartedAt` starts first; verify fallback to dependency count and random tie-breaker.
+    - **Navigation & UI**: Verify clean top-right header, `/workflows` editor, `<AppButton>` styling, and drag-and-drop emerald/rose outlines.

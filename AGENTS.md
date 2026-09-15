@@ -14,6 +14,11 @@ When executing or debugging tests, adhere strictly to the following diagnostic s
 3. **Fallback to Test Command**: If the build succeeds but the test run fails again with no actionable output, run a test command (e.g., CLI test runner) to capture detailed terminal/console diagnostics.
 4. **Revert to Rider MCP**: Always return to Rider MCP calls as the default and primary mechanism for subsequent operations once the issue is understood.
 
+## UI Styling & Component Design
+
+- **Use Tailwind CSS Classes**: Style UI elements using Tailwind CSS utility classes.
+- **Locate Styling in Components for Reusability**: Encapsulate styling directly within reusable components (e.g. shared Blazor components) to ensure modular, maintainable, and reusable UI elements across views, avoiding duplicated style declarations and ad-hoc global CSS.
+
 ## Temporary Files & Scratch Space
 
 - **Use In-Project Temp Directory**: All temporary files, scratch scripts, logs, and intermediate artifacts must be placed inside the gitignored `.agent-temp` folder ([`AgentTaskHarness/AI/.agent-temp/`](file:///Users/gud/RiderProjects/AgentTaskHarness/AgentTaskHarness/AI/.agent-temp/)) rather than the system temp directory (e.g., `/tmp` or `$TMPDIR`).
