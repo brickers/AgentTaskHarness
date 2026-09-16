@@ -81,7 +81,11 @@ window.xtermInterop = {
         });
 
         connection.on("SessionStateChanged", (sessionId, statusDto) => {
-            if (state.sessionId && state.sessionId !== sessionId) return;
+            if (!state.sessionId && sessionId) {
+                state.sessionId = sessionId;
+            } else if (state.sessionId && state.sessionId !== sessionId) {
+                return;
+            }
             if (dotNetRef) {
                 dotNetRef.invokeMethodAsync("OnSessionStateChanged", statusDto);
             }
@@ -132,13 +136,34 @@ window.xtermInterop = {
             state.resizeObserver.observe(container);
         }
 
+        // Connection lifecycle notifications
+        connection.onreconnecting(err => {
+            console.warn("SignalR reconnecting...", err);
+            if (dotNetRef) dotNetRef.invokeMethodAsync("OnConnectionStatusChanged", "Reconnecting");
+        });
+
+        connection.onreconnected(connectionId => {
+            console.log("SignalR reconnected:", connectionId);
+            if (state.sessionId) {
+                connection.invoke("JoinSession", state.sessionId).catch(() => { });
+            }
+            if (dotNetRef) dotNetRef.invokeMethodAsync("OnConnectionStatusChanged", "Connected");
+        });
+
+        connection.onclose(err => {
+            console.warn("SignalR connection closed:", err);
+            if (dotNetRef) dotNetRef.invokeMethodAsync("OnConnectionStatusChanged", "Disconnected");
+        });
+
         // Start SignalR connection
         try {
             await connection.start();
             console.log("TerminalHub SignalR connected successfully");
+            if (dotNetRef) dotNetRef.invokeMethodAsync("OnConnectionStatusChanged", "Connected");
         } catch (err) {
             term.writeln(`\x1b[31mFailed to connect to TerminalHub: ${err.message}\x1b[0m`);
             console.error("SignalR connection error:", err);
+            if (dotNetRef) dotNetRef.invokeMethodAsync("OnConnectionStatusChanged", "Error");
         }
 
         return elementId;
@@ -181,6 +206,17 @@ window.xtermInterop = {
         } catch (err) {
             state.term.writeln(`\r\n\x1b[31mError starting shell: ${err.message}\x1b[0m\r\n`);
             throw err;
+        }
+    },
+
+    async sendInput(elementId, data) {
+        const state = this.instances[elementId];
+        if (!state || !state.sessionId) return;
+
+        try {
+            await state.connection.invoke("SendInput", state.sessionId, data);
+        } catch (err) {
+            console.error("Error sending input:", err);
         }
     },
 

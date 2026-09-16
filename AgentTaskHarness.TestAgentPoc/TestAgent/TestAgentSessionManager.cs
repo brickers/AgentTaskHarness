@@ -57,24 +57,26 @@ public sealed class TestAgentSessionManager : IAsyncDisposable, IDisposable
         string requirements,
         int cols = 80,
         int rows = 24,
+        Guid? sessionId = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(targetDir);
 
-        var sessionId = Guid.NewGuid();
+        var id = sessionId ?? Guid.NewGuid();
         var session = new TestAgentSession(
-            sessionId,
+            id,
             targetDir,
             requirements,
             isShell: false,
             initialState: TestAgentState.Initializing);
 
-        _sessions[sessionId] = session;
-        _logger.LogInformation("Creating test agent session {SessionId} for {TargetDir}", sessionId, targetDir);
+        _sessions[id] = session;
+        _logger.LogInformation("Creating test agent session {SessionId} for {TargetDir}", id, targetDir);
 
         int port = ResolvePort();
-        var (hooksDir, targetHookFile) = SetupHookConfigurations(sessionId, targetDir, port);
+        var (hooksDir, targetHookFile) = SetupHookConfigurations(id, targetDir, port);
         session.TempHooksDir = hooksDir;
+        session.TargetHookFile = targetHookFile;
 
         string prompt = string.IsNullOrWhiteSpace(requirements)
             ? DefaultTestAgentDefinition.Prompt
@@ -87,7 +89,7 @@ public sealed class TestAgentSessionManager : IAsyncDisposable, IDisposable
             rows: rows,
             environmentVariables: new Dictionary<string, string>
             {
-                ["TEST_AGENT_SESSION_ID"] = sessionId.ToString(),
+                ["TEST_AGENT_SESSION_ID"] = id.ToString(),
                 ["TEST_AGENT_PORT"] = port.ToString()
             });
 
@@ -107,22 +109,23 @@ public sealed class TestAgentSessionManager : IAsyncDisposable, IDisposable
         string? targetDir = null,
         int cols = 80,
         int rows = 24,
+        Guid? sessionId = null,
         CancellationToken cancellationToken = default)
     {
-        var sessionId = Guid.NewGuid();
+        var id = sessionId ?? Guid.NewGuid();
         string workingDir = !string.IsNullOrWhiteSpace(targetDir) && Directory.Exists(targetDir)
             ? targetDir
             : Environment.CurrentDirectory;
 
         var session = new TestAgentSession(
-            sessionId,
+            id,
             workingDir,
             requirements: "Interactive Shell Smoke Test",
             isShell: true,
             initialState: TestAgentState.Thinking);
 
-        _sessions[sessionId] = session;
-        _logger.LogInformation("Creating shell test session {SessionId} in {WorkingDir}", sessionId, workingDir);
+        _sessions[id] = session;
+        _logger.LogInformation("Creating shell test session {SessionId} in {WorkingDir}", id, workingDir);
 
         string shell = File.Exists("/bin/zsh") ? "/bin/zsh" : (File.Exists("/bin/bash") ? "/bin/bash" : "/bin/sh");
         var startInfo = new PtyStartInfo(
@@ -290,6 +293,8 @@ public sealed class TestAgentSessionManager : IAsyncDisposable, IDisposable
         {
             await _hubContext.Clients.Group(session.Id.ToString())
                 .SendAsync("SessionStateChanged", session.Id.ToString(), session.ToStatusDto());
+            await _hubContext.Clients.All
+                .SendAsync("SessionStateChanged", session.Id.ToString(), session.ToStatusDto());
         }
         catch (Exception ex)
         {
@@ -305,10 +310,12 @@ public sealed class TestAgentSessionManager : IAsyncDisposable, IDisposable
                 session.TouchActivity();
                 string text = Encoding.UTF8.GetString(chunk);
 
-                // Broadcast raw output chunk to listeners in the session group
+                // Broadcast raw output chunk to listeners in the session group and all connected clients
                 try
                 {
                     await _hubContext.Clients.Group(session.Id.ToString())
+                        .SendAsync("ReceiveOutput", session.Id.ToString(), text, ct);
+                    await _hubContext.Clients.All
                         .SendAsync("ReceiveOutput", session.Id.ToString(), text, ct);
                 }
                 catch (Exception ex)
@@ -339,6 +346,8 @@ public sealed class TestAgentSessionManager : IAsyncDisposable, IDisposable
                 try
                 {
                     await _hubContext.Clients.Group(session.Id.ToString())
+                        .SendAsync("SessionFinished", session.Id.ToString(), exitCode);
+                    await _hubContext.Clients.All
                         .SendAsync("SessionFinished", session.Id.ToString(), exitCode);
                 }
                 catch { /* Ignore */ }
@@ -427,6 +436,15 @@ public sealed class TestAgentSessionManager : IAsyncDisposable, IDisposable
                 Directory.Delete(session.TempHooksDir, recursive: true);
             }
             catch { /* Ignore cleanup errors */ }
+        }
+
+        if (session.TargetHookFile != null && File.Exists(session.TargetHookFile))
+        {
+            try
+            {
+                File.Delete(session.TargetHookFile);
+            }
+            catch { /* Ignore */ }
         }
 
         string altTempHookPath = Path.Combine(Directory.GetCurrentDirectory(), ".agent-temp", $"test-hooks-{session.Id}.json");

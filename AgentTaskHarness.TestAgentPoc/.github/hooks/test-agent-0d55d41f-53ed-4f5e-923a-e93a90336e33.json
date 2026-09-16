@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      { "type": "command", "bash": "curl -s -X POST http://127.0.0.1:5299/api/test-agent/hook/0d55d41f-53ed-4f5e-923a-e93a90336e33/sessionStart -H 'Content-Type: application/json' -d @-" }
+    ],
+    "userPromptSubmitted": [
+      { "type": "command", "bash": "curl -s -X POST http://127.0.0.1:5299/api/test-agent/hook/0d55d41f-53ed-4f5e-923a-e93a90336e33/userPromptSubmitted -H 'Content-Type: application/json' -d @-" }
+    ],
+    "preToolUse": [
+      { "type": "command", "bash": "curl -s -X POST http://127.0.0.1:5299/api/test-agent/hook/0d55d41f-53ed-4f5e-923a-e93a90336e33/preToolUse -H 'Content-Type: application/json' -d @-" }
+    ],
+    "postToolUse": [
+      { "type": "command", "bash": "curl -s -X POST http://127.0.0.1:5299/api/test-agent/hook/0d55d41f-53ed-4f5e-923a-e93a90336e33/postToolUse -H 'Content-Type: application/json' -d @-" }
+    ],
+    "agentStop": [
+      { "type": "command", "bash": "curl -s -X POST http://127.0.0.1:5299/api/test-agent/hook/0d55d41f-53ed-4f5e-923a-e93a90336e33/agentStop -H 'Content-Type: application/json' -d @-" }
+    ],
+    "errorOccurred": [
+      { "type": "command", "bash": "curl -s -X POST http://127.0.0.1:5299/api/test-agent/hook/0d55d41f-53ed-4f5e-923a-e93a90336e33/errorOccurred -H 'Content-Type: application/json' -d @-" }
+    ],
+    "sessionEnd": [
+      { "type": "command", "bash": "curl -s -X POST http://127.0.0.1:5299/api/test-agent/hook/0d55d41f-53ed-4f5e-923a-e93a90336e33/sessionEnd -H 'Content-Type: application/json' -d @-" }
+    ]
+  }
+}

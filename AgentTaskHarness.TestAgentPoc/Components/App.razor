@@ -11,16 +11,16 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
-    <HeadOutlet />
+    <HeadOutlet @rendermode="Microsoft.AspNetCore.Components.Web.RenderMode.InteractiveServer" />
 </head>
 
 <body class="bg-[#0e1117] text-neutral-100 min-h-screen">
-    <Routes />
-    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <Routes @rendermode="Microsoft.AspNetCore.Components.Web.RenderMode.InteractiveServer" />
     <script src="https://cdn.jsdelivr.net/npm/@@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
-    <script src="/js/xterm-interop.js"></script>
+    <script src="@Assets["js/xterm-interop.js"]"></script>
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 
 </html>

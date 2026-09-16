@@ -4,6 +4,7 @@ using AgentTaskHarness.TestAgentPoc.Controllers;
 using AgentTaskHarness.TestAgentPoc.Hubs;
 using AgentTaskHarness.TestAgentPoc.Pty;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Configuration;
@@ -12,11 +13,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace AgentTaskHarness.TestAgentPoc.TestAgent;
 
 /// <summary>
-/// Acceptance and integration verification for Phases 2, 3, and 4:
+/// Acceptance and integration verification for Phases 2, 3, 4, and 5:
 /// - Phase 2: Shell round-trip through session manager, PTY streaming, and resize.
 /// - Phase 3: Ephemeral hook file generation and AgentHookController endpoint integration.
-/// - Phase 4: State machine transitions (preToolUse, ask_user, approval, agentStop, errors),
-///            watchdog inactivity timeout detection (Stalled state), and Ctrl+C interrupt recovery.
+/// - Phase 4: State machine transitions, watchdog hang detection, and interrupt recovery.
+/// - Phase 5: Playground wiring, default agent definition prompt merging, and SignalR hub endpoints.
 /// </summary>
 public static class TestAgentSmokeTest
 {
@@ -56,7 +57,7 @@ public static class TestAgentSmokeTest
     public static async Task<int> RunAsync()
     {
         Console.WriteLine("=================================================");
-        Console.WriteLine(" Running Phase 2, 3, & 4 Acceptance Smoke Tests");
+        Console.WriteLine(" Running Phase 2, 3, 4 & 5 Acceptance Smoke Tests");
         Console.WriteLine("=================================================");
 
         var inMemoryConfig = new Dictionary<string, string?>
@@ -80,16 +81,17 @@ public static class TestAgentSmokeTest
             await TestPhase3HookControllerEndpointAsync(sessionManager);
             await TestPhase4StateMachineTransitionsAsync(sessionManager);
             await TestPhase4WatchdogHangDetectionAsync(sessionManager, config);
+            await TestPhase5PlaygroundWiringAsync(sessionManager);
 
             Console.WriteLine("=================================================");
-            Console.WriteLine(" ✅ All Phase 2, 3, & 4 Tests Passed Successfully!");
+            Console.WriteLine(" ✅ All Phase 2, 3, 4 & 5 Tests Passed Successfully!");
             Console.WriteLine("=================================================");
             return 0;
         }
         catch (Exception ex)
         {
             Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"\n❌ Phase 2/3/4 Smoke Test Failed: {ex.Message}\n{ex.StackTrace}");
+            Console.WriteLine($"\n❌ Smoke Test Failed: {ex.Message}\n{ex.StackTrace}");
             Console.ResetColor();
             return 1;
         }
@@ -332,5 +334,70 @@ public static class TestAgentSmokeTest
         }
 
         Console.WriteLine("PASS");
+    }
+
+    private static async Task TestPhase5PlaygroundWiringAsync(TestAgentSessionManager sessionManager)
+    {
+        Console.Write("Test P5: Playground agent prompt merging & SignalR hub endpoints... ");
+
+        // 1. Verify default prompt and requirement merging per §5
+        const string customReqs = "Run unit tests and fix any failing assertions.";
+        string merged = $"{DefaultTestAgentDefinition.Prompt}\n\nTask Requirements:\n{customReqs.Trim()}";
+        if (!merged.Contains("You are an autonomous engineering and testing assistant") ||
+            !merged.Contains(customReqs))
+        {
+            throw new InvalidOperationException("Merged prompt does not properly contain base prompt and requirements.");
+        }
+
+        // 2. Hub instance test
+        var hub = new TerminalHub(sessionManager, NullLogger<TerminalHub>.Instance);
+        var hubCallerContext = new MockHubCallerContext("test-conn-1");
+        hub.Context = hubCallerContext;
+
+        var sessionId = Guid.NewGuid();
+        var session = new TestAgentSession(
+            sessionId,
+            Directory.GetCurrentDirectory(),
+            customReqs,
+            initialState: TestAgentState.Thinking);
+        sessionManager.RegisterTestSession(session);
+
+        // Verify status DTO
+        var status = hub.GetSessionStatus(sessionId.ToString());
+        if (status == null || status.State != nameof(TestAgentState.Thinking) || !status.IsRunning)
+        {
+            throw new InvalidOperationException($"Hub.GetSessionStatus returned invalid status: {status?.State}");
+        }
+
+        // Verify hub interrupt & stop
+        await hub.InterruptSession(sessionId.ToString());
+        await hub.StopSession(sessionId.ToString());
+
+        var finishedStatus = hub.GetSessionStatus(sessionId.ToString());
+        if (finishedStatus == null || finishedStatus.State != nameof(TestAgentState.Finished) || finishedStatus.IsRunning)
+        {
+            throw new InvalidOperationException($"Hub.StopSession did not transition to Finished: {finishedStatus?.State}");
+        }
+
+        Console.WriteLine("PASS");
+    }
+
+    private sealed class MockHubCallerContext : HubCallerContext
+    {
+        public override string ConnectionId { get; }
+        public override string? UserIdentifier => null;
+        public override System.Security.Claims.ClaimsPrincipal? User => null;
+        public override IDictionary<object, object?> Items { get; } = new Dictionary<object, object?>();
+        public override IFeatureCollection Features => new FeatureCollection();
+        public override CancellationToken ConnectionAborted => CancellationToken.None;
+
+        public MockHubCallerContext(string connectionId)
+        {
+            ConnectionId = connectionId;
+        }
+
+        public override void Abort()
+        {
+        }
     }
 }

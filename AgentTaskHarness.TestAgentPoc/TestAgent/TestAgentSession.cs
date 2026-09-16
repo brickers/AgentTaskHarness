@@ -36,6 +36,7 @@ public sealed class TestAgentSession
     public int? ExitCode { get; private set; }
     public string? FailureReason { get; private set; }
     public string? TempHooksDir { get; set; }
+    public string? TargetHookFile { get; set; }
 
     public IPtySession? PtySession { get; set; }
 

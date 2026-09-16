@@ -2,7 +2,9 @@
 @inject IJSRuntime JSRuntime
 @implements IAsyncDisposable
 
-<div @ref="_terminalContainer" class="xterm-wrapper w-full h-full min-h-[450px] bg-[#121317] rounded-lg p-2 border border-neutral-800 shadow-inner overflow-hidden">
+<div class="relative w-full">
+    <div @ref="_terminalContainer" class="xterm-wrapper w-full h-full min-h-[480px] bg-[#121317] rounded-lg p-2 border border-neutral-800 shadow-inner overflow-hidden font-mono">
+    </div>
 </div>
 
 @code {
@@ -17,7 +19,14 @@
     [Parameter]
     public EventCallback<(string SessionId, int ExitCode)> OnFinished { get; set; }
 
+    [Parameter]
+    public EventCallback<string> OnConnectionStatusChanged { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnConnectionStateChanged { get; set; }
+
     public string? CurrentSessionId { get; private set; }
+    public string ConnectionStatus { get; private set; } = "Connecting";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -58,6 +67,12 @@
         return CurrentSessionId;
     }
 
+    public async Task SendInputAsync(string data)
+    {
+        if (!_isInitialized || string.IsNullOrEmpty(_elementId)) return;
+        await JSRuntime.InvokeVoidAsync("xtermInterop.sendInput", _elementId, data);
+    }
+
     public async Task StopSessionAsync()
     {
         if (!_isInitialized || string.IsNullOrEmpty(_elementId)) return;
@@ -76,6 +91,12 @@
         await JSRuntime.InvokeVoidAsync("xtermInterop.clear", _elementId);
     }
 
+    public async Task FocusAsync()
+    {
+        if (!_isInitialized || string.IsNullOrEmpty(_elementId)) return;
+        await JSRuntime.InvokeVoidAsync("xtermInterop.focus", _elementId);
+    }
+
     [JSInvokable]
     public async Task OnSessionStateChanged(TestAgentStatusDto status)
     {
@@ -92,6 +113,20 @@
         if (OnFinished.HasDelegate)
         {
             await OnFinished.InvokeAsync((sessionId, exitCode));
+        }
+    }
+
+    [JSInvokable("OnConnectionStatusChanged")]
+    public async Task HandleJsConnectionStatusChanged(string status)
+    {
+        ConnectionStatus = status;
+        if (OnConnectionStatusChanged.HasDelegate)
+        {
+            await OnConnectionStatusChanged.InvokeAsync(status);
+        }
+        if (OnConnectionStateChanged.HasDelegate)
+        {
+            await OnConnectionStateChanged.InvokeAsync(status);
         }
     }
 

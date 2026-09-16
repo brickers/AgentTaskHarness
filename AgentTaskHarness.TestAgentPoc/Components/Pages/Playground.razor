@@ -1,51 +1,210 @@
 @page "/"
+@page "/test-agent"
 @using AgentTaskHarness.TestAgentPoc.TestAgent
 @inject NavigationManager NavigationManager
+@inject IConfiguration Configuration
+@implements IDisposable
 
 <PageTitle>Copilot Agent Test Playground</PageTitle>
 
 <div class="max-w-7xl mx-auto p-6 space-y-6">
     <!-- Header -->
-    <header class="flex items-center justify-between border-b border-neutral-800 pb-4">
+    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-neutral-800 pb-4">
         <div>
             <h1 class="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
                 <span class="text-blue-500">🤖</span> Copilot Agent Test Playground
             </h1>
             <p class="text-sm text-neutral-400 mt-1">
-                Proof of Concept interactive test harness with embedded xterm.js, SignalR streaming, and Copilot lifecycle hooks.
+                Interactive test harness for GitHub Copilot CLI with real-time POSIX PTY, SignalR streaming, and lifecycle hooks.
             </p>
         </div>
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 bg-neutral-900/80 px-4 py-2 rounded-lg border border-neutral-800">
             <span class="text-xs text-neutral-400">Status:</span>
             @RenderStatusBadge()
+            @if (_elapsedSeconds > 0 || _isRunning)
+            {
+                <span class="text-xs font-mono text-neutral-400 pl-2 border-l border-neutral-700">
+                    ⏱️ @FormattedElapsed
+                </span>
+            }
         </div>
     </header>
 
+    <!-- State-driven Action Banners -->
+    @if (_status?.State == nameof(TestAgentState.Stalled))
+    {
+        <div class="bg-red-950/50 border border-red-800/80 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-red-200 animate-pulse">
+            <div class="flex items-center gap-3">
+                <span class="text-2xl">⚠️</span>
+                <div>
+                    <div class="font-semibold text-sm">Agent appears stalled (no activity detected)</div>
+                    <div class="text-xs text-red-300/80 mt-0.5">
+                        No PTY output or hook events for over the inactivity watchdog threshold.
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button @onclick="InterruptAsync"
+                        class="px-3 py-1.5 text-xs font-semibold rounded-md bg-amber-600 hover:bg-amber-500 text-white shadow transition flex items-center gap-1">
+                    <span>⚡</span> Send Ctrl+C
+                </button>
+                <button @onclick="StopAgentAsync"
+                        class="px-3 py-1.5 text-xs font-semibold rounded-md bg-red-700 hover:bg-red-600 text-white shadow transition">
+                    Stop Agent
+                </button>
+            </div>
+        </div>
+    }
+    else if (_status?.State == nameof(TestAgentState.WaitingForApproval))
+    {
+        <div class="bg-orange-950/50 border border-orange-800/80 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-orange-200">
+            <div class="flex items-center gap-3">
+                <span class="text-2xl">✋</span>
+                <div>
+                    <div class="font-semibold text-sm">Agent is requesting approval</div>
+                    <div class="text-xs text-orange-300/80 mt-0.5 font-mono">
+                        Tool: @(_status.CurrentToolName ?? "Unknown") @(!string.IsNullOrEmpty(_status.CurrentToolArgs) ? $"({_status.CurrentToolArgs})" : "")
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button @onclick='() => SendTerminalInputAsync("y\n")'
+                        class="px-3 py-1.5 text-xs font-semibold rounded-md bg-emerald-600 hover:bg-emerald-500 text-white shadow transition flex items-center gap-1">
+                    <span>✓</span> Approve (y)
+                </button>
+                <button @onclick='() => SendTerminalInputAsync("n\n")'
+                        class="px-3 py-1.5 text-xs font-semibold rounded-md bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 transition flex items-center gap-1">
+                    <span>✗</span> Reject (n)
+                </button>
+            </div>
+        </div>
+    }
+    else if (_status?.State == nameof(TestAgentState.WaitingForUser))
+    {
+        <div class="bg-purple-950/40 border border-purple-800/70 rounded-xl p-4 flex items-center justify-between text-purple-200">
+            <div class="flex items-center gap-3">
+                <span class="text-2xl">💬</span>
+                <div>
+                    <div class="font-semibold text-sm">Agent is waiting for your response</div>
+                    <div class="text-xs text-purple-300/80 mt-0.5">
+                        The agent has paused or requested clarification via <code class="bg-purple-900/50 px-1 py-0.5 rounded text-purple-200 font-mono">ask_user</code>. Type in the terminal below.
+                    </div>
+                </div>
+            </div>
+            <button @onclick="FocusTerminalAsync"
+                    class="px-3 py-1.5 text-xs font-semibold rounded-md bg-purple-600 hover:bg-purple-500 text-white shadow transition">
+                Focus Terminal
+            </button>
+        </div>
+    }
+    else if (_status?.State == nameof(TestAgentState.Failed))
+    {
+        <div class="bg-red-950/40 border border-red-800/60 rounded-xl p-4 flex items-center justify-between text-red-200">
+            <div class="flex items-center gap-3">
+                <span class="text-2xl">❌</span>
+                <div>
+                    <div class="font-semibold text-sm">Agent execution failed</div>
+                    <div class="text-xs text-red-300/80 mt-0.5">
+                        @(_status.FailureReason ?? "Process exited with non-zero status.")
+                    </div>
+                </div>
+            </div>
+            <button @onclick="ResetSession"
+                    class="px-3 py-1.5 text-xs font-semibold rounded-md bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 transition">
+                Dismiss
+            </button>
+        </div>
+    }
+    else if (_status?.State == nameof(TestAgentState.Finished))
+    {
+        <div class="bg-emerald-950/40 border border-emerald-800/60 rounded-xl p-4 flex items-center justify-between text-emerald-200">
+            <div class="flex items-center gap-3">
+                <span class="text-2xl">✅</span>
+                <div>
+                    <div class="font-semibold text-sm">Agent session finished</div>
+                    <div class="text-xs text-emerald-300/80 mt-0.5">
+                        Completed with exit code @(_status.ExitCode ?? 0). Total time: @FormattedElapsed.
+                    </div>
+                </div>
+            </div>
+            <button @onclick="ResetSession"
+                    class="px-3 py-1.5 text-xs font-semibold rounded-md bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 transition">
+                Reset
+            </button>
+        </div>
+    }
+
     <!-- Configuration Card -->
     <div class="bg-neutral-900/70 border border-neutral-800 rounded-xl p-5 shadow-sm space-y-4">
-        <h2 class="text-base font-semibold text-neutral-200">Session Configuration</h2>
+        <div class="flex items-center justify-between">
+            <h2 class="text-base font-semibold text-neutral-200">Session Configuration</h2>
+            <button @onclick="TogglePromptPreview"
+                    class="text-xs text-blue-400 hover:text-blue-300 transition flex items-center gap-1">
+                <span>@(_showPromptPreview ? "Hide" : "View") Agent System Prompt</span>
+                <span>@(_showPromptPreview ? "▲" : "▼")</span>
+            </button>
+        </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-                <label class="block text-xs font-medium text-neutral-300 mb-1">Target Working Directory</label>
+                <div class="flex items-center justify-between mb-1">
+                    <label class="block text-xs font-medium text-neutral-300">Target Working Directory</label>
+                    <div class="flex gap-2 text-[11px]">
+                        <button type="button" @onclick="SetToCurrentDirectory" class="text-blue-400 hover:underline">App Dir</button>
+                        <span class="text-neutral-600">|</span>
+                        <button type="button" @onclick="SetToRepoRoot" class="text-blue-400 hover:underline">Repo Root</button>
+                        <span class="text-neutral-600">|</span>
+                        <button type="button" @onclick="SetToTempScratch" class="text-blue-400 hover:underline">Temp Scratch</button>
+                    </div>
+                </div>
                 <input type="text"
                        @bind="_targetDirectory"
+                       @bind:after="ValidateDirectory"
                        placeholder="/absolute/path/to/project"
                        disabled="@_isRunning"
-                       class="w-full px-3 py-2 text-sm bg-neutral-950 border border-neutral-700 rounded-md text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-blue-500 disabled:opacity-50 font-mono" />
+                       class="w-full px-3 py-2 text-sm bg-neutral-950 border @(_isDirValid ? "border-neutral-700 focus:border-blue-500" : "border-amber-600 focus:border-amber-500") rounded-md text-neutral-100 placeholder-neutral-500 focus:outline-none disabled:opacity-50 font-mono" />
+                @if (!_isDirValid)
+                {
+                    <p class="text-[11px] text-amber-400 mt-1">⚠️ Directory does not exist yet; will be created on start.</p>
+                }
             </div>
 
             <div>
                 <label class="block text-xs font-medium text-neutral-300 mb-1">Session ID / Reference</label>
-                <input type="text"
-                       value="@(_status?.SessionId ?? "None")"
-                       readonly
-                       class="w-full px-3 py-2 text-sm bg-neutral-950 border border-neutral-800 rounded-md text-neutral-400 font-mono select-all" />
+                <div class="flex items-center gap-2">
+                    <input type="text"
+                           value="@(_status?.SessionId ?? "None")"
+                           readonly
+                           class="w-full px-3 py-2 text-sm bg-neutral-950 border border-neutral-800 rounded-md text-neutral-400 font-mono select-all" />
+                    @if (!string.IsNullOrEmpty(_status?.SessionId) && _status.SessionId != "None" && _status.SessionId != "Starting...")
+                    {
+                        <button type="button"
+                                @onclick="CopySessionIdAsync"
+                                title="Copy session ID"
+                                class="px-2.5 py-2 text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-md border border-neutral-700 transition">
+                            📋
+                        </button>
+                    }
+                </div>
             </div>
         </div>
 
         <div>
-            <label class="block text-xs font-medium text-neutral-300 mb-1">Task Requirements</label>
+            <div class="flex items-center justify-between mb-1">
+                <label class="block text-xs font-medium text-neutral-300">Task Requirements</label>
+                <div class="flex flex-wrap gap-1.5 text-[11px]">
+                    <span class="text-neutral-500">Presets:</span>
+                    <button type="button" @onclick='() => SetRequirementPreset("runTests")' class="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700/60 transition">
+                        Run & Fix Tests
+                    </button>
+                    <button type="button" @onclick='() => SetRequirementPreset("verifyBuild")' class="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700/60 transition">
+                        Verify Build
+                    </button>
+                    <button type="button" @onclick='() => SetRequirementPreset("inspectRepo")' class="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700/60 transition">
+                        Inspect Repo
+                    </button>
+                </div>
+            </div>
             <textarea @bind="_requirements"
                       rows="3"
                       placeholder="e.g. Inspect the test suite and fix any failing unit tests. Run 'dotnet test' to verify."
@@ -53,18 +212,48 @@
                       class="w-full px-3 py-2 text-sm bg-neutral-950 border border-neutral-700 rounded-md text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-blue-500 disabled:opacity-50 font-sans"></textarea>
         </div>
 
+        <!-- Prompt Preview Accordion -->
+        @if (_showPromptPreview)
+        {
+            <div class="bg-neutral-950 border border-neutral-800 rounded-lg p-4 space-y-3 text-xs">
+                <div class="flex items-center justify-between border-b border-neutral-800/80 pb-2">
+                    <span class="font-semibold text-neutral-300">
+                        Default Agent Role: <span class="text-blue-400 font-mono">@DefaultTestAgentDefinition.Role</span>
+                    </span>
+                    <span class="text-neutral-500 font-mono">Merged Prompt Preview (sent via -i)</span>
+                </div>
+                <div class="font-mono text-neutral-300 whitespace-pre-wrap max-h-52 overflow-y-auto p-2 bg-neutral-900/60 rounded border border-neutral-800/60">
+@GetMergedPromptPreview()
+                </div>
+                <p class="text-[11px] text-neutral-500">
+                    The default engineering guidelines and your custom requirements are merged automatically into the Copilot interactive turn.
+                </p>
+            </div>
+        }
+
         <!-- Controls Toolbar -->
         <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-neutral-800/80">
             <div class="flex flex-wrap items-center gap-2">
                 @if (!_isRunning)
                 {
                     <button @onclick="StartAgentAsync"
-                            class="px-4 py-2 text-sm font-semibold rounded-md bg-blue-600 hover:bg-blue-500 text-white shadow transition flex items-center gap-1.5">
-                        <span>▶</span> Start Agent
+                            disabled="@_isStarting"
+                            class="px-4 py-2 text-sm font-semibold rounded-md bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white shadow transition flex items-center gap-1.5">
+                        @if (_isStarting)
+                        {
+                            <span class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                            <span>Starting...</span>
+                        }
+                        else
+                        {
+                            <span>▶</span>
+                            <span>Start Agent</span>
+                        }
                     </button>
 
                     <button @onclick="StartShellAsync"
-                            class="px-3.5 py-2 text-sm font-medium rounded-md bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 transition flex items-center gap-1.5">
+                            disabled="@_isStarting"
+                            class="px-3.5 py-2 text-sm font-medium rounded-md bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 text-neutral-200 border border-neutral-700 transition flex items-center gap-1.5">
                         <span>⚡</span> Test Shell
                     </button>
                 }
@@ -78,7 +267,7 @@
                     <button @onclick="InterruptAsync"
                             class="px-3 py-2 text-sm font-medium rounded-md bg-amber-600 hover:bg-amber-500 text-white transition flex items-center gap-1.5"
                             title="Sends Ctrl+C (0x03) into PTY">
-                        <span>⚠</span> Interrupt (Ctrl+C)
+                        <span>⚠️</span> Interrupt (Ctrl+C)
                     </button>
                 }
 
@@ -88,32 +277,59 @@
                 </button>
             </div>
 
-            @if (_status != null)
-            {
-                <div class="text-xs text-neutral-400 font-mono">
-                    Last active: @_status.LastActivityTimestamp.ToLocalTime().ToString("HH:mm:ss")
+            <!-- Execution info -->
+            <div class="flex flex-wrap items-center gap-3 text-xs text-neutral-400 font-mono">
+                @if (_status != null)
+                {
+                    <div>
+                        Last active: <span class="text-neutral-200">@_status.LastActivityTimestamp.ToLocalTime().ToString("HH:mm:ss")</span>
+                    </div>
                     @if (!string.IsNullOrEmpty(_status.CurrentToolName))
                     {
-                        <span class="ml-2 text-amber-400 font-semibold">Tool: @_status.CurrentToolName</span>
+                        <div class="text-amber-400 font-semibold flex items-center gap-1">
+                            <span>⚙️</span> Tool: @_status.CurrentToolName
+                        </div>
                     }
+                }
+                <div class="flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full @(_connectionStatus == "Connected" ? "bg-emerald-400" : "bg-amber-400")"></span>
+                    <span class="text-[11px] text-neutral-500">Hub: @_connectionStatus</span>
                 </div>
-            }
+            </div>
         </div>
     </div>
 
     <!-- Terminal View -->
     <div class="bg-neutral-900/90 border border-neutral-800 rounded-xl p-4 shadow-lg space-y-2">
         <div class="flex items-center justify-between text-xs text-neutral-400 pb-1 px-1">
-            <span class="flex items-center gap-2">
-                <span class="inline-block w-2.5 h-2.5 rounded-full bg-neutral-700"></span>
-                <span>Interactive Terminal (xterm.js)</span>
-            </span>
-            <span class="font-mono text-neutral-500">PTY Stream: Connected via SignalR</span>
+            <div class="flex items-center gap-2">
+                <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                <span class="font-medium text-neutral-200">Interactive Terminal (xterm.js)</span>
+                <span class="text-neutral-500 font-mono text-[11px]">— supports typing, approvals, ANSI colors, cursor navigation</span>
+            </div>
+            
+            <!-- Quick input shortcuts -->
+            <div class="flex items-center gap-1.5 text-[11px]">
+                <span class="text-neutral-500 mr-1">Quick Send:</span>
+                <button type="button" @onclick='() => SendTerminalInputAsync("y\n")' disabled="@(!_isRunning)" class="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 text-neutral-300 border border-neutral-700 transition font-mono">
+                    y ↵
+                </button>
+                <button type="button" @onclick='() => SendTerminalInputAsync("n\n")' disabled="@(!_isRunning)" class="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 text-neutral-300 border border-neutral-700 transition font-mono">
+                    n ↵
+                </button>
+                <button type="button" @onclick='() => SendTerminalInputAsync("\n")' disabled="@(!_isRunning)" class="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 text-neutral-300 border border-neutral-700 transition font-mono">
+                    ↵ Enter
+                </button>
+                <button type="button" @onclick="InterruptAsync" disabled="@(!_isRunning)" class="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 text-amber-300 border border-neutral-700 transition font-mono">
+                    ^C
+                </button>
+            </div>
         </div>
 
         <XtermTerminal @ref="_terminal"
                        OnStateChanged="HandleStateChanged"
-                       OnFinished="HandleSessionFinished" />
+                       OnFinished="HandleSessionFinished"
+                       OnConnectionStatusChanged="HandleConnectionStatusChanged" />
     </div>
 </div>
 
@@ -123,11 +339,117 @@
     private string _requirements = "Inspect the codebase and ensure all project builds and tests pass cleanly.";
     private TestAgentStatusDto? _status;
     private bool _isRunning => _status?.IsRunning ?? false;
+    private bool _isStarting;
+    private bool _isDirValid = true;
+    private bool _showPromptPreview;
+    private string _connectionStatus = "Connecting";
+
+    private System.Threading.Timer? _elapsedTimer;
+    private int _elapsedSeconds;
+    private DateTimeOffset? _sessionStartTime;
+
+    private string FormattedElapsed
+    {
+        get
+        {
+            var ts = TimeSpan.FromSeconds(_elapsedSeconds);
+            return ts.TotalHours >= 1 ? ts.ToString(@"hh\:mm\:ss") : ts.ToString(@"mm\:ss");
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        ValidateDirectory();
+    }
+
+    private void StartElapsedTimer()
+    {
+        _sessionStartTime = DateTimeOffset.UtcNow;
+        _elapsedSeconds = 0;
+        _elapsedTimer?.Dispose();
+        _elapsedTimer = new System.Threading.Timer(_ =>
+        {
+            if (_sessionStartTime.HasValue)
+            {
+                _elapsedSeconds = (int)(DateTimeOffset.UtcNow - _sessionStartTime.Value).TotalSeconds;
+                _ = InvokeAsync(StateHasChanged);
+            }
+        }, null, 1000, 1000);
+    }
+
+    private void StopElapsedTimer()
+    {
+        _elapsedTimer?.Dispose();
+        _elapsedTimer = null;
+    }
+
+    private void ValidateDirectory()
+    {
+        _isDirValid = !string.IsNullOrWhiteSpace(_targetDirectory) && Directory.Exists(_targetDirectory);
+    }
+
+    private void SetToCurrentDirectory()
+    {
+        _targetDirectory = Directory.GetCurrentDirectory();
+        ValidateDirectory();
+    }
+
+    private void SetToRepoRoot()
+    {
+        var repoRoot = FindRepoRoot(Directory.GetCurrentDirectory());
+        if (!string.IsNullOrEmpty(repoRoot))
+        {
+            _targetDirectory = repoRoot;
+        }
+        ValidateDirectory();
+    }
+
+    private void SetToTempScratch()
+    {
+        string scratchDir = Path.Combine(Directory.GetCurrentDirectory(), ".agent-temp", "scratch-workspace");
+        Directory.CreateDirectory(scratchDir);
+        _targetDirectory = scratchDir;
+        ValidateDirectory();
+    }
+
+    private void SetRequirementPreset(string preset)
+    {
+        _requirements = preset switch
+        {
+            "runTests" => "Inspect the test suite, run 'dotnet test', and resolve any failures cleanly.",
+            "verifyBuild" => "Run 'dotnet build' on the solution, ensure zero errors, and clean up any warnings.",
+            "inspectRepo" => "Explore the project layout and provide an architectural summary of core components.",
+            _ => _requirements
+        };
+    }
+
+    private void TogglePromptPreview()
+    {
+        _showPromptPreview = !_showPromptPreview;
+    }
+
+    private string GetMergedPromptPreview()
+    {
+        return string.IsNullOrWhiteSpace(_requirements)
+            ? DefaultTestAgentDefinition.Prompt
+            : $"{DefaultTestAgentDefinition.Prompt}\n\nTask Requirements:\n{_requirements.Trim()}";
+    }
 
     private async Task StartAgentAsync()
     {
-        if (_terminal != null)
+        if (_terminal == null || _isRunning) return;
+
+        try
         {
+            _isStarting = true;
+            StateHasChanged();
+
+            if (!Directory.Exists(_targetDirectory))
+            {
+                Directory.CreateDirectory(_targetDirectory);
+                _isDirValid = true;
+            }
+
             _status = new TestAgentStatusDto(
                 SessionId: "Starting...",
                 State: TestAgentState.Initializing.ToString(),
@@ -139,14 +461,32 @@
                 ExitCode: null,
                 FailureReason: null);
 
+            StartElapsedTimer();
+
             await _terminal.StartAgentSessionAsync(_targetDirectory, _requirements);
+        }
+        finally
+        {
+            _isStarting = false;
+            StateHasChanged();
         }
     }
 
     private async Task StartShellAsync()
     {
-        if (_terminal != null)
+        if (_terminal == null || _isRunning) return;
+
+        try
         {
+            _isStarting = true;
+            StateHasChanged();
+
+            if (!Directory.Exists(_targetDirectory))
+            {
+                Directory.CreateDirectory(_targetDirectory);
+                _isDirValid = true;
+            }
+
             _status = new TestAgentStatusDto(
                 SessionId: "Starting...",
                 State: TestAgentState.Thinking.ToString(),
@@ -158,7 +498,14 @@
                 ExitCode: null,
                 FailureReason: null);
 
+            StartElapsedTimer();
+
             await _terminal.StartShellSessionAsync(_targetDirectory);
+        }
+        finally
+        {
+            _isStarting = false;
+            StateHasChanged();
         }
     }
 
@@ -168,6 +515,7 @@
         {
             await _terminal.StopSessionAsync();
         }
+        StopElapsedTimer();
     }
 
     private async Task InterruptAsync()
@@ -186,15 +534,49 @@
         }
     }
 
+    private async Task FocusTerminalAsync()
+    {
+        if (_terminal != null)
+        {
+            await _terminal.FocusAsync();
+        }
+    }
+
+    private async Task SendTerminalInputAsync(string data)
+    {
+        if (_terminal != null)
+        {
+            await _terminal.SendInputAsync(data);
+        }
+    }
+
+    private void ResetSession()
+    {
+        StopElapsedTimer();
+        _elapsedSeconds = 0;
+        _sessionStartTime = null;
+        _status = null;
+        StateHasChanged();
+    }
+
     private Task HandleStateChanged(TestAgentStatusDto status)
     {
         _status = status;
+        if (!status.IsRunning)
+        {
+            StopElapsedTimer();
+        }
+        else if (_sessionStartTime == null)
+        {
+            StartElapsedTimer();
+        }
         StateHasChanged();
         return Task.CompletedTask;
     }
 
     private Task HandleSessionFinished((string SessionId, int ExitCode) args)
     {
+        StopElapsedTimer();
         if (_status != null)
         {
             _status = _status with { IsRunning = false, ExitCode = args.ExitCode };
@@ -203,19 +585,50 @@
         return Task.CompletedTask;
     }
 
+    private Task HandleConnectionStatusChanged(string status)
+    {
+        _connectionStatus = status;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task CopySessionIdAsync()
+    {
+        // Simple clipboard copy fallback
+        if (_status?.SessionId != null && _terminal != null)
+        {
+            // Focus terminal as visual acknowledgment
+            await _terminal.FocusAsync();
+        }
+    }
+
+    private static string? FindRepoRoot(string startDir)
+    {
+        var dir = new DirectoryInfo(startDir);
+        while (dir != null)
+        {
+            if (Directory.Exists(Path.Combine(dir.FullName, ".git")))
+            {
+                return dir.FullName;
+            }
+            dir = dir.Parent;
+        }
+        return null;
+    }
+
     private RenderFragment RenderStatusBadge() => builder =>
     {
         var stateStr = _status?.State ?? "Idle";
         var (bgColor, textColor, ringColor, dotColor, label) = stateStr switch
         {
-            "Initializing" => ("bg-blue-950/80", "text-blue-400", "ring-blue-700/50", "bg-blue-400 animate-spin", "Initializing"),
-            "Thinking" => ("bg-amber-950/80", "text-amber-300", "ring-amber-700/50", "bg-amber-400 animate-pulse", "Thinking"),
-            "ToolExecuting" => ("bg-amber-900/90", "text-amber-200", "ring-amber-600/60", "bg-amber-300 animate-ping", $"Tool: {_status?.CurrentToolName ?? "Executing"}"),
-            "WaitingForApproval" => ("bg-orange-950/90", "text-orange-300", "ring-orange-600/70", "bg-orange-400", "Waiting for Approval"),
-            "WaitingForUser" => ("bg-purple-950/80", "text-purple-300", "ring-purple-700/60", "bg-purple-400 animate-pulse", "Waiting for User"),
-            "Stalled" => ("bg-red-950/90", "text-red-300", "ring-red-700/70", "bg-red-500 animate-bounce", "Stalled (Inactive)"),
-            "Failed" => ("bg-red-900/80", "text-red-200", "ring-red-600/70", "bg-red-400", "Failed"),
-            "Finished" => ("bg-emerald-950/80", "text-emerald-300", "ring-emerald-700/50", "bg-emerald-400", "Finished"),
+            nameof(TestAgentState.Initializing) => ("bg-blue-950/80", "text-blue-400", "ring-blue-700/50", "bg-blue-400 animate-spin", "Initializing"),
+            nameof(TestAgentState.Thinking) => ("bg-amber-950/80", "text-amber-300", "ring-amber-700/50", "bg-amber-400 animate-pulse", "Thinking"),
+            nameof(TestAgentState.ToolExecuting) => ("bg-amber-900/90", "text-amber-200", "ring-amber-600/60", "bg-amber-300 animate-ping", $"Tool: {_status?.CurrentToolName ?? "Executing"}"),
+            nameof(TestAgentState.WaitingForApproval) => ("bg-orange-950/90", "text-orange-300", "ring-orange-600/70", "bg-orange-400", "Waiting for Approval"),
+            nameof(TestAgentState.WaitingForUser) => ("bg-purple-950/80", "text-purple-300", "ring-purple-700/60", "bg-purple-400 animate-pulse", "Waiting for User"),
+            nameof(TestAgentState.Stalled) => ("bg-red-950/90", "text-red-300", "ring-red-700/70", "bg-red-500 animate-bounce", "Stalled (Inactive)"),
+            nameof(TestAgentState.Failed) => ("bg-red-900/80", "text-red-200", "ring-red-600/70", "bg-red-400", "Failed"),
+            nameof(TestAgentState.Finished) => ("bg-emerald-950/80", "text-emerald-300", "ring-emerald-700/50", "bg-emerald-400", "Finished"),
             _ => ("bg-neutral-800/80", "text-neutral-400", "ring-neutral-700/40", "bg-neutral-500", "Idle")
         };
 
@@ -229,4 +642,9 @@
         builder.AddContent(4, label);
         builder.CloseElement();
     };
+
+    public void Dispose()
+    {
+        _elapsedTimer?.Dispose();
+    }
 }

@@ -36,9 +36,10 @@ public sealed class TerminalHub : Hub
     /// </summary>
     public async Task<string> StartSession(string targetDir, string requirements, int cols = 80, int rows = 24)
     {
-        _logger.LogInformation("TerminalHub.StartSession requested. Dir: {Dir}, Cols: {Cols}, Rows: {Rows}", targetDir, cols, rows);
-        var session = await _sessionManager.StartSessionAsync(targetDir, requirements, cols, rows);
-        await Groups.AddToGroupAsync(Context.ConnectionId, session.Id.ToString());
+        var sessionId = Guid.NewGuid();
+        _logger.LogInformation("TerminalHub.StartSession requested. Session: {SessionId}, Dir: {Dir}, Cols: {Cols}, Rows: {Rows}", sessionId, targetDir, cols, rows);
+        await Groups.AddToGroupAsync(Context.ConnectionId, sessionId.ToString());
+        var session = await _sessionManager.StartSessionAsync(targetDir, requirements, cols, rows, sessionId);
         return session.Id.ToString();
     }
 
@@ -47,9 +48,10 @@ public sealed class TerminalHub : Hub
     /// </summary>
     public async Task<string> StartShellSession(string? targetDir = null, int cols = 80, int rows = 24)
     {
-        _logger.LogInformation("TerminalHub.StartShellSession requested. Dir: {Dir}, Cols: {Cols}, Rows: {Rows}", targetDir, cols, rows);
-        var session = await _sessionManager.StartShellSessionAsync(targetDir, cols, rows);
-        await Groups.AddToGroupAsync(Context.ConnectionId, session.Id.ToString());
+        var sessionId = Guid.NewGuid();
+        _logger.LogInformation("TerminalHub.StartShellSession requested. Session: {SessionId}, Dir: {Dir}, Cols: {Cols}, Rows: {Rows}", sessionId, targetDir, cols, rows);
+        await Groups.AddToGroupAsync(Context.ConnectionId, sessionId.ToString());
+        var session = await _sessionManager.StartShellSessionAsync(targetDir, cols, rows, sessionId);
         return session.Id.ToString();
     }
 
