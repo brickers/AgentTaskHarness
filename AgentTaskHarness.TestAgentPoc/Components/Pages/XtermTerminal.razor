@@ -1,0 +1,110 @@
+@using AgentTaskHarness.TestAgentPoc.TestAgent
+@inject IJSRuntime JSRuntime
+@implements IAsyncDisposable
+
+<div @ref="_terminalContainer" class="xterm-wrapper w-full h-full min-h-[450px] bg-[#121317] rounded-lg p-2 border border-neutral-800 shadow-inner overflow-hidden">
+</div>
+
+@code {
+    private ElementReference _terminalContainer;
+    private DotNetObjectReference<XtermTerminal>? _dotNetRef;
+    private string? _elementId;
+    private bool _isInitialized;
+
+    [Parameter]
+    public EventCallback<TestAgentStatusDto> OnStateChanged { get; set; }
+
+    [Parameter]
+    public EventCallback<(string SessionId, int ExitCode)> OnFinished { get; set; }
+
+    public string? CurrentSessionId { get; private set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            _elementId = await JSRuntime.InvokeAsync<string>(
+                "xtermInterop.init",
+                _terminalContainer,
+                _dotNetRef,
+                "/hubs/terminal");
+            _isInitialized = true;
+        }
+    }
+
+    public async Task<string?> StartAgentSessionAsync(string targetDir, string requirements)
+    {
+        if (!_isInitialized || string.IsNullOrEmpty(_elementId)) return null;
+
+        CurrentSessionId = await JSRuntime.InvokeAsync<string>(
+            "xtermInterop.startSession",
+            _elementId,
+            targetDir,
+            requirements);
+
+        return CurrentSessionId;
+    }
+
+    public async Task<string?> StartShellSessionAsync(string? targetDir = null)
+    {
+        if (!_isInitialized || string.IsNullOrEmpty(_elementId)) return null;
+
+        CurrentSessionId = await JSRuntime.InvokeAsync<string>(
+            "xtermInterop.startShell",
+            _elementId,
+            targetDir ?? string.Empty);
+
+        return CurrentSessionId;
+    }
+
+    public async Task StopSessionAsync()
+    {
+        if (!_isInitialized || string.IsNullOrEmpty(_elementId)) return;
+        await JSRuntime.InvokeVoidAsync("xtermInterop.stopSession", _elementId);
+    }
+
+    public async Task InterruptSessionAsync()
+    {
+        if (!_isInitialized || string.IsNullOrEmpty(_elementId)) return;
+        await JSRuntime.InvokeVoidAsync("xtermInterop.interruptSession", _elementId);
+    }
+
+    public async Task ClearAsync()
+    {
+        if (!_isInitialized || string.IsNullOrEmpty(_elementId)) return;
+        await JSRuntime.InvokeVoidAsync("xtermInterop.clear", _elementId);
+    }
+
+    [JSInvokable]
+    public async Task OnSessionStateChanged(TestAgentStatusDto status)
+    {
+        CurrentSessionId = status.SessionId;
+        if (OnStateChanged.HasDelegate)
+        {
+            await OnStateChanged.InvokeAsync(status);
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnSessionFinished(string sessionId, int exitCode)
+    {
+        if (OnFinished.HasDelegate)
+        {
+            await OnFinished.InvokeAsync((sessionId, exitCode));
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_isInitialized && !string.IsNullOrEmpty(_elementId))
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("xtermInterop.dispose", _elementId);
+            }
+            catch { /* Component may have been torn down */ }
+        }
+        _dotNetRef?.Dispose();
+    }
+}
